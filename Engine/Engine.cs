@@ -6,7 +6,6 @@ using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
-using Game.Enums;
 using State;
 using State.Factories;
 using Api;
@@ -15,6 +14,7 @@ using Api.OutgoingCommands;
 using System.Numerics;
 using System.IO.Pipes;
 using System.Reflection.PortableExecutable;
+using Api.IncomingCommands.Actions.Enums;
 
 namespace Game
 {
@@ -25,31 +25,33 @@ namespace Game
         private World? _world;
         private Player? _victory = null;
 
-        private int GetTileIndex(Tile currentTile, Direction direction)
+        private int GetTileIndex(Tile currentTile, UnitOrderType order)
         {
             int newIndex = -1;
             if (currentTile.Index % _world.Map.MapBase % 2 == 0)
             {
-                newIndex = direction switch
+                newIndex = order switch
                 {
-                    Direction.Up => currentTile.Index - _world.Map.MapBase,
-                    Direction.UpRight => currentTile.Index - _world.Map.MapBase + 1,
-                    Direction.DownRight => currentTile.Index + 1,
-                    Direction.Down => currentTile.Index + _world.Map.MapBase,
-                    Direction.DownLeft => currentTile.Index + _world.Map.MapBase - 1,
-                    Direction.UpLeft => currentTile.Index - 1
+                    UnitOrderType.Up => currentTile.Index - _world.Map.MapBase,
+                    UnitOrderType.UpRight => currentTile.Index - _world.Map.MapBase + 1,
+                    UnitOrderType.DownRight => currentTile.Index + 1,
+                    UnitOrderType.Down => currentTile.Index + _world.Map.MapBase,
+                    UnitOrderType.DownLeft => currentTile.Index + _world.Map.MapBase - 1,
+                    UnitOrderType.UpLeft => currentTile.Index - 1,
+                    _ => currentTile.Index
                 };
             }
             else
             {
-                newIndex = direction switch
+                newIndex = order switch
                 {
-                    Direction.Up => currentTile.Index - _world.Map.MapBase,
-                    Direction.UpRight => currentTile.Index + 1,
-                    Direction.DownRight => currentTile.Index + _world.Map.MapBase + 1,
-                    Direction.Down => currentTile.Index + _world.Map.MapBase,
-                    Direction.DownLeft => currentTile.Index + _world.Map.MapBase - 1,
-                    Direction.UpLeft => currentTile.Index - 1
+                    UnitOrderType.Up => currentTile.Index - _world.Map.MapBase,
+                    UnitOrderType.UpRight => currentTile.Index + 1,
+                    UnitOrderType.DownRight => currentTile.Index + _world.Map.MapBase + 1,
+                    UnitOrderType.Down => currentTile.Index + _world.Map.MapBase,
+                    UnitOrderType.DownLeft => currentTile.Index + _world.Map.MapBase - 1,
+                    UnitOrderType.UpLeft => currentTile.Index - 1,
+                    _ => currentTile.Index
                 };
             }
             if (newIndex < 0 || newIndex > _world.Map.Tiles.Count - 1)
@@ -57,21 +59,6 @@ namespace Game
                 return -1;
             }
             return newIndex;
-        }
-
-        private Direction ConsoleReadDirection()
-        {
-            bool valid = false;
-            int direction = -1;
-            while (!valid)
-            {
-                int.TryParse(Console.ReadLine(), out direction);
-                if (direction >= 1 || direction <= 6)
-                {
-                    valid = true;
-                }
-            }
-            return (Direction)direction;
         }
 
         private void GenerateWorld()

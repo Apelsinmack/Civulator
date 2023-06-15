@@ -9,6 +9,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\API\Api.csproj" />
+    <ProjectReference Include="..\ConsoleGui\ConsoleGui.csproj" />
+    <ProjectReference Include="..\State\State.csproj" />
   </ItemGroup>
 
 </Project>

@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace Game
 {
-    internal class ConsoleGui
+    public class ConsoleGui
     {
         private static string _emptyTile = "{0,-3}";
 

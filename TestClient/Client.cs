@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Data.Common;
 using System.IO.Pipes;
 using System.Threading.Tasks;
+using Api.IncomingCommands.Actions.Enums;
 
 namespace TestClient
 {
@@ -14,6 +15,30 @@ namespace TestClient
     {
         private readonly Api _api;
         private Connection _connection;
+
+        private UnitOrderType ConsoleReadUnitOrder()
+        {
+            while (true)
+            {
+                switch (Console.ReadLine())
+                {
+                    case "1":
+                        return UnitOrderType.DownLeft;
+                    case "2":
+                        return UnitOrderType.Down;
+                    case "3":
+                        return UnitOrderType.DownRight;
+                    case "4":
+                        return UnitOrderType.UpLeft;
+                    case "5":
+                        return UnitOrderType.Up;
+                    case "6":
+                        return UnitOrderType.UpRight;
+                    case "f":
+                        return UnitOrderType.Fortify;
+                }
+            }
+        }
 
         public Client()
         {
