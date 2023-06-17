@@ -6,6 +6,7 @@ Created on Sat Jun 17 10:48:51 2023
 """
 import random
 import numpy as np
+from movement import *
 
 def get_ascii_representation(cell):
     if cell == 0:  # Empty tile
@@ -34,6 +35,16 @@ def randomize_matrix(gamemap):
             
 gamemap = np.zeros(shape=(10,15), dtype=int)
 
-randomize_matrix(gamemap)
+
+
+center = (4,4)
+gamemap[center] = 1
+print_map(gamemap)
+
+selection = getAllTilesAtDistanceR(center, 2)
+
+
+for tile in selection:
+    gamemap[tile] = 2
 
 print_map(gamemap)
