@@ -1,0 +1,14 @@
+Tankar från igår: 
+
+1.  Python är långsamt i jämförelse med C# och det är en hel del som behöver beräknas varje gång för att Q-funktionen, speciellt "actionspacet", därav kan man tänka sig flytta lite av det jag jobbat med
+igår till C#. Med tanke på hjälpen man kan frå från chatgpt så borde översättning av kod inte vara något stort hinder för oss. 
+Varje unit borde ha sitt action space representerat som en lista: a = [action1, action2, ... ] eller som a = [possibleNewLocation1, possibleNewLocation2,... ]
+Hela action-space blir då lista av listor [a_unit1, a_unit2, ... ] (eller enbart en lång lista med actions, det spelar ingen roll).
+
+2.  Gårdagens version av gameloop var ganska free-stylad men gav mig ändå en bra överblick på hur det kommer vara. Jag itererade fram den strukturen och la till saker pö om pö, jag har därför inte
+hunnit läsa igenom min egen kod i sin helhet ännu =) Kanske kommer ändra den en gång till från början nu när jag har en mycket klarare bild av hur det fungerar.
+
+
+
+övrigt:
+Behövöer fixa till getAllTilesAtRadiusR(location, R)
