@@ -1,15 +1,14 @@
 ﻿using Api.IncomingCommands;
 using Api;
 using State;
-using State.Factories;
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.IO.Pipes;
 using System.Threading.Tasks;
-using Api.IncomingCommands.Actions.Enums;
+using Api.IncomingCommands.Enums;
 using Api.OutgoingCommands;
-using Api.IncomingCommands.Actions;
+using StateLogic;
 
 namespace TestClient
 {
@@ -57,8 +56,7 @@ namespace TestClient
                 while (namedPipeClientStream.IsConnected)
                 {
                     NewState newState = _api.GetState(namedPipeClientStream);
-                    int currentTurn = newState.World.Players.Min(Player => Player.Turn);
-                    Player currentPlayer = newState.World.Players.Find(player => player.Turn == currentTurn);
+                    Player currentPlayer = PlayerLogic.GetCurrentPlayer(newState.World);
                     List<Unit> units = newState.World.Map.Tiles.SelectMany(tile => tile.Value.Units).Where(unit => unit.Owner.Id == currentPlayer.Id).ToList();
                     List<UnitOrder> unitOrders = new();
                     units.ForEach(unit =>
@@ -68,7 +66,7 @@ namespace TestClient
                     });
                     Console.WriteLine("End turn?");
                     bool endTurn = Console.ReadLine() == "y";
-                    _api.ExecuteCommands(namedPipeClientStream, new Execute(unitOrders, endTurn));
+                    _api.ExecuteCommands(namedPipeClientStream, new Actions(unitOrders, endTurn));
                 }
             }
         }

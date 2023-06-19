@@ -60,12 +60,12 @@ namespace Api
             return null;
         }
 
-        public Execute GetActions(NamedPipeServerStream namedPipeServerStream, World world)
+        public Actions GetActions(NamedPipeServerStream namedPipeServerStream, World world)
         {
             WriteData(namedPipeServerStream, new NewState(world));
             while (namedPipeServerStream.IsConnected)
             {
-                return ReadData<Execute>(namedPipeServerStream);
+                return ReadData<Actions>(namedPipeServerStream);
             }
             return null;
         }

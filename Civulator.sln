@@ -13,6 +13,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TestClient", "TestClient\Te
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Gui", "ConsoleGui\Gui.csproj", "{A059BAFF-E1A8-41C8-811B-6C3B8BF63BA3}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "StateLogic", "StateLogic\StateLogic.csproj", "{19F7C5CE-C434-48CA-BA5F-7EFC9AD5142D}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -39,6 +41,10 @@ Global
 		{A059BAFF-E1A8-41C8-811B-6C3B8BF63BA3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A059BAFF-E1A8-41C8-811B-6C3B8BF63BA3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A059BAFF-E1A8-41C8-811B-6C3B8BF63BA3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{19F7C5CE-C434-48CA-BA5F-7EFC9AD5142D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{19F7C5CE-C434-48CA-BA5F-7EFC9AD5142D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{19F7C5CE-C434-48CA-BA5F-7EFC9AD5142D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{19F7C5CE-C434-48CA-BA5F-7EFC9AD5142D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

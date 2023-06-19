@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Api.IncomingCommands.Actions.Enums
+namespace Api.IncomingCommands.Enums
 {
     public enum UnitOrderType
     {

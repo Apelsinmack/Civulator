@@ -1,6 +1,4 @@
 ﻿using Api.IncomingCommands;
-using Api.IncomingCommands.Actions;
-using Api.IncomingCommands.Actions.Enums;
 using Api.OutgoingCommands;
 using State;
 using System;
@@ -76,7 +74,7 @@ namespace TestClient
             return null;
         }
 
-        public void ExecuteCommands(NamedPipeClientStream namedPipeClientStream, Execute execute)
+        public void ExecuteCommands(NamedPipeClientStream namedPipeClientStream, Actions execute)
         {
             while (namedPipeClientStream.IsConnected)
             {

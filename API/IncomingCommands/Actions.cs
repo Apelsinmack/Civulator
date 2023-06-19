@@ -1,4 +1,4 @@
-﻿using Api.IncomingCommands.Actions;
+﻿using Api.IncomingCommands;
 using State;
 using System;
 using System.Collections.Generic;
@@ -9,12 +9,12 @@ using System.Threading.Tasks;
 
 namespace Api.IncomingCommands
 {
-    public class Execute
+    public class Actions
     {
         public List<UnitOrder> UnitOrders { get; set; }
         public bool EndTurn { get; set; }
 
-        public Execute(List<UnitOrder> unitOrders, bool endTurn = false)
+        public Actions(List<UnitOrder> unitOrders, bool endTurn = false)
         {
             UnitOrders = unitOrders;
             EndTurn = endTurn;

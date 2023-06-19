@@ -1,6 +1,4 @@
-﻿using State.Factories;
-
-namespace State
+﻿namespace State
 {
     [Serializable]
     public class World

@@ -1,6 +1,7 @@
 ﻿using Gui;
 using State;
 using State.Enums;
+using StateLogic;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -14,6 +15,7 @@ namespace Game
     public class ConsoleGui : IGui
     {
         private readonly string _emptyTile = "{0,-3}";
+        private Player _currentPlayer;
 
         private void SetTerrainConsoleColor(TerrainType terrainType)
         {
@@ -76,9 +78,16 @@ namespace Game
 
         private void PrintTile(Tile tile, bool printContent)
         {
-            string content = GetTileContent(tile, printContent);
-            SetTerrainConsoleColor(tile.Terrain.Type);
-            Console.Write(_emptyTile, content);
+            if (_currentPlayer.DiscoveredTileIndexes.Contains(tile.Index))
+            {
+                string content = GetTileContent(tile, printContent);
+                SetTerrainConsoleColor(tile.Terrain.Type);
+                Console.Write(_emptyTile, content);
+            }
+            else
+            {
+                PrintVoid();
+            }
         }
 
         private string GetTileContent(Tile tile, bool printContent)
@@ -110,8 +119,7 @@ namespace Game
 
         public void PrintWorld(World world, List<string> log)
         {
-            int currentTurn = world.Players.Min(Player => Player.Turn);
-            Player currentPlayer = world.Players.Find(player => player.Turn == currentTurn);
+            _currentPlayer = PlayerLogic.GetCurrentPlayer(world);
             Console.Clear();
             List<Tile> firstPart = new List<Tile>();
             List<Tile> secondPart = new List<Tile>();
@@ -169,7 +177,7 @@ namespace Game
             }
             PrintLastMapRow(latestPart);
             Console.ResetColor();
-            Console.ForegroundColor = currentPlayer.Leader.Color;
+            Console.ForegroundColor = _currentPlayer.Leader.Color;
             log.ForEach(line => Console.WriteLine(line));
             Console.ResetColor();
         }

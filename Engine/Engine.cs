@@ -7,16 +7,16 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 using State;
-using State.Factories;
 using Api;
 using Api.IncomingCommands;
 using Api.OutgoingCommands;
 using System.Numerics;
 using System.IO.Pipes;
 using System.Reflection.PortableExecutable;
-using Api.IncomingCommands.Actions.Enums;
+using Api.IncomingCommands.Enums;
 using Gui;
-using Api.IncomingCommands.Actions;
+using StateLogic.Factories;
+using StateLogic;
 
 namespace Game
 {
@@ -86,11 +86,11 @@ namespace Game
                         $"{player.Name} turn {player.Turn}"
                     };
                     _gui.PrintWorld(_world, log);
-                    Execute execute;
+                    Actions actions;
                     do
                     {
-                        execute = _server.GetActions(namedPipeServerStream, _world);
-                        foreach (var unitOrder in execute.UnitOrders)
+                        actions = _server.GetActions(namedPipeServerStream, _world);
+                        foreach (var unitOrder in actions.UnitOrders)
                         {
                             log.Add($"{unitOrder.Unit.Type.ToString()} {unitOrder.Order.ToString()}");
                             int newTileIndex = GetNewIndex(_world.Map.Tiles[unitOrder.Unit.TileIndex].Index, unitOrder.Order);
@@ -99,11 +99,12 @@ namespace Game
                                 _world.Map.Tiles[unitOrder.Unit.TileIndex].Units.RemoveAll(unit => unit.Id == unitOrder.Unit.Id);
                                 unitOrder.Unit.TileIndex = newTileIndex;
                                 _world.Map.Tiles[newTileIndex].Units.Add(unitOrder.Unit);
+                                player.DiscoveredTileIndexes.UnionWith(MapLogic.GetAdjacentTileIndexes(_world.Map.MapBase, newTileIndex));
                             }
                         }
                         _gui.PrintWorld(_world, log);
                     }
-                    while (!execute.EndTurn); //TODO: Or if no actions left
+                    while (!actions.EndTurn); //TODO: Or if no actions left
                     //TODO: Send state.
                     player.NextTurn();
                 }

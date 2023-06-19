@@ -7,7 +7,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\StateLogic\StateLogic.csproj" />
     <ProjectReference Include="..\State\State.csproj" />
   </ItemGroup>
 

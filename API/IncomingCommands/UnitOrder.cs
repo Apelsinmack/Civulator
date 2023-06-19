@@ -1,4 +1,4 @@
-﻿using Api.IncomingCommands.Actions.Enums;
+﻿using Api.IncomingCommands.Enums;
 using State;
 using System;
 using System.Collections.Generic;
@@ -7,7 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace Api.IncomingCommands.Actions
+namespace Api.IncomingCommands
 {
     public class UnitOrder
     {
