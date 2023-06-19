@@ -15,6 +15,8 @@ using System.Numerics;
 using System.IO.Pipes;
 using System.Reflection.PortableExecutable;
 using Api.IncomingCommands.Actions.Enums;
+using Gui;
+using Api.IncomingCommands.Actions;
 
 namespace Game
 {
@@ -23,34 +25,35 @@ namespace Game
         private readonly Server _server;
         private World? _world;
         private Player? _victory = null;
+        private IGui _gui;
 
-        private int GetTileIndex(Tile currentTile, UnitOrderType order)
+        private int GetNewIndex(int currentIndex, UnitOrderType order)
         {
             int newIndex = -1;
-            if (currentTile.Index % _world.Map.MapBase % 2 == 0)
+            if (currentIndex % _world.Map.MapBase % 2 == 0)
             {
                 newIndex = order switch
                 {
-                    UnitOrderType.Up => currentTile.Index - _world.Map.MapBase,
-                    UnitOrderType.UpRight => currentTile.Index - _world.Map.MapBase + 1,
-                    UnitOrderType.DownRight => currentTile.Index + 1,
-                    UnitOrderType.Down => currentTile.Index + _world.Map.MapBase,
-                    UnitOrderType.DownLeft => currentTile.Index + _world.Map.MapBase - 1,
-                    UnitOrderType.UpLeft => currentTile.Index - 1,
-                    _ => currentTile.Index
+                    UnitOrderType.Up => currentIndex - _world.Map.MapBase,
+                    UnitOrderType.UpRight => currentIndex - _world.Map.MapBase + 1,
+                    UnitOrderType.DownRight => currentIndex + 1,
+                    UnitOrderType.Down => currentIndex + _world.Map.MapBase,
+                    UnitOrderType.DownLeft => currentIndex - 1,
+                    UnitOrderType.UpLeft => currentIndex - _world.Map.MapBase - 1,
+                    _ => currentIndex
                 };
             }
             else
             {
                 newIndex = order switch
                 {
-                    UnitOrderType.Up => currentTile.Index - _world.Map.MapBase,
-                    UnitOrderType.UpRight => currentTile.Index + 1,
-                    UnitOrderType.DownRight => currentTile.Index + _world.Map.MapBase + 1,
-                    UnitOrderType.Down => currentTile.Index + _world.Map.MapBase,
-                    UnitOrderType.DownLeft => currentTile.Index + _world.Map.MapBase - 1,
-                    UnitOrderType.UpLeft => currentTile.Index - 1,
-                    _ => currentTile.Index
+                    UnitOrderType.Up => currentIndex - _world.Map.MapBase,
+                    UnitOrderType.UpRight => currentIndex + 1,
+                    UnitOrderType.DownRight => currentIndex + _world.Map.MapBase + 1,
+                    UnitOrderType.Down => currentIndex + _world.Map.MapBase,
+                    UnitOrderType.DownLeft => currentIndex + _world.Map.MapBase - 1,
+                    UnitOrderType.UpLeft => currentIndex - 1,
+                    _ => currentIndex
                 };
             }
             if (newIndex < 0 || newIndex > _world.Map.Tiles.Count - 1)
@@ -65,7 +68,7 @@ namespace Game
             NewGame newGame = _server.GetNewGame(namedPipeServerStream);
             WorldFactory worldFactory = new WorldFactory();
             _world = worldFactory.GenerateWorld(newGame.MapBase, newGame.MapHeight, newGame.Players);
-            ConsoleGui.PrintWorld(_world);
+            _gui.PrintWorld(_world, new List<string>());
         }
 
         private void Play(NamedPipeServerStream namedPipeServerStream)
@@ -78,22 +81,31 @@ namespace Game
             {
                 foreach (var player in _world.Players)
                 {
-                    player.NextTurn();
-                    Console.ForegroundColor = player.Leader.Color;
-                    Console.WriteLine($"{player.Name} turn {_world.Players[0].Turn}");
+                    List<string> log = new List<string>
+                    {
+                        $"{player.Name} turn {player.Turn}"
+                    };
+                    _gui.PrintWorld(_world, log);
                     Execute execute;
                     do
                     {
                         execute = _server.GetActions(namedPipeServerStream, _world);
-                        foreach (var action in execute.Actions)
+                        foreach (var unitOrder in execute.UnitOrders)
                         {
-                            Console.WriteLine($"Execute action {action.Type.ToString()}");
-                            //TODO: Update state!
+                            log.Add($"{unitOrder.Unit.Type.ToString()} {unitOrder.Order.ToString()}");
+                            int newTileIndex = GetNewIndex(_world.Map.Tiles[unitOrder.Unit.TileIndex].Index, unitOrder.Order);
+                            if (newTileIndex > -1)
+                            {
+                                _world.Map.Tiles[unitOrder.Unit.TileIndex].Units.RemoveAll(unit => unit.Id == unitOrder.Unit.Id);
+                                unitOrder.Unit.TileIndex = newTileIndex;
+                                _world.Map.Tiles[newTileIndex].Units.Add(unitOrder.Unit);
+                            }
                         }
+                        _gui.PrintWorld(_world, log);
                     }
-                    while (!execute.EndTurn);
-                    Console.ForegroundColor = ConsoleColor.White;
-                    Console.WriteLine();
+                    while (!execute.EndTurn); //TODO: Or if no actions left
+                    //TODO: Send state.
+                    player.NextTurn();
                 }
             }
             Console.WriteLine($"Congratulations to the victory {_victory.Name}!");
@@ -102,6 +114,7 @@ namespace Game
         public Engine()
         {
             _server = Server.GetInstance();
+            _gui = new ConsoleGui();
         }
 
         public void Start()

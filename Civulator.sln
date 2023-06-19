@@ -11,7 +11,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "State", "State\State.csproj
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TestClient", "TestClient\TestClient.csproj", "{A7E8EC0A-9EC2-4C6E-A60D-950A6BEFB9EC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsoleGui", "ConsoleGui\ConsoleGui.csproj", "{A059BAFF-E1A8-41C8-811B-6C3B8BF63BA3}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Gui", "ConsoleGui\Gui.csproj", "{A059BAFF-E1A8-41C8-811B-6C3B8BF63BA3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

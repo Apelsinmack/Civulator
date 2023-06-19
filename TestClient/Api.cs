@@ -23,7 +23,6 @@ namespace TestClient
 
         private T ReadData<T>(NamedPipeClientStream namedPipeClientStream)
         {
-            Console.WriteLine($"Get {typeof(T).FullName}...");
             using (MemoryStream memoryStream = new MemoryStream())
             {
                 byte[] lengthBuffer = new byte[4];
@@ -46,7 +45,6 @@ namespace TestClient
 
         private void WriteData<T>(NamedPipeClientStream namedPipeClientStream, T dataObject)
         {
-            Console.WriteLine($"Send {typeof(T).FullName}...");
             byte[] dataBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(dataObject));
             byte[] lengthBytes = BitConverter.GetBytes(dataBytes.Length);
             namedPipeClientStream.Write(lengthBytes, 0, lengthBytes.Length);
@@ -69,24 +67,22 @@ namespace TestClient
             }
         }
 
-        public Execute ExecuteCommands(NamedPipeClientStream namedPipeClientStream)
+        public NewState GetState(NamedPipeClientStream namedPipeClientStream)
         {
             while (namedPipeClientStream.IsConnected)
             {
-                Console.WriteLine("Waiting for next turn...");
-                NewState newState = ReadData<NewState>(namedPipeClientStream);
-                Console.WriteLine("Processing important data...");
-                Console.WriteLine("End turn?");
-                bool endTurn = Console.ReadLine() == "y";
-                List<BaseAction> actions = new()
-                {
-                    new UnitOrder(UnitOrderType.Up),
-                    new UnitOrder(UnitOrderType.Down)
-                };
-                WriteData(namedPipeClientStream, new Execute(actions, endTurn));
-                Console.WriteLine("------------------------------");
+                return ReadData<NewState>(namedPipeClientStream);
             }
             return null;
+        }
+
+        public void ExecuteCommands(NamedPipeClientStream namedPipeClientStream, Execute execute)
+        {
+            while (namedPipeClientStream.IsConnected)
+            {
+                WriteData(namedPipeClientStream, execute);
+                break;
+            }
         }
     }
 }

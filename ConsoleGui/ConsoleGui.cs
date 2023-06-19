@@ -1,4 +1,5 @@
-﻿using State;
+﻿using Gui;
+using State;
 using State.Enums;
 using System;
 using System.Collections;
@@ -10,11 +11,11 @@ using System.Threading.Tasks;
 
 namespace Game
 {
-    public class ConsoleGui
+    public class ConsoleGui : IGui
     {
-        private static string _emptyTile = "{0,-3}";
+        private readonly string _emptyTile = "{0,-3}";
 
-        private static void SetTerrainConsoleColor(TerrainType terrainType)
+        private void SetTerrainConsoleColor(TerrainType terrainType)
         {
             switch (terrainType)
             {
@@ -33,7 +34,7 @@ namespace Game
             }
         }
 
-        private static void PrintFirstMapRow(List<Tile> tiles)
+        private void PrintFirstMapRow(List<Tile> tiles)
         {
             foreach (Tile tile in tiles)
             {
@@ -43,7 +44,7 @@ namespace Game
             Console.WriteLine();
         }
 
-        private static void PrintLastMapRow(List<Tile> tiles)
+        private void PrintLastMapRow(List<Tile> tiles)
         {
             bool isEven = true;
 
@@ -62,7 +63,7 @@ namespace Game
             Console.WriteLine();
         }
 
-        private static void PrintMapRow(List<Tile> tiles, bool isFirstPart)
+        private void PrintMapRow(List<Tile> tiles, bool isFirstPart)
         {
             bool isEven = true;
             foreach (Tile tile in tiles)
@@ -73,14 +74,14 @@ namespace Game
             Console.WriteLine();
         }
 
-        public static void PrintTile(Tile tile, bool printContent)
+        private void PrintTile(Tile tile, bool printContent)
         {
             string content = GetTileContent(tile, printContent);
             SetTerrainConsoleColor(tile.Terrain.Type);
             Console.Write(_emptyTile, content);
         }
 
-        private static string GetTileContent(Tile tile, bool printContent)
+        private string GetTileContent(Tile tile, bool printContent)
         {
             Unit unit = tile.Units.FirstOrDefault();
             if (!printContent || unit == null)
@@ -101,14 +102,16 @@ namespace Game
             }
         }
 
-        public static void PrintVoid()
+        private void PrintVoid()
         {
             Console.BackgroundColor = ConsoleColor.Black;
             Console.Write(_emptyTile, String.Empty);
         }
 
-        public static void PrintWorld(World world)
+        public void PrintWorld(World world, List<string> log)
         {
+            int currentTurn = world.Players.Min(Player => Player.Turn);
+            Player currentPlayer = world.Players.Find(player => player.Turn == currentTurn);
             Console.Clear();
             List<Tile> firstPart = new List<Tile>();
             List<Tile> secondPart = new List<Tile>();
@@ -165,6 +168,9 @@ namespace Game
                 }
             }
             PrintLastMapRow(latestPart);
+            Console.ResetColor();
+            Console.ForegroundColor = currentPlayer.Leader.Color;
+            log.ForEach(line => Console.WriteLine(line));
             Console.ResetColor();
         }
     }

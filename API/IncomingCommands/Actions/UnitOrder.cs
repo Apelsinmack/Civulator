@@ -9,14 +9,15 @@ using System.Threading.Tasks;
 
 namespace Api.IncomingCommands.Actions
 {
-    public class UnitOrder : BaseAction
+    public class UnitOrder
     {
         public UnitOrderType Order { get; set; }
+        public Unit Unit { get; set; }
 
-        public UnitOrder(UnitOrderType order)
+        public UnitOrder(UnitOrderType order, Unit unit)
         {
-            Type = ActionType.UnitOrder;
             Order = order;
+            Unit = unit;
         }
     }
 }

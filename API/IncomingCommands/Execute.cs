@@ -9,15 +9,14 @@ using System.Threading.Tasks;
 
 namespace Api.IncomingCommands
 {
-    public class Execute : IIncomingCommand
+    public class Execute
     {
-        public IncomingCommandType Type => IncomingCommandType.Actions;
-        public List<BaseAction> Actions { get; set; }
+        public List<UnitOrder> UnitOrders { get; set; }
         public bool EndTurn { get; set; }
 
-        public Execute(List<BaseAction> actions, bool endTurn = false)
+        public Execute(List<UnitOrder> unitOrders, bool endTurn = false)
         {
-            Actions = actions;
+            UnitOrders = unitOrders;
             EndTurn = endTurn;
         }
     }

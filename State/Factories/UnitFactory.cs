@@ -11,7 +11,7 @@ namespace State.Factories
     {
         public Unit GenerateUnit(UnitType unitType, Player player, Tile tile)
         {
-            Unit unit = new Unit(unitType, player);
+            Unit unit = new Unit(unitType, player, tile.Index);
             tile.Units.Add(unit);
 
             return unit;

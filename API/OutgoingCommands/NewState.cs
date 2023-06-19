@@ -9,9 +9,8 @@ using System.Threading.Tasks;
 
 namespace Api.OutgoingCommands
 {
-    public class NewState : IOutgoingCommand
+    public class NewState
     {
-        public OutgoingCommandType Type => OutgoingCommandType.State;
         public World World{ get; set; }
 
         public NewState(World world)

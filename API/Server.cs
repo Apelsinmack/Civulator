@@ -17,7 +17,6 @@ namespace Api
 
         private T ReadData<T>(NamedPipeServerStream namedPipeServerStream)
         {
-            Console.WriteLine($"Get {typeof(T).FullName}...");
             using (MemoryStream memoryStream = new MemoryStream())
             {
                 byte[] lengthBuffer = new byte[4];
@@ -40,7 +39,6 @@ namespace Api
 
         private void WriteData<T>(NamedPipeServerStream namedPipeServerStream, T dataObject)
         {
-            Console.WriteLine($"Send {typeof(T).FullName}...");
             byte[] dataBytes = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(dataObject));
             byte[] lengthBytes = BitConverter.GetBytes(dataBytes.Length);
             namedPipeServerStream.Write(lengthBytes, 0, lengthBytes.Length);
