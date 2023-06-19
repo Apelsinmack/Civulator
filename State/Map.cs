@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 namespace State
 {
+    [Serializable]
     public class Map
     {
         public int MapBase { get; set; }

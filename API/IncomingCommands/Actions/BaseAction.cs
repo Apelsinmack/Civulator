@@ -7,10 +7,10 @@ using System.Threading.Tasks;
 
 namespace Api.IncomingCommands.Actions
 {
-    public interface IAction
+    public class BaseAction
     {
-        public ActionType Type { get; }
+        public ActionType Type { get; set; }
 
-        public string Serialize();
+        public BaseAction() { }
     }
 }

@@ -8,6 +8,7 @@ using System.Text.Json;
 
 namespace Api.IncomingCommands
 {
+    [Serializable]
     public class NewGame : IIncomingCommand
     {
         public IncomingCommandType Type => IncomingCommandType.NewGame;
@@ -32,9 +33,14 @@ namespace Api.IncomingCommands
             Players = newGame.Players;
         }
 
-        public string Serialize()
+        public byte[] Serialize()
         {
-            return JsonSerializer.Serialize(this);
+            return Encoding.UTF8.GetBytes(JsonSerializer.Serialize(this));
+        }
+
+        public static NewGame Deserialize(byte[] data)
+        {
+            return JsonSerializer.Deserialize<NewGame>(data);
         }
     }
 }

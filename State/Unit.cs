@@ -7,19 +7,18 @@ using System.Threading.Tasks;
 
 namespace State
 {
+    [Serializable]
     public class Unit
     {
         public Guid Id { get; set; }
         public UnitType Type { get; set; }
         public Player Owner { get; set; }
-        public Tile Tile { get; set; }
 
-        public Unit(UnitType type, Player owner, Tile tile)
+        public Unit(UnitType type, Player owner)
         {
             Id = Guid.NewGuid();
             Type = type;
             Owner = owner;
-            Tile = tile;
         }
     }
 }

@@ -11,7 +11,5 @@ namespace Api.OutgoingCommands
     public interface IOutgoingCommand
     {
         public OutgoingCommandType Type { get; }
-
-        public string Serialize();
     }
 }

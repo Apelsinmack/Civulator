@@ -14,7 +14,6 @@ namespace TestClient
     public class Client
     {
         private readonly Api _api;
-        private Connection _connection;
 
         private UnitOrderType ConsoleReadUnitOrder()
         {
@@ -47,16 +46,15 @@ namespace TestClient
 
         public void Start()
         {
-            using (var pipeClient = new NamedPipeClientStream(".", "Civ", PipeDirection.InOut))
+            using (var namedPipeClientStream = new NamedPipeClientStream(".", "Civulator", PipeDirection.InOut))
             {
                 Console.WriteLine("Connecting to server...");
-                pipeClient.Connect();
+                namedPipeClientStream.Connect();
                 Console.WriteLine("Connected to server.");
-                _connection = new Connection(pipeClient);
-                _api.GenerateWorld(_connection);
+                _api.GenerateWorld(namedPipeClientStream);
                 while (true)
                 {
-                    _api.ExecuteCommands(_connection);
+                    _api.ExecuteCommands(namedPipeClientStream);
                 }
             }
         }

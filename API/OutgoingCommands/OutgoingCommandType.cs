@@ -8,6 +8,6 @@ namespace Api.OutgoingCommands
 {
     public enum OutgoingCommandType
     {
-        NextPlayer
+        State
     }
 }

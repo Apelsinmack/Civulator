@@ -6,18 +6,18 @@ using System.Threading.Tasks;
 
 namespace State
 {
+    [Serializable]
     public class Tile
     {
         public int Index { get; set; }
         public Terrain Terrain { get; set; }
         public List<Unit> Units { get; set; }
 
-
-        public Tile(int id, Terrain terrain)
+        public Tile(int index, Terrain terrain, List<Unit> units)
         {
-            Index = id;
+            Index = index;
             Terrain = terrain;
-            Units = new List<Unit>();
+            Units = units;
         }
     }
 }

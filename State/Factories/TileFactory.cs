@@ -12,7 +12,7 @@ namespace State.Factories
 
         public Tile GenerateTile(int index)
         {
-            return new Tile(index, terrainFactory.GenerateTerrain());
+            return new Tile(index, terrainFactory.GenerateTerrain(), new List<Unit>());
         }
     }
 }

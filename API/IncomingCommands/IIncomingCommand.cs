@@ -10,7 +10,5 @@ namespace Api.IncomingCommands
     public interface IIncomingCommand
     {
         public IncomingCommandType Type { get; }
-
-        public string Serialize();
     }
 }

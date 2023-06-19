@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 
 namespace State
 {
+    [Serializable]
     public class Terrain
     {
         public TerrainType Type { get; set; }

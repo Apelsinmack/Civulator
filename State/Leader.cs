@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 namespace State
 {
+    [Serializable]
     public class Leader
     {
         public string Name { get; set; }

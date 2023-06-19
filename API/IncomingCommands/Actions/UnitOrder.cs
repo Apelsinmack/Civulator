@@ -9,21 +9,14 @@ using System.Threading.Tasks;
 
 namespace Api.IncomingCommands.Actions
 {
-    public class UnitOrder : IAction
+    public class UnitOrder : BaseAction
     {
-        private readonly UnitOrderType _order;
-
-        public ActionType Type => ActionType.UnitOrder;
-        public UnitOrderType Order => _order;
+        public UnitOrderType Order { get; set; }
 
         public UnitOrder(UnitOrderType order)
         {
-            _order = order;
-        }
-
-        public string Serialize()
-        {
-            return JsonSerializer.Serialize(this);
+            Type = ActionType.UnitOrder;
+            Order = order;
         }
     }
 }

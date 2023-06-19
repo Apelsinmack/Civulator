@@ -2,6 +2,7 @@
 
 namespace State
 {
+    [Serializable]
     public class World
     {
         public Map Map { get; set; }

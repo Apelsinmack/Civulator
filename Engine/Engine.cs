@@ -21,7 +21,6 @@ namespace Game
     public class Engine
     {
         private readonly Server _server;
-        private Connection _connection;
         private World? _world;
         private Player? _victory = null;
 
@@ -61,15 +60,15 @@ namespace Game
             return newIndex;
         }
 
-        private void GenerateWorld()
+        private void GenerateWorld(NamedPipeServerStream namedPipeServerStream)
         {
-            NewGame newGame = _server.GetNewGame(_connection);
+            NewGame newGame = _server.GetNewGame(namedPipeServerStream);
             WorldFactory worldFactory = new WorldFactory();
             _world = worldFactory.GenerateWorld(newGame.MapBase, newGame.MapHeight, newGame.Players);
             ConsoleGui.PrintWorld(_world);
         }
 
-        private void Play()
+        private void Play(NamedPipeServerStream namedPipeServerStream)
         {
             if (_world == null)
             {
@@ -77,29 +76,27 @@ namespace Game
             }
             while (_victory == null)
             {
-                _world.Players[0].Turn++;
-                Console.WriteLine();
-                Console.WriteLine("------------------------------");
-                Console.WriteLine("Turn: " + _world.Players[0].Turn);
-                Console.WriteLine("------------------------------");
                 foreach (var player in _world.Players)
                 {
-                    Console.WriteLine("Player: " + player.Name);
+                    player.NextTurn();
+                    Console.ForegroundColor = player.Leader.Color;
+                    Console.WriteLine($"{player.Name} turn {_world.Players[0].Turn}");
                     Execute execute;
                     do
                     {
-                        execute = _server.GetActions(_connection, _world);
-                        foreach(var action in execute.Actions)
+                        execute = _server.GetActions(namedPipeServerStream, _world);
+                        foreach (var action in execute.Actions)
                         {
-                            Console.WriteLine("Move unit");
+                            Console.WriteLine($"Execute action {action.Type.ToString()}");
                             //TODO: Update state!
                         }
                     }
                     while (!execute.EndTurn);
-                    Console.WriteLine("------------------------------");
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.WriteLine();
                 }
             }
-            Console.WriteLine("Congratulations to the victory " + _victory.Name + "!");
+            Console.WriteLine($"Congratulations to the victory {_victory.Name}!");
         }
 
         public Engine()
@@ -109,14 +106,13 @@ namespace Game
 
         public void Start()
         {
-            using (var pipeServer = new NamedPipeServerStream("Civ", PipeDirection.InOut))
+            using (var namedPipeServerStream = new NamedPipeServerStream("Civulator", PipeDirection.InOut, 1, PipeTransmissionMode.Byte))
             {
                 Console.WriteLine("Waiting for client to connect...");
-                pipeServer.WaitForConnection();
+                namedPipeServerStream.WaitForConnection();
                 Console.WriteLine("Client connected.");
-                _connection = new Connection(pipeServer);
-                GenerateWorld();
-                Play();
+                GenerateWorld(namedPipeServerStream);
+                Play(namedPipeServerStream);
             }
         }
     }

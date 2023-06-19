@@ -12,31 +12,13 @@ namespace Api.IncomingCommands
     public class Execute : IIncomingCommand
     {
         public IncomingCommandType Type => IncomingCommandType.Actions;
-        //public List<IAction> Actions { get; set; }
-        public List<string> Actions { get; set; }
+        public List<BaseAction> Actions { get; set; }
         public bool EndTurn { get; set; }
 
-        public Execute()
-        {
-        }
-
-        //public Execute(List<IAction> actions, bool endTurn = false)
-        public Execute(List<string> actions, bool endTurn = false)
+        public Execute(List<BaseAction> actions, bool endTurn = false)
         {
             Actions = actions;
             EndTurn = endTurn;
-        }
-
-        public Execute(string serializedObject)
-        {
-            Execute execute = JsonSerializer.Deserialize<Execute>(serializedObject);
-            Actions = execute.Actions;
-            EndTurn = execute.EndTurn;
-        }
-
-        public string Serialize()
-        {
-            return JsonSerializer.Serialize(this);
         }
     }
 }
