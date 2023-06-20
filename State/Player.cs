@@ -15,7 +15,7 @@ namespace State
         public bool Human { get; set; }
         public Leader Leader { get; set; }
         public int Turn { get; set; }
-        public HashSet<int> DiscoveredTileIndexes { get; set; }
+        public HashSet<int> ExploredTileIndexes { get; set; }
         public HashSet<int> VisibleTileIndexes { get; set; }
 
         public Player(string name, bool human, Leader leader)
@@ -24,7 +24,7 @@ namespace State
             Name = name;
             Human = human;
             Leader = leader;
-            DiscoveredTileIndexes = new HashSet<int>();
+            ExploredTileIndexes = new HashSet<int>();
             VisibleTileIndexes = new HashSet<int>();
         }
 

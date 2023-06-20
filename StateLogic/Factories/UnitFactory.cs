@@ -10,11 +10,11 @@ namespace StateLogic.Factories
 {
     public class UnitFactory
     {
-        public Unit GenerateUnit(UnitType unitType, Player player, Tile tile, int mapBase)
+        public Unit GenerateUnit(Map map, UnitClassType unitClass, Player owner, Tile tile)
         {
-            Unit unit = new Unit(unitType, player, tile.Index);
+            Unit unit = new Unit(unitClass, owner, tile.Index);
             tile.Units.Add(unit);
-            player.DiscoveredTileIndexes.UnionWith(MapLogic.GetAdjacentTileIndexes(mapBase, tile.Index));
+            MapLogic.ExploreFromTile(owner, map, tile.Index, 1);
 
             return unit;
         }

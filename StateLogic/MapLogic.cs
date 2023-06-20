@@ -37,5 +37,10 @@ namespace StateLogic
         {
             return map.Tiles.Where(tile => GetAdjacentTileIndexes(map.MapBase, index).Contains(tile.Key)).Select(tile => tile.Value).ToList();
         }
+
+        public static void ExploreFromTile(Player player, Map map, int index, int visibilityRange = 1) {
+            //TODO: Take in to account e.g. visibility range, terrain type of the index, terrain type of the surrounding area etc.
+            player.ExploredTileIndexes.UnionWith(GetAdjacentTileIndexes(map.MapBase, index));
+        }
     }
 }

@@ -92,14 +92,14 @@ namespace Game
                         actions = _server.GetActions(namedPipeServerStream, _world);
                         foreach (var unitOrder in actions.UnitOrders)
                         {
-                            log.Add($"{unitOrder.Unit.Type.ToString()} {unitOrder.Order.ToString()}");
+                            log.Add($"{unitOrder.Unit.Class.ToString()} {unitOrder.Order.ToString()}");
                             int newTileIndex = GetNewIndex(_world.Map.Tiles[unitOrder.Unit.TileIndex].Index, unitOrder.Order);
                             if (newTileIndex > -1)
                             {
                                 _world.Map.Tiles[unitOrder.Unit.TileIndex].Units.RemoveAll(unit => unit.Id == unitOrder.Unit.Id);
                                 unitOrder.Unit.TileIndex = newTileIndex;
                                 _world.Map.Tiles[newTileIndex].Units.Add(unitOrder.Unit);
-                                player.DiscoveredTileIndexes.UnionWith(MapLogic.GetAdjacentTileIndexes(_world.Map.MapBase, newTileIndex));
+                                player.ExploredTileIndexes.UnionWith(MapLogic.GetAdjacentTileIndexes(_world.Map.MapBase, newTileIndex));
                             }
                         }
                         _gui.PrintWorld(_world, log);

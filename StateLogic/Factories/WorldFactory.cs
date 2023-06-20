@@ -13,6 +13,7 @@ namespace StateLogic.Factories
         public World GenerateWorld(int mapBase, int mapHeight, List<Player> players)
         {
             var mapFactory = new MapFactory();
+            var cityFactory = new CityFactory();
             var unitFactory = new UnitFactory();
             var random = new Random();
 
@@ -30,8 +31,9 @@ namespace StateLogic.Factories
                             illegalIndexes.Add(illegalIndex);
                         }
                         illegalIndexes.Add(randomIndex);
-                        unitFactory.GenerateUnit(UnitType.Warrior, player, map.Tiles[randomIndex], mapBase);
-                        unitFactory.GenerateUnit(UnitType.Scout, player, map.Tiles[randomIndex + 1], mapBase); //TODO: Check if other side of the edge?
+                        cityFactory.GenerateCity(map, player, map.Tiles[randomIndex]);
+                        unitFactory.GenerateUnit(map, UnitClassType.Warrior, player, map.Tiles[randomIndex]);
+                        unitFactory.GenerateUnit(map, UnitClassType.Scout, player, map.Tiles[randomIndex + 1]);
                         break;
                     }
                 }

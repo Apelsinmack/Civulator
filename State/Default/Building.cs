@@ -4,11 +4,9 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace State.Enums
+namespace State.Default
 {
-    public enum UnitType
+    public static class Building
     {
-        Scout,
-        Warrior,
     }
 }

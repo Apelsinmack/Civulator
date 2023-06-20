@@ -46,6 +46,8 @@ namespace Api
             namedPipeServerStream.Flush();
         }
 
+        private Server() { }
+
         public static Server GetInstance()
         {
             return _instance;

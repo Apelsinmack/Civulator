@@ -51,7 +51,6 @@ namespace TestClient
             {
                 Console.WriteLine("Connecting to server...");
                 namedPipeClientStream.Connect();
-                Console.WriteLine("Connected to server.");
                 _api.GenerateWorld(namedPipeClientStream);
                 while (namedPipeClientStream.IsConnected)
                 {
@@ -61,7 +60,7 @@ namespace TestClient
                     List<UnitOrder> unitOrders = new();
                     units.ForEach(unit =>
                     {
-                        Console.WriteLine($"Move {unit.Type.ToString()}");
+                        Console.WriteLine($"Move {unit.Class.ToString()}");
                         unitOrders.Add(new UnitOrder(ConsoleReadUnitOrder(), unit));
                     });
                     Console.WriteLine("End turn?");

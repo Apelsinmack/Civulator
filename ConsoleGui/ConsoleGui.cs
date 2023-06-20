@@ -76,12 +76,12 @@ namespace Game
             Console.WriteLine();
         }
 
-        private void PrintTile(Tile tile, bool printContent)
+        private void PrintTile(Tile tile, bool printUnits)
         {
-            if (_currentPlayer.DiscoveredTileIndexes.Contains(tile.Index))
+            if (_currentPlayer.ExploredTileIndexes.Contains(tile.Index))
             {
-                string content = GetTileContent(tile, printContent);
                 SetTerrainConsoleColor(tile.Terrain.Type);
+                string content = GetTileContent(tile, printUnits);
                 Console.Write(_emptyTile, content);
             }
             else
@@ -90,25 +90,25 @@ namespace Game
             }
         }
 
-        private string GetTileContent(Tile tile, bool printContent)
+        private string GetTileContent(Tile tile, bool printUnits)
         {
             Unit unit = tile.Units.FirstOrDefault();
-            if (!printContent || unit == null)
+            if (printUnits && unit != null)
             {
-                Console.ForegroundColor = ConsoleColor.White;
-                //return tile.Index.ToString();
-                return String.Empty;
+                Console.ForegroundColor = unit.Owner.Leader.Color;
+                return unit.Class.ToString().Substring(0, 2);
             }
-            Console.ForegroundColor = unit.Owner.Leader.Color;
-            switch (unit.Type)
+
+            if (!printUnits && tile.City != null)
             {
-                case UnitType.Scout:
-                    return "Sc";
-                case UnitType.Warrior:
-                    return "Wa";
-                default:
-                    return string.Empty;
+                Console.BackgroundColor = tile.City.Owner.Leader.Color;
+                Console.ForegroundColor = ConsoleColor.Black;
+                return $" {tile.City.Size.ToString()}";
             }
+
+            Console.ForegroundColor = ConsoleColor.White;
+            //return tile.Index.ToString();
+            return String.Empty;
         }
 
         private void PrintVoid()
