@@ -55,6 +55,12 @@ namespace TestClient
                 while (namedPipeClientStream.IsConnected)
                 {
                     NewState newState = _api.GetState(namedPipeClientStream);
+                    if(newState.World.Victory.Player != null)
+                    {
+                        Console.WriteLine($"Congratulations to the victory {newState.World.Victory.Player.Name}!");
+                        Console.ReadLine();
+                        return;
+                    }
                     Player currentPlayer = PlayerLogic.GetCurrentPlayer(newState.World);
                     IEnumerable<Unit> units = newState.World.Map.Tiles.SelectMany(tile => tile.Value.Units).Where(unit => unit.Owner.Id == currentPlayer.Id);
                     List<UnitOrder> unitOrders = new();

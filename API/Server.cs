@@ -71,5 +71,10 @@ namespace Api
             }
             return null;
         }
+
+        public void SendState(NamedPipeServerStream namedPipeServerStream, World world)
+        {
+            WriteData(namedPipeServerStream, new NewState(world));
+        }
     }
 }

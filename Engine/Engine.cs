@@ -22,9 +22,9 @@ namespace Game
 {
     public class Engine
     {
+        private NamedPipeServerStream _namedPipeServerStream;
         private readonly Server _server;
         private World? _world;
-        private Player? _victory = null;
         private IGui _gui;
 
         private int GetNewIndex(int currentIndex, UnitOrderType order)
@@ -63,21 +63,21 @@ namespace Game
             return newIndex;
         }
 
-        private void GenerateWorld(NamedPipeServerStream namedPipeServerStream)
+        private void GenerateWorld()
         {
-            NewGame newGame = _server.GetNewGame(namedPipeServerStream);
+            NewGame newGame = _server.GetNewGame(_namedPipeServerStream);
             WorldFactory worldFactory = new WorldFactory();
             _world = worldFactory.GenerateWorld(newGame.MapBase, newGame.MapHeight, newGame.Players);
             _gui.PrintWorld(_world, new List<string>());
         }
 
-        private void Play(NamedPipeServerStream namedPipeServerStream)
+        private void Play()
         {
             if (_world == null)
             {
                 throw new Exception("World have to be generated before playing the game.");
             }
-            while (_victory == null)
+            while (_world.Victory.Player == null)
             {
                 foreach (var player in _world.Players)
                 {
@@ -85,13 +85,13 @@ namespace Game
                     {
                         $"{player.Name} turn {player.Turn}"
                     };
-                    UnitLogic.ResetUnitMovements(_world, player);
+                    PlayerLogic.InitPlayerTurn(_world, player);
                     _gui.PrintWorld(_world, log);
                     Actions actions;
                     do
                     {
-                        actions = _server.GetActions(namedPipeServerStream, _world);
-                        UnitOrders(player, actions.UnitOrders, log);
+                        actions = _server.GetActions(_namedPipeServerStream, _world);
+                        if (UnitOrders(player, actions.UnitOrders, log)) { return; };
                         _gui.PrintWorld(_world, log);
                     }
                     while (!actions.EndTurn); //TODO: Or if no actions left
@@ -99,24 +99,45 @@ namespace Game
                     player.NextTurn();
                 }
             }
-            Console.WriteLine($"Congratulations to the victory {_victory.Name}!");
         }
 
-        private void UnitOrders(Player player, List<UnitOrder> unitOrders, List<string> log)
+        private bool UnitOrders(Player player, List<UnitOrder> unitOrders, List<string> log)
         {
             foreach (var unitOrder in unitOrders)
             {
                 log.Add($"{unitOrder.Unit.Class.ToString()} {unitOrder.Order.ToString()}");
-                int newTileIndex = GetNewIndex(_world.Map.Tiles[unitOrder.Unit.TileIndex].Index, unitOrder.Order);
+                if (unitOrder.Order == UnitOrderType.Fortify)
+                {
+                    unitOrder.Unit.MovementLeft = 0;
+                    unitOrder.Unit.Fortifying = true;
+                }
+                int newTileIndex = GetNewIndex(unitOrder.Unit.TileIndex, unitOrder.Order);
                 if (newTileIndex > -1)
                 {
-                    _world.Map.Tiles[unitOrder.Unit.TileIndex].Units.RemoveAll(unit => unit.Id == unitOrder.Unit.Id);
-                    unitOrder.Unit.TileIndex = newTileIndex;
                     unitOrder.Unit.MovementLeft--;
-                    _world.Map.Tiles[newTileIndex].Units.Add(unitOrder.Unit);
+                    UnitLogic.RemoveUnit(_world, unitOrder.Unit.TileIndex, unitOrder.Unit.Id);
+                    unitOrder.Unit.TileIndex = newTileIndex;
+                    Tile newTile = _world.Map.Tiles[newTileIndex];
+                    newTile.Units.Add(unitOrder.Unit);
                     MapLogic.ExploreFromTile(_world, player, newTileIndex, Data.UnitClass.ByType[unitOrder.Unit.Class].SightRange);
+                    if (newTile.City != null && newTile.City.Owner != player)
+                    {
+                        if (CityLogic.GetCities(_world, newTile.City.Owner).Count() == 1)
+                        {
+                            newTile.City.Owner.Dead = true;
+                            if (_world.Players.Where(player => !player.Dead).Count() == 1)
+                            {
+                                _world.Victory.Player = player;
+                                newTile.City.Owner = player;
+                                _server.SendState(_namedPipeServerStream, _world);
+                                return true;
+                            }
+                        }
+                        newTile.City.Owner = player;
+                    }
                 }
             }
+            return false;
         }
 
         public Engine()
@@ -128,13 +149,15 @@ namespace Game
 
         public void Start()
         {
-            using (var namedPipeServerStream = new NamedPipeServerStream("Civulator", PipeDirection.InOut, 1, PipeTransmissionMode.Byte))
+            using (_namedPipeServerStream = new NamedPipeServerStream("Civulator", PipeDirection.InOut, 1, PipeTransmissionMode.Byte))
             {
                 Console.WriteLine("Waiting for client to connect...");
-                namedPipeServerStream.WaitForConnection();
+                _namedPipeServerStream.WaitForConnection();
                 Console.WriteLine("Client connected.");
-                GenerateWorld(namedPipeServerStream);
-                Play(namedPipeServerStream);
+                GenerateWorld();
+                Play();
+                _gui.PrintWorld(_world, new List<string>() { $"Congratulations to the victory {_world.Victory.Player.Name}!" });
+                Console.ReadLine();
             }
         }
     }

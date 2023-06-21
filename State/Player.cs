@@ -13,6 +13,7 @@ namespace State
         public Guid Id { get; set; }
         public string Name { get; set; }
         public bool Human { get; set; }
+        public bool Dead { get; set; }
         public Leader Leader { get; set; }
         public int Turn { get; set; }
         public HashSet<int> ExploredTileIndexes { get; set; }

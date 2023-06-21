@@ -15,5 +15,10 @@ namespace StateLogic
             int currentTurn = world.Players.Min(Player => Player.Turn);
             return world.Players.Find(player => player.Turn == currentTurn);
         }
+
+        public static void InitPlayerTurn(World world, Player player) {
+            UnitLogic.ResetUnitMovements(world, player);
+            UnitLogic.FortifyUnits(world, player);
+        }
     }
 }

@@ -22,5 +22,19 @@ namespace StateLogic
                 unit.MovementLeft = Data.UnitClass.ByType[unit.Class].Movement;
             }
         }
+
+        public static void RemoveUnit(World world, int tileIndex, Guid unitId)
+        {
+            world.Map.Tiles[tileIndex].Units.RemoveAll(unit => unit.Id == unitId);
+        }
+
+        public static void FortifyUnits(World world, Player player)
+        {
+            foreach (var unit in GetPlayerUnits(world, player).Where(unit => unit.Fortifying))
+            {
+                unit.Fortifying = false;
+                unit.Fortyfied = true;
+            }
+        }
     }
 }

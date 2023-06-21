@@ -33,9 +33,9 @@ namespace StateLogic
             return indexes;
         }
 
-        public static List<Tile> GetAdjacentTiles(Map map, int index)
+        public static IEnumerable<Tile> GetAdjacentTiles(Map map, int index)
         {
-            return map.Tiles.Where(tile => GetAdjacentTileIndexes(map.MapBase, index).Contains(tile.Key)).Select(tile => tile.Value).ToList();
+            return map.Tiles.Where(tile => GetAdjacentTileIndexes(map.MapBase, index).Contains(tile.Key)).Select(tile => tile.Value);
         }
 
         public static void ExploreFromTile(World world, Player player, int index, int sightRange = 1) {
