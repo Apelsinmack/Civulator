@@ -85,23 +85,13 @@ namespace Game
                     {
                         $"{player.Name} turn {player.Turn}"
                     };
+                    UnitLogic.ResetUnitMovements(_world, player);
                     _gui.PrintWorld(_world, log);
                     Actions actions;
                     do
                     {
                         actions = _server.GetActions(namedPipeServerStream, _world);
-                        foreach (var unitOrder in actions.UnitOrders)
-                        {
-                            log.Add($"{unitOrder.Unit.Class.ToString()} {unitOrder.Order.ToString()}");
-                            int newTileIndex = GetNewIndex(_world.Map.Tiles[unitOrder.Unit.TileIndex].Index, unitOrder.Order);
-                            if (newTileIndex > -1)
-                            {
-                                _world.Map.Tiles[unitOrder.Unit.TileIndex].Units.RemoveAll(unit => unit.Id == unitOrder.Unit.Id);
-                                unitOrder.Unit.TileIndex = newTileIndex;
-                                _world.Map.Tiles[newTileIndex].Units.Add(unitOrder.Unit);
-                                player.ExploredTileIndexes.UnionWith(MapLogic.GetAdjacentTileIndexes(_world.Map.MapBase, newTileIndex));
-                            }
-                        }
+                        UnitOrders(player, actions.UnitOrders, log);
                         _gui.PrintWorld(_world, log);
                     }
                     while (!actions.EndTurn); //TODO: Or if no actions left
@@ -112,10 +102,28 @@ namespace Game
             Console.WriteLine($"Congratulations to the victory {_victory.Name}!");
         }
 
+        private void UnitOrders(Player player, List<UnitOrder> unitOrders, List<string> log)
+        {
+            foreach (var unitOrder in unitOrders)
+            {
+                log.Add($"{unitOrder.Unit.Class.ToString()} {unitOrder.Order.ToString()}");
+                int newTileIndex = GetNewIndex(_world.Map.Tiles[unitOrder.Unit.TileIndex].Index, unitOrder.Order);
+                if (newTileIndex > -1)
+                {
+                    _world.Map.Tiles[unitOrder.Unit.TileIndex].Units.RemoveAll(unit => unit.Id == unitOrder.Unit.Id);
+                    unitOrder.Unit.TileIndex = newTileIndex;
+                    unitOrder.Unit.MovementLeft--;
+                    _world.Map.Tiles[newTileIndex].Units.Add(unitOrder.Unit);
+                    MapLogic.ExploreFromTile(_world, player, newTileIndex, Data.UnitClass.ByType[unitOrder.Unit.Class].SightRange);
+                }
+            }
+        }
+
         public Engine()
         {
             _server = Server.GetInstance();
             _gui = new ConsoleGui();
+            Data.Init.All();
         }
 
         public void Start()

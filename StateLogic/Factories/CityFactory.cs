@@ -10,11 +10,11 @@ namespace StateLogic.Factories
 {
     public class CityFactory
     {
-        public City GenerateCity(Map map, Player owner, Tile tile)
+        public City GenerateCity(World world, Player owner, Tile tile)
         {
             City city = new City(owner, tile.Index);
             tile.City = city;
-            MapLogic.ExploreFromTile(owner, map, tile.Index, 2);
+            MapLogic.ExploreFromTile(world, owner, tile.Index, 2);
 
             return city;
         }

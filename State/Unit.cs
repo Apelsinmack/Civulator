@@ -1,5 +1,4 @@
 ﻿using State.Enums;
-using State.Default;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,16 +14,16 @@ namespace State
         public UnitClassType Class { get; set; }
         public Player Owner { get; set; }
         public int TileIndex { get; set; }
-        public int Movement => UnitClass.Movment(Class);
-        public int MeleeStrength => UnitClass.MeleeStrength(Class);
-        public int SightRange => UnitClass.SightRange(Class);
+        public int MovementLeft { get; set; }
 
-        public Unit(UnitClassType @class, Player owner, int tileIndex)
+        public Unit(UnitClassType @class, Player owner, int tileIndex, int movementLeft)
         {
             Id = Guid.NewGuid();
             Class = @class;
             Owner = owner;
             TileIndex = tileIndex;
+            MovementLeft = movementLeft;
+
         }
     }
 }

@@ -18,6 +18,8 @@ namespace StateLogic.Factories
             var random = new Random();
 
             Map map = mapFactory.GenerateMap(mapBase, mapHeight);
+            World world = new World(map, players);
+
             HashSet<int> illegalIndexes = new();
             players.ForEach(player =>
             {
@@ -31,16 +33,16 @@ namespace StateLogic.Factories
                             illegalIndexes.Add(illegalIndex);
                         }
                         illegalIndexes.Add(randomIndex);
-                        cityFactory.GenerateCity(map, player, map.Tiles[randomIndex]);
-                        unitFactory.GenerateUnit(map, UnitClassType.Warrior, player, map.Tiles[randomIndex]);
-                        unitFactory.GenerateUnit(map, UnitClassType.Scout, player, map.Tiles[randomIndex + 1]);
+                        cityFactory.GenerateCity(world, player, map.Tiles[randomIndex]);
+                        unitFactory.GenerateUnit(world, UnitClassType.Warrior, player, map.Tiles[randomIndex]);
+                        unitFactory.GenerateUnit(world, UnitClassType.Scout, player, map.Tiles[randomIndex + 1]);
                         break;
                     }
                 }
                 while (true);
             });
 
-            return new World(map, players);
+            return world;
         }
     }
 }

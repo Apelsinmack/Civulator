@@ -56,15 +56,19 @@ namespace TestClient
                 {
                     NewState newState = _api.GetState(namedPipeClientStream);
                     Player currentPlayer = PlayerLogic.GetCurrentPlayer(newState.World);
-                    List<Unit> units = newState.World.Map.Tiles.SelectMany(tile => tile.Value.Units).Where(unit => unit.Owner.Id == currentPlayer.Id).ToList();
+                    IEnumerable<Unit> units = newState.World.Map.Tiles.SelectMany(tile => tile.Value.Units).Where(unit => unit.Owner.Id == currentPlayer.Id);
                     List<UnitOrder> unitOrders = new();
-                    units.ForEach(unit =>
+                    foreach (var unit in units)
                     {
-                        Console.WriteLine($"Move {unit.Class.ToString()}");
-                        unitOrders.Add(new UnitOrder(ConsoleReadUnitOrder(), unit));
-                    });
-                    Console.WriteLine("End turn?");
-                    bool endTurn = Console.ReadLine() == "y";
+                        if (unit.MovementLeft > 0)
+                        {
+                            Console.WriteLine($"Move {unit.Class.ToString()}");
+                            unitOrders.Add(new UnitOrder(ConsoleReadUnitOrder(), unit));
+                        }
+                    }
+                    bool endTurn = unitOrders.Count == 0;
+                    //Console.WriteLine("End turn?");
+                    //bool endTurn = Console.ReadLine() == "y";
                     _api.ExecuteCommands(namedPipeClientStream, new Actions(unitOrders, endTurn));
                 }
             }
