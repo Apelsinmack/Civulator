@@ -28,12 +28,20 @@ namespace StateLogic
             world.Map.Tiles[tileIndex].Units.RemoveAll(unit => unit.Id == unitId);
         }
 
+        public static void MoveUnit(World world, Unit unit, int tileIndex)
+        {
+            unit.MovementLeft--;
+            UnitLogic.RemoveUnit(world, unit.TileIndex, unit.Id);
+            unit.TileIndex = tileIndex;;
+            world.Map.Tiles[tileIndex].Units.Add(unit);
+        }
+
         public static void FortifyUnits(World world, Player player)
         {
             foreach (var unit in GetPlayerUnits(world, player).Where(unit => unit.Fortifying))
             {
                 unit.Fortifying = false;
-                unit.Fortyfied = true;
+                unit.Fortified = true;
             }
         }
     }

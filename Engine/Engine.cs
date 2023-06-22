@@ -105,26 +105,26 @@ namespace Game
         {
             foreach (var unitOrder in unitOrders)
             {
-                log.Add($"{unitOrder.Unit.Class.ToString()} {unitOrder.Order.ToString()}");
+                log.Add($"{unitOrder.Unit.Class} {unitOrder.Order}");
                 if (unitOrder.Order == UnitOrderType.Fortify)
                 {
-                    unitOrder.Unit.MovementLeft = 0;
+                    unitOrder.Unit.MovementLeft--;
                     unitOrder.Unit.Fortifying = true;
+                    continue;
                 }
                 int newTileIndex = GetNewIndex(unitOrder.Unit.TileIndex, unitOrder.Order);
                 if (newTileIndex > -1)
                 {
-                    unitOrder.Unit.MovementLeft--;
-                    UnitLogic.RemoveUnit(_world, unitOrder.Unit.TileIndex, unitOrder.Unit.Id);
-                    unitOrder.Unit.TileIndex = newTileIndex;
+                    UnitLogic.MoveUnit(_world, unitOrder.Unit, newTileIndex);
                     Tile newTile = _world.Map.Tiles[newTileIndex];
-                    newTile.Units.Add(unitOrder.Unit);
                     MapLogic.ExploreFromTile(_world, player, newTileIndex, Data.UnitClass.ByType[unitOrder.Unit.Class].SightRange);
                     if (newTile.City != null && newTile.City.Owner != player)
                     {
+                        log.Add($"{newTile.City.Owner.Name} lost {newTile.City.Name} to {player.Name}");
                         if (CityLogic.GetCities(_world, newTile.City.Owner).Count() == 1)
                         {
-                            newTile.City.Owner.Dead = true;
+                            PlayerLogic.KillPlayer(_world, newTile.City.Owner);
+                            log.Add($"{newTile.City.Owner.Name} is no more");
                             if (_world.Players.Where(player => !player.Dead).Count() == 1)
                             {
                                 _world.Victory.Player = player;

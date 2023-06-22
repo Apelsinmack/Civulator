@@ -35,7 +35,7 @@ namespace StateLogic.Factories
                         illegalIndexes.Add(randomIndex);
                         cityFactory.GenerateCity(world, player, map.Tiles[randomIndex]);
                         unitFactory.GenerateUnit(world, UnitClassType.Warrior, player, map.Tiles[randomIndex]);
-                        unitFactory.GenerateUnit(world, UnitClassType.Scout, player, map.Tiles[randomIndex + 1]);
+                        unitFactory.GenerateUnit(world, UnitClassType.Scout, player, map.Tiles[randomIndex + 1]); //TODO: Check if not outside the map
                         break;
                     }
                 }

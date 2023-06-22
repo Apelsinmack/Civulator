@@ -103,7 +103,7 @@ namespace Game
             {
                 Console.BackgroundColor = tile.City.Owner.Leader.Color;
                 Console.ForegroundColor = ConsoleColor.Black;
-                return $" {tile.City.Size.ToString()}";
+                return $" {tile.City.Size}";
             }
 
             Console.ForegroundColor = ConsoleColor.White;

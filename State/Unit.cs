@@ -16,7 +16,7 @@ namespace State
         public int TileIndex { get; set; }
         public int MovementLeft { get; set; }
         public bool Fortifying { get; set; }
-        public bool Fortyfied { get; set; }
+        public bool Fortified { get; set; }
 
         public Unit(UnitClassType @class, Player owner, int tileIndex, int movementLeft)
         {

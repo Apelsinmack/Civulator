@@ -20,5 +20,13 @@ namespace StateLogic
             UnitLogic.ResetUnitMovements(world, player);
             UnitLogic.FortifyUnits(world, player);
         }
+
+        public static void KillPlayer(World world, Player player) {
+            player.Dead = true;
+            foreach(var tile in world.Map.Tiles.Where(tile => tile.Value.Units.Any(unit => unit.Owner.Id == player.Id)))
+            {
+                tile.Value.Units.RemoveAll(unit => unit.Owner.Id == player.Id);
+            }
+        }
     }
 }

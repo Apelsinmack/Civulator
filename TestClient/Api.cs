@@ -57,9 +57,10 @@ namespace TestClient
                 List<Player> players = new()
                 {
                     new Player("Megadick", true, new Leader(ConsoleColor.Red)),
-                    new Player("Ken Q", true, new Leader(ConsoleColor.Blue))
+                    new Player("Ken Q", true, new Leader(ConsoleColor.Blue)),
+                    new Player("AnotherNerd", true, new Leader(ConsoleColor.Cyan))
                 };
-
+                //WriteData(namedPipeClientStream, new NewGame(5, 5, players));
                 WriteData(namedPipeClientStream, new NewGame(40, 20, players));
                 break;
             }

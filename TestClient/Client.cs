@@ -68,7 +68,7 @@ namespace TestClient
                     {
                         if (unit.MovementLeft > 0)
                         {
-                            Console.WriteLine($"Move {unit.Class.ToString()}");
+                            Console.WriteLine($"Move {unit.Class}");
                             unitOrders.Add(new UnitOrder(ConsoleReadUnitOrder(), unit));
                         }
                     }

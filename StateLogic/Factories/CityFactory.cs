@@ -12,11 +12,28 @@ namespace StateLogic.Factories
     {
         public City GenerateCity(World world, Player owner, Tile tile)
         {
-            City city = new City(owner, tile.Index);
+            City city = new City(this.getRandomCityName(), owner, tile.Index);
             tile.City = city;
             MapLogic.ExploreFromTile(world, owner, tile.Index, 2);
 
             return city;
         }
+
+        private string getRandomCityName()
+        {
+            //TODO: Take care of too big index...
+            var random = new Random();
+            int randomIndex = random.Next(cities.Count);
+            string city = cities[randomIndex];
+            cities.RemoveAt(randomIndex);
+            return city;
+        }
+
+        private static List<string> cities = new List<string>
+            {
+                "Malmö",
+                "Lund",
+                "Göteborg"
+            };
     }
 }
