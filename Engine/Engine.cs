@@ -25,7 +25,7 @@ namespace Game
         private NamedPipeServerStream _namedPipeServerStream;
         private readonly Server _server;
         private World? _world;
-        private IGui _gui;
+        private ConsoleGui _gui;
 
         private int GetNewIndex(int currentIndex, UnitOrderType order)
         {
@@ -96,7 +96,7 @@ namespace Game
                     }
                     while (!actions.EndTurn); //TODO: Or if no actions left
                     //TODO: Send state.
-                    player.NextTurn();
+                    player.Turn++;
                 }
             }
         }
@@ -108,14 +108,14 @@ namespace Game
                 log.Add($"{unitOrder.Unit.Class} {unitOrder.Order}");
                 if (unitOrder.Order == UnitOrderType.Fortify)
                 {
-                    unitOrder.Unit.MovementLeft--;
-                    unitOrder.Unit.Fortifying = true;
+                    _world.Units[unitOrder.Unit.Index].MovementLeft = 0;
+                    _world.Units[unitOrder.Unit.Index].Fortifying = true;
                     continue;
                 }
                 int newTileIndex = GetNewIndex(unitOrder.Unit.TileIndex, unitOrder.Order);
                 if (newTileIndex > -1)
                 {
-                    UnitLogic.MoveUnit(_world, unitOrder.Unit, newTileIndex);
+                    UnitLogic.MoveUnit(_world, unitOrder.Unit.Index, newTileIndex);
                     Tile newTile = _world.Map.Tiles[newTileIndex];
                     MapLogic.ExploreFromTile(_world, player, newTileIndex, Data.UnitClass.ByType[unitOrder.Unit.Class].SightRange);
                     if (newTile.City != null && newTile.City.Owner != player)

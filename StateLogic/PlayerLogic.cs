@@ -16,16 +16,18 @@ namespace StateLogic
             return world.Players.Find(player => player.Turn == currentTurn);
         }
 
-        public static void InitPlayerTurn(World world, Player player) {
+        public static void InitPlayerTurn(World world, Player player)
+        {
             UnitLogic.ResetUnitMovements(world, player);
             UnitLogic.FortifyUnits(world, player);
         }
 
-        public static void KillPlayer(World world, Player player) {
+        public static void KillPlayer(World world, Player player)
+        {
             player.Dead = true;
-            foreach(var tile in world.Map.Tiles.Where(tile => tile.Value.Units.Any(unit => unit.Owner.Id == player.Id)))
+            foreach (int index in player.UnitIndexes.ToList())
             {
-                tile.Value.Units.RemoveAll(unit => unit.Owner.Id == player.Id);
+                UnitLogic.RemoveUnit(world, index);
             }
         }
     }

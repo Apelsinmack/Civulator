@@ -12,8 +12,15 @@ namespace StateLogic.Factories
     {
         public Unit GenerateUnit(World world, UnitClassType unitClass, Player owner, Tile tile)
         {
-            Unit unit = new Unit(unitClass, owner, tile.Index, Data.UnitClass.ByType[unitClass].Movement);
-            tile.Units.Add(unit);
+            int index = 0;
+            if (world.Units.Count > 0)
+            {
+                index = world.Units.Max(unit => unit.Key) + 1;
+            }
+            Unit unit = new Unit(index, unitClass, owner, tile.Index, Data.UnitClass.ByType[unitClass].Movement);
+            world.Units.Add(index, unit);
+            tile.UnitIndexes.Add(index);
+            owner.UnitIndexes.Add(index);
             MapLogic.ExploreFromTile(world, owner, tile.Index, 1);
 
             return unit;

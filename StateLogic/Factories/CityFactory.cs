@@ -33,7 +33,9 @@ namespace StateLogic.Factories
             {
                 "Malmö",
                 "Lund",
-                "Göteborg"
+                "Göteborg",
+                "Eslöv",
+                "Stockholm"
             };
     }
 }

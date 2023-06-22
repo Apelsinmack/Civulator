@@ -10,7 +10,6 @@ namespace State
     [Serializable]
     public class Player
     {
-        public Guid Id { get; set; }
         public string Name { get; set; }
         public bool Human { get; set; }
         public bool Dead { get; set; }
@@ -18,20 +17,16 @@ namespace State
         public int Turn { get; set; }
         public HashSet<int> ExploredTileIndexes { get; set; }
         public HashSet<int> VisibleTileIndexes { get; set; }
+        public HashSet<int> UnitIndexes { get; set; }
 
         public Player(string name, bool human, Leader leader)
         {
-            Id = Guid.NewGuid();
             Name = name;
             Human = human;
             Leader = leader;
             ExploredTileIndexes = new HashSet<int>();
             VisibleTileIndexes = new HashSet<int>();
-        }
-
-        public void NextTurn()
-        {
-            Turn++;
+            UnitIndexes = new HashSet<int>();
         }
     }
 }

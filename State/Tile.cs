@@ -12,13 +12,13 @@ namespace State
         public int Index { get; set; }
         public Terrain Terrain { get; set; }
         public City? City { get; set; }
-        public List<Unit> Units { get; set; }
+        public HashSet<int> UnitIndexes { get; set; }
 
         public Tile(int index, Terrain terrain)
         {
             Index = index;
             Terrain = terrain;
-            Units = new List<Unit>();
+            UnitIndexes = new HashSet<int>();
         }
     }
 }

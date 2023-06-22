@@ -62,14 +62,14 @@ namespace TestClient
                         return;
                     }
                     Player currentPlayer = PlayerLogic.GetCurrentPlayer(newState.World);
-                    IEnumerable<Unit> units = newState.World.Map.Tiles.SelectMany(tile => tile.Value.Units).Where(unit => unit.Owner.Id == currentPlayer.Id);
+                    var units = newState.World.Units.Where(unit => currentPlayer.UnitIndexes.Contains(unit.Key));
                     List<UnitOrder> unitOrders = new();
                     foreach (var unit in units)
                     {
-                        if (unit.MovementLeft > 0)
+                        if (unit.Value.MovementLeft > 0)
                         {
-                            Console.WriteLine($"Move {unit.Class}");
-                            unitOrders.Add(new UnitOrder(ConsoleReadUnitOrder(), unit));
+                            Console.WriteLine($"Move {unit.Value.Class}");
+                            unitOrders.Add(new UnitOrder(ConsoleReadUnitOrder(), unit.Value));
                         }
                     }
                     bool endTurn = unitOrders.Count == 0;

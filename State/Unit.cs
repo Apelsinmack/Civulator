@@ -10,7 +10,7 @@ namespace State
     [Serializable]
     public class Unit
     {
-        public Guid Id { get; set; }
+        public int Index { get; set; }
         public UnitClassType Class { get; set; }
         public Player Owner { get; set; }
         public int TileIndex { get; set; }
@@ -18,9 +18,9 @@ namespace State
         public bool Fortifying { get; set; }
         public bool Fortified { get; set; }
 
-        public Unit(UnitClassType @class, Player owner, int tileIndex, int movementLeft)
+        public Unit(int index, UnitClassType @class, Player owner, int tileIndex, int movementLeft)
         {
-            Id = Guid.NewGuid();
+            Index = index;
             Class = @class;
             Owner = owner;
             TileIndex = tileIndex;

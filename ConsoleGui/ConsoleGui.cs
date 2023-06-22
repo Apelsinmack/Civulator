@@ -1,5 +1,4 @@
-﻿using Gui;
-using State;
+﻿using State;
 using State.Enums;
 using StateLogic;
 using System;
@@ -10,12 +9,13 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Game
+namespace Gui
 {
-    public class ConsoleGui : IGui
+    public class ConsoleGui
     {
-        private readonly string _emptyTile = "{0,-3}";
+        private World _world;
         private Player _currentPlayer;
+        private readonly string _emptyTile = "{0,-3}";
 
         private void SetTerrainConsoleColor(TerrainType terrainType)
         {
@@ -92,7 +92,11 @@ namespace Game
 
         private string GetTileContent(Tile tile, bool printUnits)
         {
-            Unit unit = tile.Units.FirstOrDefault();
+            Unit? unit = null;
+            if(tile.UnitIndexes.Count > 0)
+            {
+                unit = _world.Units[tile.UnitIndexes.FirstOrDefault()];
+            }
             if (printUnits && unit != null)
             {
                 Console.ForegroundColor = unit.Owner.Leader.Color;
@@ -119,6 +123,7 @@ namespace Game
 
         public void PrintWorld(World world, List<string> log)
         {
+            _world = world;
             _currentPlayer = PlayerLogic.GetCurrentPlayer(world);
             Console.Clear();
             List<Tile> firstPart = new List<Tile>();
