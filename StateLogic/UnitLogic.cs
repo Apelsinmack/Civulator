@@ -40,8 +40,11 @@ namespace StateLogic
         public static void FortifyUnits(World world, Player player)
         {
             foreach (int index in player.UnitIndexes) {
-                world.Units[index].Fortifying = false;
-                world.Units[index].Fortified = true;
+                if (world.Units[index].Fortifying)
+                {
+                    world.Units[index].Fortifying = false;
+                    world.Units[index].Fortified = true;
+                }
             }
         }
     }

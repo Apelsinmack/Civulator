@@ -73,13 +73,13 @@ namespace Game
 
         private void Play()
         {
-            if (_world == null)
+            while (_world == null)
             {
-                throw new Exception("World have to be generated before playing the game.");
+                GenerateWorld();
             }
             while (_world.Victory.Player == null)
             {
-                foreach (var player in _world.Players)
+                foreach (var player in PlayerLogic.GetAlivePlayer(_world))
                 {
                     List<string> log = new List<string>
                     {
@@ -154,7 +154,6 @@ namespace Game
                 Console.WriteLine("Waiting for client to connect...");
                 _namedPipeServerStream.WaitForConnection();
                 Console.WriteLine("Client connected.");
-                GenerateWorld();
                 Play();
                 _gui.PrintWorld(_world, new List<string>() { $"Congratulations to the victory {_world.Victory.Player.Name}!" });
                 Console.ReadLine();

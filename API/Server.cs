@@ -64,7 +64,7 @@ namespace Api
 
         public Actions GetActions(NamedPipeServerStream namedPipeServerStream, World world)
         {
-            WriteData(namedPipeServerStream, new NewState(world));
+            WriteData(namedPipeServerStream, new GameState(world));
             while (namedPipeServerStream.IsConnected)
             {
                 return ReadData<Actions>(namedPipeServerStream);
@@ -74,7 +74,7 @@ namespace Api
 
         public void SendState(NamedPipeServerStream namedPipeServerStream, World world)
         {
-            WriteData(namedPipeServerStream, new NewState(world));
+            WriteData(namedPipeServerStream, new GameState(world));
         }
     }
 }

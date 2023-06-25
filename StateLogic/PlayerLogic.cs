@@ -12,8 +12,13 @@ namespace StateLogic
     {
         public static Player GetCurrentPlayer(World world)
         {
-            int currentTurn = world.Players.Min(Player => Player.Turn);
-            return world.Players.Find(player => player.Turn == currentTurn);
+            int currentTurn = world.Players.Where(player => !player.Dead).Min(Player => Player.Turn);
+            return world.Players.Find(player => player.Turn == currentTurn && !player.Dead);
+        }
+
+        public static IEnumerable<Player> GetAlivePlayer(World world)
+        {
+            return world.Players.Where(player => !player.Dead);
         }
 
         public static void InitPlayerTurn(World world, Player player)
@@ -29,6 +34,16 @@ namespace StateLogic
             {
                 UnitLogic.RemoveUnit(world, index);
             }
+        }
+
+        public static IEnumerable<KeyValuePair<int, Unit>>? GetUnfortifiedUnits(World world, Player player)
+        {
+            return world.Units.Where(unit => player.UnitIndexes.Contains(unit.Key) && !unit.Value.Fortifying && !unit.Value.Fortified);
+        }
+
+        public static IEnumerable<KeyValuePair<int, Unit>>? GetAllUnits(World world, Player player)
+        {
+            return world.Units.Where(unit => player.UnitIndexes.Contains(unit.Key));
         }
     }
 }

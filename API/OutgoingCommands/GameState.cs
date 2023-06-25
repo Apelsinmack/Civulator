@@ -9,11 +9,11 @@ using System.Threading.Tasks;
 
 namespace Api.OutgoingCommands
 {
-    public class NewState
+    public class GameState
     {
         public World World{ get; set; }
 
-        public NewState(World world)
+        public GameState(World world)
         {
             World = world;
         }

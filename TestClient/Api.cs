@@ -50,7 +50,7 @@ namespace TestClient
             namedPipeClientStream.Flush();
         }
 
-        public void GenerateWorld(NamedPipeClientStream namedPipeClientStream)
+        public void GenerateWorld(NamedPipeClientStream namedPipeClientStream, int mapBase, int mapHeight, int numberOfPlayers)
         {
             while (namedPipeClientStream.IsConnected)
             {
@@ -60,17 +60,16 @@ namespace TestClient
                     new Player("Ken Q", true, new Leader(ConsoleColor.Blue)),
                     new Player("AnotherNerd", true, new Leader(ConsoleColor.Cyan))
                 };
-                //WriteData(namedPipeClientStream, new NewGame(5, 5, players));
-                WriteData(namedPipeClientStream, new NewGame(40, 20, players));
+                WriteData(namedPipeClientStream, new NewGame(mapBase, mapHeight, players.GetRange(0, numberOfPlayers)));
                 break;
             }
         }
 
-        public NewState GetState(NamedPipeClientStream namedPipeClientStream)
+        public GameState GetState(NamedPipeClientStream namedPipeClientStream)
         {
             while (namedPipeClientStream.IsConnected)
             {
-                return ReadData<NewState>(namedPipeClientStream);
+                return ReadData<GameState>(namedPipeClientStream);
             }
             return null;
         }
