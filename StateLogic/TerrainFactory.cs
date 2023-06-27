@@ -6,20 +6,18 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace StateLogic.Factories
+namespace StateLogic
 {
-    internal class TerrainFactory
-    {
-        private readonly Random _random = new Random();
-
-        private TerrainType GetRandomTerrainType()
+    internal static class TerrainLogic
+    {   
+        private static TerrainType GetRandomTerrainType()
         {
             TerrainType[] terrainTypes = Enum.GetValues<TerrainType>();
-            int index = _random.Next(terrainTypes.Length);
+            int index = new Random().Next(terrainTypes.Length);
             return (TerrainType)terrainTypes.GetValue(index);
         }
 
-        public Terrain GenerateTerrain()
+        public static Terrain GenerateTerrain()
         {
             return new Terrain(GetRandomTerrainType());
         }

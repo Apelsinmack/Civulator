@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace State.Enums
 {
-    public enum UnitClassType
+    public enum UnitType
     {
         Scout,
         Settler,

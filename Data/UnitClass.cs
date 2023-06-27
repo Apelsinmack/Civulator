@@ -9,27 +9,29 @@ namespace Data
 {
     public class UnitClass
     {
-        public static Dictionary<UnitClassType, UnitClass> ByType = new Dictionary<UnitClassType, UnitClass>();
+        public static Dictionary<UnitType, UnitClass> ByType = new Dictionary<UnitType, UnitClass>();
 
         public readonly int MeleeStrength;
         public readonly int Movement;
         public readonly int SightRange;
+        public readonly int Production;
 
-        public UnitClass(int meleeStrength, int movement, int sightRange)
+        public UnitClass(int meleeStrength, int movement, int sightRange, int production)
         {
             MeleeStrength = meleeStrength;
             Movement = movement;
             SightRange = sightRange;
+            Production = production;
         }
 
         internal static void InitUnitClasses()
         {
             Console.WriteLine("Initialize unit classes...");
-            ByType = new Dictionary<UnitClassType, UnitClass>
+            ByType = new Dictionary<UnitType, UnitClass>
             {
-                { UnitClassType.Scout, new UnitClass(10, 3, 2) },
-                { UnitClassType.Settler, new UnitClass(0, 2, 3) },
-                { UnitClassType.Warrior, new UnitClass(20, 2, 2) }
+                { UnitType.Scout, new UnitClass(10, 3, 2, 30) },
+                { UnitType.Settler, new UnitClass(0, 2, 3, 80) },
+                { UnitType.Warrior, new UnitClass(20, 2, 2, 40) }
             };
         }
     }

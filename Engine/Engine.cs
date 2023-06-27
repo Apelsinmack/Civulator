@@ -15,8 +15,8 @@ using System.IO.Pipes;
 using System.Reflection.PortableExecutable;
 using Api.IncomingCommands.Enums;
 using Gui;
-using StateLogic.Factories;
 using StateLogic;
+using Data;
 
 namespace Game
 {
@@ -25,7 +25,7 @@ namespace Game
         private NamedPipeServerStream _namedPipeServerStream;
         private readonly Server _server;
         private World? _world;
-        private ConsoleGui _gui;
+        private ConsoleMapGui _gui;
 
         private int GetNewIndex(int currentIndex, UnitOrderType order)
         {
@@ -66,8 +66,7 @@ namespace Game
         private void GenerateWorld()
         {
             NewGame newGame = _server.GetNewGame(_namedPipeServerStream);
-            WorldFactory worldFactory = new WorldFactory();
-            _world = worldFactory.GenerateWorld(newGame.MapBase, newGame.MapHeight, newGame.Players);
+            _world = WorldLogic.GenerateWorld(newGame.MapBase, newGame.MapHeight, newGame.Players);
             _gui.PrintWorld(_world, new List<string>());
         }
 
@@ -77,7 +76,7 @@ namespace Game
             {
                 GenerateWorld();
             }
-            while (_world.Victory.Player == null)
+            while (_world.Victory == null)
             {
                 foreach (var player in PlayerLogic.GetAlivePlayer(_world))
                 {
@@ -91,7 +90,8 @@ namespace Game
                     do
                     {
                         actions = _server.GetActions(_namedPipeServerStream, _world);
-                        if (UnitOrders(player, actions.UnitOrders, log)) { return; };
+                        if (UnitOrders(player, actions, log)) { return; };
+                        CityOrders(player, actions, log);
                         _gui.PrintWorld(_world, log);
                     }
                     while (!actions.EndTurn); //TODO: Or if no actions left
@@ -101,9 +101,9 @@ namespace Game
             }
         }
 
-        private bool UnitOrders(Player player, List<UnitOrder> unitOrders, List<string> log)
+        private bool UnitOrders(Player player, Actions actions, List<string> log)
         {
-            foreach (var unitOrder in unitOrders)
+            foreach (var unitOrder in actions.UnitOrders)
             {
                 log.Add($"{unitOrder.Unit.Class} {unitOrder.Order}");
                 if (unitOrder.Order == UnitOrderType.Fortify)
@@ -127,7 +127,7 @@ namespace Game
                             log.Add($"{newTile.City.Owner.Name} is no more");
                             if (_world.Players.Where(player => !player.Dead).Count() == 1)
                             {
-                                _world.Victory.Player = player;
+                                _world.Victory = new Victory(player);
                                 newTile.City.Owner = player;
                                 _server.SendState(_namedPipeServerStream, _world);
                                 return true;
@@ -140,10 +140,37 @@ namespace Game
             return false;
         }
 
+        private void CityOrders(Player player, Actions actions, List<string> log)
+        {
+            foreach (var cityOrder in actions.CityOrders)
+            {
+                log.Add($"{cityOrder.City.Name} {cityOrder.Order}");
+                switch (cityOrder.Order)
+                {
+                    case CityOrderType.AddBuildingToBuildQueue:
+                        if (!_world.Map.Tiles[cityOrder.City.TileIndex].City.Buildings.Any(building => building == cityOrder.BuildingType.Value))
+                        {
+                            _world.Map.Tiles[cityOrder.City.TileIndex].City.BuildingQueue.Add(new BuildingQueueItem(cityOrder.BuildingType.Value, null));
+                        }
+                        else
+                        {
+                            actions.EndTurn = false;
+                        }
+                        break;
+                    case CityOrderType.AddUnitToBuildQueue:
+                        _world.Map.Tiles[cityOrder.City.TileIndex].City.BuildingQueue.Add(new BuildingQueueItem(null, cityOrder.UnitType.Value));
+                        break;
+                    case CityOrderType.RemoveFromBuildQueue:
+                        _world.Map.Tiles[cityOrder.City.TileIndex].City.BuildingQueue.RemoveAt(cityOrder.Index.Value);
+                        break;
+                }
+            }
+        }
+
         public Engine()
         {
             _server = Server.GetInstance();
-            _gui = new ConsoleGui();
+            _gui = new ConsoleMapGui(true);
             Data.Init.All();
         }
 

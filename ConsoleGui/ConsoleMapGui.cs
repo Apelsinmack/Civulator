@@ -11,10 +11,11 @@ using System.Threading.Tasks;
 
 namespace Gui
 {
-    public class ConsoleGui
+    public class ConsoleMapGui
     {
-        private World _world;
-        private Player _currentPlayer;
+        private World? _world;
+        private Player? _currentPlayer;
+        private bool _spectator;
         private readonly string _emptyTile = "{0,-3}";
 
         private void SetTerrainConsoleColor(TerrainType terrainType)
@@ -78,7 +79,7 @@ namespace Gui
 
         private void PrintTile(Tile tile, bool printUnits)
         {
-            if (_currentPlayer.ExploredTileIndexes.Contains(tile.Index))
+            if (_spectator || _currentPlayer.ExploredTileIndexes.Contains(tile.Index))
             {
                 SetTerrainConsoleColor(tile.Terrain.Type);
                 string content = GetTileContent(tile, printUnits);
@@ -92,8 +93,8 @@ namespace Gui
 
         private string GetTileContent(Tile tile, bool printUnits)
         {
-            Unit? unit = null;
-            if(tile.UnitIndexes.Count > 0)
+            State.Unit? unit = null;
+            if (tile.UnitIndexes.Count > 0)
             {
                 unit = _world.Units[tile.UnitIndexes.FirstOrDefault()];
             }
@@ -119,6 +120,11 @@ namespace Gui
         {
             Console.BackgroundColor = ConsoleColor.Black;
             Console.Write(_emptyTile, String.Empty);
+        }
+
+        public ConsoleMapGui(bool spectator = false)
+        {
+            _spectator = spectator;
         }
 
         public void PrintWorld(World world, List<string> log)

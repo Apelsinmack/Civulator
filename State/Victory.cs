@@ -9,6 +9,11 @@ namespace State
     [Serializable]
     public class Victory
     {
-        public Player? Player { get; set; }
+        public Player Player { get; set; }
+
+        public Victory(Player player)
+        {
+            Player = player;
+        }
     }
 }

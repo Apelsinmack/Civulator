@@ -10,6 +10,11 @@ namespace StateLogic
 {
     public static class PlayerLogic
     {
+        public static Player GeneratePlayer(string name, bool human, Leader leader)
+        {
+            return new Player(Guid.NewGuid(), name, human, leader);
+        }
+
         public static Player GetCurrentPlayer(World world)
         {
             int currentTurn = world.Players.Where(player => !player.Dead).Min(Player => Player.Turn);
@@ -23,6 +28,7 @@ namespace StateLogic
 
         public static void InitPlayerTurn(World world, Player player)
         {
+            CityLogic.AddProductionToCities(world, player);
             UnitLogic.ResetUnitMovements(world, player);
             UnitLogic.FortifyUnits(world, player);
         }
@@ -44,6 +50,16 @@ namespace StateLogic
         public static IEnumerable<KeyValuePair<int, Unit>>? GetAllUnits(World world, Player player)
         {
             return world.Units.Where(unit => player.UnitIndexes.Contains(unit.Key));
+        }
+
+        public static IEnumerable<City>? GetCitiesWithEmptyBuildQueue(World world, Player player)
+        {
+            return GetAllCities(world, player).Where(city => city.BuildingQueue.Count() == 0);
+        }
+
+        public static IEnumerable<City>? GetAllCities(World world, Player player)
+        {
+            return world.Map.Tiles.Values.Where(tile => tile.City != null && tile.City.Owner.Id == player.Id).Select(tile => tile.City);
         }
     }
 }

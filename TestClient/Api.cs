@@ -56,9 +56,9 @@ namespace TestClient
             {
                 List<Player> players = new()
                 {
-                    new Player("Megadick", true, new Leader(ConsoleColor.Red)),
-                    new Player("Ken Q", true, new Leader(ConsoleColor.Blue)),
-                    new Player("AnotherNerd", true, new Leader(ConsoleColor.Cyan))
+                    new Player(Guid.NewGuid(), "Megadick", true, new Leader(ConsoleColor.Red)),
+                    new Player(Guid.NewGuid(), "Ken Q", true, new Leader(ConsoleColor.Blue)),
+                    new Player(Guid.NewGuid(), "AnotherNerd", true, new Leader(ConsoleColor.Cyan))
                 };
                 WriteData(namedPipeClientStream, new NewGame(mapBase, mapHeight, players.GetRange(0, numberOfPlayers)));
                 break;
@@ -74,11 +74,11 @@ namespace TestClient
             return null;
         }
 
-        public void ExecuteCommands(NamedPipeClientStream namedPipeClientStream, Actions execute)
+        public void ExecuteCommands(NamedPipeClientStream namedPipeClientStream, Actions actions)
         {
             while (namedPipeClientStream.IsConnected)
             {
-                WriteData(namedPipeClientStream, execute);
+                WriteData(namedPipeClientStream, actions);
                 break;
             }
         }

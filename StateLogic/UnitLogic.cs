@@ -1,5 +1,6 @@
 ﻿using Data;
 using State;
+using State.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -22,7 +23,7 @@ namespace StateLogic
 
         public static void RemoveUnit(World world, int index)
         {
-            Unit unit = world.Units[index];
+            State.Unit unit = world.Units[index];
             world.Map.Tiles[unit.TileIndex].UnitIndexes.Remove(index);
             unit.Owner.UnitIndexes.Remove(index);
             world.Units.Remove(index);
@@ -30,7 +31,7 @@ namespace StateLogic
 
         public static void MoveUnit(World world, int unitIndex, int tileIndex)
         {
-            Unit unit = world.Units[unitIndex];
+            State.Unit unit = world.Units[unitIndex];
             world.Map.Tiles[unit.TileIndex].UnitIndexes.Remove(unitIndex);
             unit.MovementLeft--;
             unit.TileIndex = tileIndex;
@@ -46,6 +47,22 @@ namespace StateLogic
                     world.Units[index].Fortified = true;
                 }
             }
+        }
+
+        public static Unit GenerateUnit(World world, UnitType unitClass, Player owner, int tileIndex)
+        {
+            int index = 0;
+            if (world.Units.Count > 0)
+            {
+                index = world.Units.Max(unit => unit.Key) + 1;
+            }
+            Unit unit = new Unit(index, unitClass, owner, tileIndex, Data.UnitClass.ByType[unitClass].Movement);
+            world.Units.Add(index, unit);
+            world.Map.Tiles[tileIndex].UnitIndexes.Add(index);
+            owner.UnitIndexes.Add(index);
+            MapLogic.ExploreFromTile(world, owner, tileIndex, 1);
+
+            return unit;
         }
     }
 }

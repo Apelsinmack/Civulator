@@ -12,11 +12,13 @@ namespace Api.IncomingCommands
     public class Actions
     {
         public List<UnitOrder> UnitOrders { get; set; }
+        public List<CityOrder> CityOrders { get; set; }
         public bool EndTurn { get; set; }
 
-        public Actions(List<UnitOrder> unitOrders, bool endTurn = false)
+        public Actions(List<UnitOrder>? unitOrders, List<CityOrder>? cityOrders, bool endTurn = false)
         {
             UnitOrders = unitOrders;
+            CityOrders = cityOrders;
             EndTurn = endTurn;
         }
     }

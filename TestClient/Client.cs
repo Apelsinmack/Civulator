@@ -11,6 +11,7 @@ using Api.OutgoingCommands;
 using StateLogic;
 using System.Numerics;
 using Gui;
+using State.Enums;
 
 namespace TestClient
 {
@@ -18,88 +19,44 @@ namespace TestClient
     {
         private readonly Api _api;
         private NamedPipeClientStream _namedPipeClientStream;
-        private ConsoleGui _gui;
+        private ConsoleMapGui _mapGui;
+        private ConsoleClientGui _clientGui;
         private GameState _state;
 
-        private enum PlayerMenu
-        {
-            CycleUnits,
-            CycleAllUnits,
-            CycleCities,
-            CycleAllCities,
-            EndTurn
-        }
-
-        private static void PrintMenu()
-        {
-            Console.WriteLine("Choose what to to do:");
-            Console.WriteLine("1: Cycle units");
-            Console.WriteLine("2: Cycle all units");
-            Console.WriteLine("3: Cycle cities");
-            Console.WriteLine("4: Cycle all cities");
-            Console.WriteLine("e: End turn");
-        }
-
-        private PlayerMenu ConsoleReadPlayerMenu()
-        {
-            while (true)
-            {
-                switch (Console.ReadLine())
-                {
-                    case "1":
-                        return PlayerMenu.CycleUnits;
-                    case "2":
-                        return PlayerMenu.CycleAllUnits;
-                    case "3":
-                        return PlayerMenu.CycleCities;
-                    case "4":
-                        return PlayerMenu.CycleAllCities;
-                    case "e":
-                        return PlayerMenu.EndTurn;
-                }
-            }
-        }
-
-        private UnitOrderType ConsoleReadUnitOrder()
-        {
-            while (true)
-            {
-                switch (Console.ReadLine())
-                {
-                    case "1":
-                        return UnitOrderType.DownLeft;
-                    case "2":
-                        return UnitOrderType.Down;
-                    case "3":
-                        return UnitOrderType.DownRight;
-                    case "4":
-                        return UnitOrderType.UpLeft;
-                    case "5":
-                        return UnitOrderType.Up;
-                    case "6":
-                        return UnitOrderType.UpRight;
-                    case "f":
-                        return UnitOrderType.Fortify;
-                }
-            }
-        }
-
-        private void CycleUnits(Player currentPlayer, IEnumerable<KeyValuePair<int, Unit>>? units, List<UnitOrder> unitOrders)
+        private void CycleUnits(IEnumerable<KeyValuePair<int, Unit>>? units, List<UnitOrder> unitOrders)
         {
             foreach (var unit in units)
             {
                 if (unit.Value.MovementLeft > 0)
                 {
                     Console.WriteLine($"Move {unit.Value.Class}");
-                    unitOrders.Add(new UnitOrder(ConsoleReadUnitOrder(), unit.Value));
+                    unitOrders.Add(new UnitOrder(_clientGui.ConsoleReadUnitOrder(), unit.Value));
                 }
+            }
+        }
+
+        private void CycleCities(IEnumerable<City> cities, List<CityOrder> cityOrders)
+        {
+            foreach (var city in cities)
+            {
+                ConsoleClientGui.BuildTypeMenu buildingTypeMenu = _clientGui.PrintBuildAddToBuildQueueMenu(city);
+                if (buildingTypeMenu == ConsoleClientGui.BuildTypeMenu.Units)
+                {
+                    cityOrders.Add(new CityOrder(CityOrderType.AddUnitToBuildQueue, city, _clientGui.PrintBuildUnitMenu(city)));
+                }
+                else if (buildingTypeMenu == ConsoleClientGui.BuildTypeMenu.Buildings)
+                {
+                    cityOrders.Add(new CityOrder(CityOrderType.AddBuildingToBuildQueue, city, _clientGui.PrintBuildBuildingMenu(city)));
+                }
+
             }
         }
 
         public Client()
         {
             _api = Api.GetInstance();
-            _gui = new ConsoleGui();
+            _mapGui = new ConsoleMapGui();
+            _clientGui = new ConsoleClientGui();
         }
 
         public void Start()
@@ -108,14 +65,14 @@ namespace TestClient
             {
                 Console.WriteLine("Connecting to server...");
                 _namedPipeClientStream.Connect();
-                _api.GenerateWorld(_namedPipeClientStream, 10, 10, 3);
+                _api.GenerateWorld(_namedPipeClientStream, 20, 10, 3);
                 while (_namedPipeClientStream.IsConnected)
                 {
-                    PlayerMenu playerMenu;
+                    ConsoleClientGui.PlayerMenu playerMenu;
                     do
                     {
                         GameState _state = _api.GetState(_namedPipeClientStream);
-                        if (_state.World.Victory.Player != null)
+                        if (_state.World.Victory != null)
                         {
                             Console.WriteLine($"Congratulations to the victory {_state.World.Victory.Player.Name}!");
                             Console.ReadLine();
@@ -123,28 +80,35 @@ namespace TestClient
                         }
                         Player currentPlayer = PlayerLogic.GetCurrentPlayer(_state.World);
                         List<UnitOrder> unitOrders = new();
+                        List<CityOrder> cityOrders = new();
                         var endTurn = false;
-                        _gui.PrintWorld(_state.World, new List<string>());
-                        PrintMenu();
-                        switch (playerMenu = ConsoleReadPlayerMenu())
+                        _mapGui.PrintWorld(_state.World, new List<string>());
+                        _clientGui.PrintMenu();
+                        switch (playerMenu = _clientGui.ConsoleReadPlayerMenu())
                         {
-                            case PlayerMenu.CycleUnits:
-                                CycleUnits(currentPlayer, PlayerLogic.GetUnfortifiedUnits(_state.World, currentPlayer), unitOrders);
+                            case ConsoleClientGui.PlayerMenu.CycleUnits:
+                                CycleUnits(PlayerLogic.GetUnfortifiedUnits(_state.World, currentPlayer), unitOrders);
                                 break;
-                            case PlayerMenu.CycleAllUnits:
-                                CycleUnits(currentPlayer, PlayerLogic.GetAllUnits(_state.World, currentPlayer), unitOrders);
+                            case ConsoleClientGui.PlayerMenu.CycleAllUnits:
+                                CycleUnits(PlayerLogic.GetAllUnits(_state.World, currentPlayer), unitOrders);
                                 break;
-                            case PlayerMenu.CycleCities:
+                            case ConsoleClientGui.PlayerMenu.CycleCities:
+                                CycleCities(PlayerLogic.GetCitiesWithEmptyBuildQueue(_state.World, currentPlayer), cityOrders);
                                 break;
-                            case PlayerMenu.CycleAllCities:
+                            case ConsoleClientGui.PlayerMenu.CycleAllCities:
+                                CycleCities(PlayerLogic.GetAllCities(_state.World, currentPlayer), cityOrders);
                                 break;
-                            case PlayerMenu.EndTurn:
+                            case ConsoleClientGui.PlayerMenu.EndTurn:
+                                if (PlayerLogic.GetCitiesWithEmptyBuildQueue(_state.World, currentPlayer).Any())
+                                {
+                                    CycleCities(PlayerLogic.GetCitiesWithEmptyBuildQueue(_state.World, currentPlayer), cityOrders);
+                                }
                                 endTurn = true;
                                 break;
                         }
-                        _api.ExecuteCommands(_namedPipeClientStream, new Actions(unitOrders, endTurn));
+                        _api.ExecuteCommands(_namedPipeClientStream, new Actions(unitOrders, cityOrders, endTurn));
                     }
-                    while (playerMenu != PlayerMenu.EndTurn);
+                    while (playerMenu != ConsoleClientGui.PlayerMenu.EndTurn);
                 }
             }
         }
