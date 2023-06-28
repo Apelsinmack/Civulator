@@ -127,10 +127,10 @@ namespace Gui
             _spectator = spectator;
         }
 
-        public void PrintWorld(World world, List<string> log)
+        public void PrintWorld(World world, Player currentPlayer, List<string> log)
         {
             _world = world;
-            _currentPlayer = PlayerLogic.GetCurrentPlayer(world);
+            _currentPlayer = currentPlayer;
             Console.Clear();
             List<Tile> firstPart = new List<Tile>();
             List<Tile> secondPart = new List<Tile>();

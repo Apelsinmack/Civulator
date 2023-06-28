@@ -13,9 +13,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TestClient", "TestClient\Te
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Gui", "ConsoleGui\Gui.csproj", "{A059BAFF-E1A8-41C8-811B-6C3B8BF63BA3}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "StateLogic", "StateLogic\StateLogic.csproj", "{19F7C5CE-C434-48CA-BA5F-7EFC9AD5142D}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Logic", "StateLogic\Logic.csproj", "{19F7C5CE-C434-48CA-BA5F-7EFC9AD5142D}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Data", "Data\Data.csproj", "{1C78CE60-79AF-47E8-B334-45F7C45BFCA3}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Data", "Data\Data.csproj", "{1C78CE60-79AF-47E8-B334-45F7C45BFCA3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

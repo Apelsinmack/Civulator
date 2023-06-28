@@ -26,6 +26,7 @@ namespace Game
         private readonly Server _server;
         private World? _world;
         private ConsoleMapGui _gui;
+        private PlayerLogic _playerLogic;
 
         private int GetNewIndex(int currentIndex, UnitOrderType order)
         {
@@ -65,39 +66,44 @@ namespace Game
 
         private void GenerateWorld()
         {
-            NewGame newGame = _server.GetNewGame(_namedPipeServerStream);
-            _world = WorldLogic.GenerateWorld(newGame.MapBase, newGame.MapHeight, newGame.Players);
-            _gui.PrintWorld(_world, new List<string>());
+            while (_world == null)
+            {
+                NewGame newGame = _server.GetNewGame(_namedPipeServerStream);
+                _world = WorldLogic.GenerateWorld(newGame.MapBase, newGame.MapHeight, newGame.Players);
+            }
+        }
+
+        private void InitLogic()
+        {
+            if (_world != null)
+            {
+                _playerLogic = new PlayerLogic(_world);
+            }
         }
 
         private void Play()
         {
-            while (_world == null)
-            {
-                GenerateWorld();
-            }
             while (_world.Victory == null)
             {
-                foreach (var player in PlayerLogic.GetAlivePlayer(_world))
-                {
-                    List<string> log = new List<string>
+                var player = _playerLogic.CurrentPlayer;
+                List<string> log = new List<string>
                     {
                         $"{player.Name} turn {player.Turn}"
                     };
-                    PlayerLogic.InitPlayerTurn(_world, player);
-                    _gui.PrintWorld(_world, log);
-                    Actions actions;
-                    do
-                    {
-                        actions = _server.GetActions(_namedPipeServerStream, _world);
-                        if (UnitOrders(player, actions, log)) { return; };
-                        CityOrders(player, actions, log);
-                        _gui.PrintWorld(_world, log);
-                    }
-                    while (!actions.EndTurn); //TODO: Or if no actions left
-                    //TODO: Send state.
-                    player.Turn++;
+                _playerLogic.InitPlayerTurn();
+                _gui.PrintWorld(_world, player, log);
+                Actions actions;
+                do
+                {
+                    actions = _server.GetActions(_namedPipeServerStream, _world);
+
+                    if (UnitOrders(player, actions, log)) { return; };
+                    CityOrders(player, actions, log);
+                    _gui.PrintWorld(_world, player, log);
                 }
+                while (!actions.EndTurn); //TODO: Or if no actions left
+                //TODO: Send state?
+                _playerLogic.EndTurn();
             }
         }
 
@@ -123,7 +129,7 @@ namespace Game
                         log.Add($"{newTile.City.Owner.Name} lost {newTile.City.Name} to {player.Name}");
                         if (CityLogic.GetCities(_world, newTile.City.Owner).Count() == 1)
                         {
-                            PlayerLogic.KillPlayer(_world, newTile.City.Owner);
+                            _playerLogic.Kill(newTile.City.Owner);
                             log.Add($"{newTile.City.Owner.Name} is no more");
                             if (_world.Players.Where(player => !player.Dead).Count() == 1)
                             {
@@ -181,8 +187,11 @@ namespace Game
                 Console.WriteLine("Waiting for client to connect...");
                 _namedPipeServerStream.WaitForConnection();
                 Console.WriteLine("Client connected.");
+                GenerateWorld();
+                InitLogic();
+                _gui.PrintWorld(_world, _playerLogic.CurrentPlayer, new List<string>());
                 Play();
-                _gui.PrintWorld(_world, new List<string>() { $"Congratulations to the victory {_world.Victory.Player.Name}!" });
+                _gui.PrintWorld(_world, _playerLogic.CurrentPlayer, new List<string>() { $"Congratulations to the victory {_world.Victory.Player.Name}!" });
                 Console.ReadLine();
             }
         }

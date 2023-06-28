@@ -8,58 +8,76 @@ using System.Threading.Tasks;
 
 namespace StateLogic
 {
-    public static class PlayerLogic
+    public class PlayerLogic
     {
-        public static Player GeneratePlayer(string name, bool human, Leader leader)
+        private World _world;
+        private Player _currentPlayer;
+        public Player CurrentPlayer { get { return _currentPlayer; } }
+
+        private void SetCurrentPlayer()
         {
-            return new Player(Guid.NewGuid(), name, human, leader);
+            int currentTurn = _world.Players.Where(player => !player.Dead).Min(Player => Player.Turn);
+            _currentPlayer = _world.Players.Find(player => player.Turn == currentTurn && !player.Dead);
         }
 
-        public static Player GetCurrentPlayer(World world)
+        public PlayerLogic() { }
+
+
+        public PlayerLogic(World world)
         {
-            int currentTurn = world.Players.Where(player => !player.Dead).Min(Player => Player.Turn);
-            return world.Players.Find(player => player.Turn == currentTurn && !player.Dead);
+            UpdateWorld(world);
         }
 
-        public static IEnumerable<Player> GetAlivePlayer(World world)
+        public void UpdateWorld(World world)
         {
-            return world.Players.Where(player => !player.Dead);
+            _world = world;
+            SetCurrentPlayer();
         }
 
-        public static void InitPlayerTurn(World world, Player player)
+        public void EndTurn()
         {
-            CityLogic.AddProductionToCities(world, player);
-            UnitLogic.ResetUnitMovements(world, player);
-            UnitLogic.FortifyUnits(world, player);
+            _currentPlayer.Turn++;
+            SetCurrentPlayer();
         }
 
-        public static void KillPlayer(World world, Player player)
+        public void InitPlayerTurn()
+        {
+            CityLogic.AddProductionToCities(_world, _currentPlayer);
+            UnitLogic.ResetUnitMovements(_world, _currentPlayer);
+            UnitLogic.FortifyUnits(_world, _currentPlayer);
+        }
+
+        public void Kill(Player player)
         {
             player.Dead = true;
             foreach (int index in player.UnitIndexes.ToList())
             {
-                UnitLogic.RemoveUnit(world, index);
+                UnitLogic.RemoveUnit(_world, index);
             }
         }
 
-        public static IEnumerable<KeyValuePair<int, Unit>>? GetUnfortifiedUnits(World world, Player player)
+        //TODO: Move to unit logic
+        public IEnumerable<KeyValuePair<int, Unit>>? GetUnfortifiedUnits(Player player)
         {
-            return world.Units.Where(unit => player.UnitIndexes.Contains(unit.Key) && !unit.Value.Fortifying && !unit.Value.Fortified);
+            return _world.Units.Where(unit => player.UnitIndexes.Contains(unit.Key) && !unit.Value.Fortifying && !unit.Value.Fortified);
         }
 
-        public static IEnumerable<KeyValuePair<int, Unit>>? GetAllUnits(World world, Player player)
+        //TODO: Move to unit logic
+        public IEnumerable<KeyValuePair<int, Unit>>? GetAllUnits(Player player)
         {
-            return world.Units.Where(unit => player.UnitIndexes.Contains(unit.Key));
+            return _world.Units.Where(unit => player.UnitIndexes.Contains(unit.Key));
         }
 
-        public static IEnumerable<City>? GetCitiesWithEmptyBuildQueue(World world, Player player)
+        //TODO: Move to city logic
+        public IEnumerable<City>? GetCitiesWithEmptyBuildQueue(Player player)
         {
-            return GetAllCities(world, player).Where(city => city.BuildingQueue.Count() == 0);
+            return GetAllCities(player).Where(city => city.BuildingQueue.Count() == 0);
         }
 
-        public static IEnumerable<City>? GetAllCities(World world, Player player)
+        //TODO: Move to city logic
+        public IEnumerable<City>? GetAllCities(Player player)
         {
-            return world.Map.Tiles.Values.Where(tile => tile.City != null && tile.City.Owner.Id == player.Id).Select(tile => tile.City);
+            return _world.Map.Tiles.Values.Where(tile => tile.City != null && tile.City.Owner.Id == player.Id).Select(tile => tile.City);
         }
     }
 }

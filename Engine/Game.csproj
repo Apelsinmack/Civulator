@@ -11,7 +11,7 @@
     <ProjectReference Include="..\API\Api.csproj" />
     <ProjectReference Include="..\ConsoleGui\Gui.csproj" />
     <ProjectReference Include="..\Data\Data.csproj" />
-    <ProjectReference Include="..\StateLogic\StateLogic.csproj" />
+    <ProjectReference Include="..\StateLogic\Logic.csproj" />
     <ProjectReference Include="..\State\State.csproj" />
   </ItemGroup>
 
