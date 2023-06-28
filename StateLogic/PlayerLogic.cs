@@ -12,7 +12,7 @@ namespace StateLogic
     {
         private World _world;
         private Player _currentPlayer;
-        public Player CurrentPlayer { get { return _currentPlayer; } }
+        public Player CurrentPlayer => _currentPlayer;
 
         private void SetCurrentPlayer()
         {

@@ -26,6 +26,7 @@ namespace Game
         private readonly Server _server;
         private World? _world;
         private ConsoleMapGui _gui;
+        private WorldLogic _worldLogic;
         private PlayerLogic _playerLogic;
 
         private int GetNewIndex(int currentIndex, UnitOrderType order)
@@ -69,14 +70,7 @@ namespace Game
             while (_world == null)
             {
                 NewGame newGame = _server.GetNewGame(_namedPipeServerStream);
-                _world = WorldLogic.GenerateWorld(newGame.MapBase, newGame.MapHeight, newGame.Players);
-            }
-        }
-
-        private void InitLogic()
-        {
-            if (_world != null)
-            {
+                _world = _worldLogic.GenerateWorld(newGame.MapBase, newGame.MapHeight, newGame.Players);
                 _playerLogic = new PlayerLogic(_world);
             }
         }
@@ -177,6 +171,7 @@ namespace Game
         {
             _server = Server.GetInstance();
             _gui = new ConsoleMapGui(true);
+            _worldLogic = new WorldLogic();
             Data.Init.All();
         }
 
@@ -188,7 +183,6 @@ namespace Game
                 _namedPipeServerStream.WaitForConnection();
                 Console.WriteLine("Client connected.");
                 GenerateWorld();
-                InitLogic();
                 _gui.PrintWorld(_world, _playerLogic.CurrentPlayer, new List<string>());
                 Play();
                 _gui.PrintWorld(_world, _playerLogic.CurrentPlayer, new List<string>() { $"Congratulations to the victory {_world.Victory.Player.Name}!" });
