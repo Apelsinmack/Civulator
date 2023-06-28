@@ -8,7 +8,7 @@ using System.IO.Pipes;
 using System.Threading.Tasks;
 using Api.IncomingCommands.Enums;
 using Api.OutgoingCommands;
-using StateLogic;
+using Logic;
 using System.Numerics;
 using Gui;
 using State.Enums;

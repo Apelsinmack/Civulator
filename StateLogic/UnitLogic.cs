@@ -9,7 +9,7 @@ using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace StateLogic
+namespace Logic
 {
     public static class UnitLogic
     {
@@ -60,9 +60,15 @@ namespace StateLogic
             world.Units.Add(index, unit);
             world.Map.Tiles[tileIndex].UnitIndexes.Add(index);
             owner.UnitIndexes.Add(index);
-            MapLogic.ExploreFromTile(world, owner, tileIndex, 1);
+            ExploreFromTile(world, owner, tileIndex, 1);
 
             return unit;
+        }
+
+        public static void ExploreFromTile(World world, Player player, int index, int sightRange = 1)
+        {
+            //TODO: Take in to account e.g. visibility range, terrain type of the index, terrain type of the surrounding area etc.
+            player.ExploredTileIndexes.UnionWith(WorldLogic.GetAdjacentTileIndexes(world, index));
         }
     }
 }

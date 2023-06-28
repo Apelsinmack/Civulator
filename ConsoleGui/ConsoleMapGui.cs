@@ -1,6 +1,6 @@
 ﻿using State;
 using State.Enums;
-using StateLogic;
+using Logic;
 using System;
 using System.Collections;
 using System.Collections.Generic;

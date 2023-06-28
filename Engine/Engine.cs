@@ -15,7 +15,7 @@ using System.IO.Pipes;
 using System.Reflection.PortableExecutable;
 using Api.IncomingCommands.Enums;
 using Gui;
-using StateLogic;
+using Logic;
 using Data;
 
 namespace Game
@@ -117,7 +117,7 @@ namespace Game
                 {
                     UnitLogic.MoveUnit(_world, unitOrder.Unit.Index, newTileIndex);
                     Tile newTile = _world.Map.Tiles[newTileIndex];
-                    MapLogic.ExploreFromTile(_world, player, newTileIndex, Data.UnitClass.ByType[unitOrder.Unit.Class].SightRange);
+                    UnitLogic.ExploreFromTile(_world, player, newTileIndex, Data.UnitClass.ByType[unitOrder.Unit.Class].SightRange);
                     if (newTile.City != null && newTile.City.Owner != player)
                     {
                         log.Add($"{newTile.City.Owner.Name} lost {newTile.City.Name} to {player.Name}");

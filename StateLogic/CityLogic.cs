@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace StateLogic
+namespace Logic
 {
     public static class CityLogic
     {
@@ -50,9 +50,9 @@ namespace StateLogic
 
         public static City GenerateCity(World world, Player owner, Tile tile)
         {
-            City city = new City(GetRandomCityName(), owner, tile.Index, MapLogic.GetAdjacentTileIndexes(world, tile.Index));
+            City city = new City(GetRandomCityName(), owner, tile.Index, WorldLogic.GetAdjacentTileIndexes(world, tile.Index));
             tile.City = city;
-            MapLogic.ExploreFromTile(world, owner, tile.Index, 2);
+            UnitLogic.ExploreFromTile(world, owner, tile.Index, 2);
 
             return city;
         }
