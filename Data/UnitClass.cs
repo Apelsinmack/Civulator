@@ -24,7 +24,7 @@ namespace Data
             Production = production;
         }
 
-        internal static void InitUnitClasses()
+        internal static void Init()
         {
             Console.WriteLine("Initialize unit classes...");
             ByType = new Dictionary<UnitType, UnitClass>

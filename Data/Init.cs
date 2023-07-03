@@ -12,8 +12,12 @@ namespace Data
         public static void All()
         {
             Console.WriteLine("Initialize data...");
-            UnitClass.InitUnitClasses();
-            Building.InitBuildings();
+            Civilizations.Init();
+            Leaders.Init();
+            CapitalNames.Init();
+            CityNames.Init();
+            UnitClass.Init();
+            Buildings.Init();
         }
     }
 }

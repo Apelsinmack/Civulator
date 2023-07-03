@@ -7,6 +7,8 @@ using System.IO.Pipes;
 using System.Text.Json;
 using System.Text;
 using System.Threading.Tasks;
+using State.Enums;
+using Data;
 
 namespace TestClient
 {
@@ -56,9 +58,9 @@ namespace TestClient
             {
                 List<Player> players = new()
                 {
-                    new Player(Guid.NewGuid(), "Megadick", true, new Leader(ConsoleColor.Red)),
-                    new Player(Guid.NewGuid(), "Ken Q", true, new Leader(ConsoleColor.Blue)),
-                    new Player(Guid.NewGuid(), "AnotherNerd", true, new Leader(ConsoleColor.Cyan))
+                    new Player(Guid.NewGuid(), "Megadick", true, Leaders.ByType[LeaderType.HaraldHardrada]),
+                    new Player(Guid.NewGuid(), "Ken Q", true, Leaders.ByType[LeaderType.Hammurabi]),
+                    new Player(Guid.NewGuid(), "AnotherNerd", true, Leaders.ByType[LeaderType.QinShiHuang])
                 };
                 WriteData(namedPipeClientStream, new NewGame(mapBase, mapHeight, players.GetRange(0, numberOfPlayers)));
                 break;

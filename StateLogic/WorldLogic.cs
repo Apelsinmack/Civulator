@@ -18,7 +18,9 @@ namespace Logic
         public World GenerateWorld(int mapBase, int mapHeight, List<Player> players)
         {
             var random = new Random();
-            Map map = new MapLogic(mapBase, mapHeight).GenerateMap();
+            TerrainLogic terrainLogic = new TerrainLogic();
+            TileLogic tileLogic = new TileLogic(terrainLogic);
+            Map map = new MapLogic(tileLogic).GenerateMap(mapBase, mapHeight);
             _world = new World(map, players);
             HashSet<int> illegalIndexes = new();
             _world.Players.ForEach(player =>
@@ -33,9 +35,8 @@ namespace Logic
                             illegalIndexes.Add(illegalIndex);
                         }
                         illegalIndexes.Add(randomIndex);
-                        CityLogic.GenerateCity(_world, player, map.Tiles[randomIndex]);
-                        UnitLogic.GenerateUnit(_world, UnitType.Warrior, player, randomIndex);
-                        UnitLogic.GenerateUnit(_world, UnitType.Scout, player, randomIndex + 1); //TODO: Check if outside the map
+                        UnitLogic.GenerateUnit(_world, UnitType.Settler, player, randomIndex);
+                        UnitLogic.GenerateUnit(_world, UnitType.Warrior, player, randomIndex + 1); //TODO: Check if outside the map
                         break;
                     }
                 }

@@ -92,7 +92,7 @@ namespace Game
                     actions = _server.GetActions(_namedPipeServerStream, _world);
 
                     if (UnitOrders(player, actions, log)) { return; };
-                    CityOrders(player, actions, log);
+                    CityOrders(actions, log);
                     _gui.PrintWorld(_world, player, log);
                 }
                 while (!actions.EndTurn); //TODO: Or if no actions left
@@ -106,63 +106,67 @@ namespace Game
             foreach (var unitOrder in actions.UnitOrders)
             {
                 log.Add($"{unitOrder.Unit.Class} {unitOrder.Order}");
-                if (unitOrder.Order == UnitOrderType.Fortify)
+                UnitLogic unitLogic = new UnitLogic(new CityLogic(_world), _world, _world.Units[unitOrder.Unit.Index]);
+                switch (unitOrder.Order)
                 {
-                    _world.Units[unitOrder.Unit.Index].MovementLeft = 0;
-                    _world.Units[unitOrder.Unit.Index].Fortifying = true;
-                    continue;
-                }
-                int newTileIndex = GetNewIndex(unitOrder.Unit.TileIndex, unitOrder.Order);
-                if (newTileIndex > -1)
-                {
-                    UnitLogic.MoveUnit(_world, unitOrder.Unit.Index, newTileIndex);
-                    Tile newTile = _world.Map.Tiles[newTileIndex];
-                    UnitLogic.ExploreFromTile(_world, player, newTileIndex, Data.UnitClass.ByType[unitOrder.Unit.Class].SightRange);
-                    if (newTile.City != null && newTile.City.Owner != player)
-                    {
-                        log.Add($"{newTile.City.Owner.Name} lost {newTile.City.Name} to {player.Name}");
-                        if (CityLogic.GetCities(_world, newTile.City.Owner).Count() == 1)
+                    case UnitOrderType.Fortify:
+                        unitLogic.Fortify();
+                        break;
+                    case UnitOrderType.BuildCity:
+                        unitLogic.BuildCity();
+                        break;
+                    default:
+                        int newTileIndex = GetNewIndex(unitOrder.Unit.TileIndex, unitOrder.Order);
+                        if (newTileIndex > -1)
                         {
-                            _playerLogic.Kill(newTile.City.Owner);
-                            log.Add($"{newTile.City.Owner.Name} is no more");
-                            if (_world.Players.Where(player => !player.Dead).Count() == 1)
+                            UnitLogic.MoveUnit(_world, unitOrder.Unit.Index, newTileIndex);
+                            Tile newTile = _world.Map.Tiles[newTileIndex];
+                            UnitLogic.ExploreFromTile(_world, player, newTileIndex, UnitClass.ByType[unitOrder.Unit.Class].SightRange);
+                            if (newTile.City != null && newTile.City.Owner != player)
                             {
-                                _world.Victory = new Victory(player);
+                                log.Add($"{newTile.City.Owner.Name} lost {newTile.City.Name} to {player.Name}");
+                                if (CityLogic.GetCities(_world, newTile.City.Owner).Count() == 1)
+                                {
+                                    _playerLogic.Kill(newTile.City.Owner);
+                                    log.Add($"{newTile.City.Owner.Name} is no more");
+                                    if (_world.Players.Where(player => !player.Dead).Count() == 1)
+                                    {
+                                        _world.Victory = new Victory(player);
+                                        newTile.City.Owner = player;
+                                        _server.SendState(_namedPipeServerStream, _world);
+                                        return true;
+                                    }
+                                }
                                 newTile.City.Owner = player;
-                                _server.SendState(_namedPipeServerStream, _world);
-                                return true;
                             }
                         }
-                        newTile.City.Owner = player;
-                    }
+                        break;
                 }
             }
             return false;
         }
 
-        private void CityOrders(Player player, Actions actions, List<string> log)
+        private void CityOrders(Actions actions, List<string> log)
         {
             foreach (var cityOrder in actions.CityOrders)
             {
+                CityLogic cityLogic = new CityLogic(_world, _world.Map.Tiles[cityOrder.City.TileIndex].City);
                 log.Add($"{cityOrder.City.Name} {cityOrder.Order}");
                 switch (cityOrder.Order)
                 {
                     case CityOrderType.AddBuildingToBuildQueue:
-                        if (!_world.Map.Tiles[cityOrder.City.TileIndex].City.Buildings.Any(building => building == cityOrder.BuildingType.Value))
-                        {
-                            _world.Map.Tiles[cityOrder.City.TileIndex].City.BuildingQueue.Add(new BuildingQueueItem(cityOrder.BuildingType.Value, null));
-                        }
-                        else
-                        {
-                            actions.EndTurn = false;
-                        }
+                        cityLogic.AddBuildingToQueue(cityOrder.BuildingType.Value);
                         break;
                     case CityOrderType.AddUnitToBuildQueue:
-                        _world.Map.Tiles[cityOrder.City.TileIndex].City.BuildingQueue.Add(new BuildingQueueItem(null, cityOrder.UnitType.Value));
+                        cityLogic.AddUnitToQueue(cityOrder.UnitType.Value);
                         break;
                     case CityOrderType.RemoveFromBuildQueue:
-                        _world.Map.Tiles[cityOrder.City.TileIndex].City.BuildingQueue.RemoveAt(cityOrder.Index.Value);
+                        cityLogic.RemoveFromBuildQueue(cityOrder.Index.Value);
                         break;
+                }
+                if (cityLogic.IsBuildingQueueEmpty())
+                {
+                    actions.EndTurn = false;
                 }
             }
         }
@@ -172,7 +176,7 @@ namespace Game
             _server = Server.GetInstance();
             _gui = new ConsoleMapGui(true);
             _worldLogic = new WorldLogic();
-            Data.Init.All();
+            Init.All();
         }
 
         public void Start()

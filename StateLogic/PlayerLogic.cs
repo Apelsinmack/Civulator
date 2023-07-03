@@ -10,7 +10,8 @@ namespace Logic
 {
     public class PlayerLogic
     {
-        private World _world;
+        private readonly IUnitLogic? _unitLogic;
+        private readonly World _world;
         private Player _currentPlayer;
         public Player CurrentPlayer => _currentPlayer;
 
@@ -20,15 +21,14 @@ namespace Logic
             _currentPlayer = _world.Players.Find(player => player.Turn == currentTurn && !player.Dead);
         }
 
-        public PlayerLogic() { }
-
-
-        public PlayerLogic(World world)
+        public PlayerLogic(IUnitLogic unitLogic, World world)
         {
-            UpdateWorld(world);
+            _unitLogic = unitLogic;
+            _world = world;
+            SetCurrentPlayer();
         }
 
-        public void UpdateWorld(World world)
+        public PlayerLogic(World world)
         {
             _world = world;
             SetCurrentPlayer();
@@ -50,10 +50,7 @@ namespace Logic
         public void Kill(Player player)
         {
             player.Dead = true;
-            foreach (int index in player.UnitIndexes.ToList())
-            {
-                UnitLogic.RemoveUnit(_world, index);
-            }
+            _unitLogic.DisbandAllUnits(player);
         }
 
         //TODO: Move to unit logic

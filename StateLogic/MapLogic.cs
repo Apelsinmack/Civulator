@@ -7,32 +7,25 @@ using System.Threading.Tasks;
 
 namespace Logic
 {
-    public class MapLogic
+    public class MapLogic : IMapLogic
     {
-        private int _mapBase;
-        private int _mapHeight;
-        private TileLogic _tileLogic;
-        public int MapBase => _mapBase;
-        public int MapHeight => _mapHeight;
+        private readonly ITileLogic _tileLogic;
 
-
-        public MapLogic(int mapBase, int mapHeight)
+        public MapLogic(ITileLogic tileLogic)
         {
-            _mapBase = mapBase;
-            _mapHeight = mapHeight;
-            _tileLogic = new TileLogic();
+            _tileLogic = tileLogic;
         }
 
-        public Map GenerateMap()
+        public Map GenerateMap(int mapBase, int mapHeight)
         {
             Dictionary<int, Tile> tiles = new Dictionary<int, Tile>();
 
-            for (int i = 0; i < _mapBase * _mapHeight; i++)
+            for (int i = 0; i < mapBase * mapHeight; i++)
             {
                 tiles.Add(i, _tileLogic.GenerateTile(i));
             }
 
-            return new Map(_mapBase, _mapHeight, tiles);
+            return new Map(mapBase, mapHeight, tiles);
         }
     }
 }

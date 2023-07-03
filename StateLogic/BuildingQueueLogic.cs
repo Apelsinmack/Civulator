@@ -21,7 +21,7 @@ namespace Logic
                 }
                 else if (buildingQueueItem.BuildingType.HasValue)
                 {
-                    return Data.Building.ByType[buildingQueueItem.BuildingType.Value].Production;
+                    return Data.Buildings.ByType[buildingQueueItem.BuildingType.Value].Production;
                 }
                 throw new Exception("Unknown type in production queue");
             }

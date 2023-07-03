@@ -1,4 +1,5 @@
 ﻿using State;
+using State.Enums;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -7,26 +8,87 @@ using System.Threading.Tasks;
 
 namespace Logic
 {
-    public static class CityLogic
+    public class CityLogic : ICityLogic
     {
-        private static string GetRandomCityName()
+        private readonly World _world;
+        private readonly City? _city;
+        private readonly Random _random;
+
+        private string GetNextCityName(Player player)
         {
-            //TODO: Take care of too big index...
-            var random = new Random();
-            int randomIndex = random.Next(cities.Count);
-            string city = cities[randomIndex];
-            cities.RemoveAt(randomIndex);
+            var cities = GetAllCities(player).Select(city => city.Name);
+            if (cities.Any())
+            {
+                var cityNames = Data.CityNames.ByCivilizationType[player.Leader.CivilizationType].Where(cityName => !cities.Contains(cityName));
+                int randomIndex = _random.Next(cityNames.Count());
+                return cityNames.ElementAt(randomIndex);
+            }
+            else
+            {
+                return Data.CapitalNames.ByLeaderType[player.Leader.Type];
+            }
+        }
+
+        public CityLogic(World world)
+        {
+            _world = world;
+            _city = null;
+            _random = new Random();
+        }
+
+        public CityLogic(World world, City city)
+        {
+            _world = world;
+            _city = city;
+            _random = new Random();
+        }
+
+        public void AddBuildingToQueue(BuildingType buildingType)
+        {
+            if (!HasBuilding(buildingType))
+            {
+                _city.BuildingQueue.Add(new BuildingQueueItem(buildingType, null));
+            }
+        }
+
+        public bool HasBuilding(BuildingType buildingType)
+        {
+            return _city.Buildings.Any(building => building == buildingType);
+        }
+
+        public void AddUnitToQueue(UnitType unitType)
+        {
+            _city.BuildingQueue.Add(new BuildingQueueItem(null, unitType));
+        }
+
+        public void RemoveFromBuildQueue(int index)
+        {
+            _city.BuildingQueue.RemoveAt(index);
+        }
+
+        public bool IsBuildingQueueEmpty()
+        {
+            return !_city.BuildingQueue.Any();
+        }
+
+        public IEnumerable<City>? GetAllCities(Player player)
+        {
+            return _world.Map.Tiles.Values.Where(tile => tile.City != null && tile.City.Owner.Id == player.Id).Select(tile => tile.City);
+        }
+
+        public City GenerateCity(Player owner, Tile tile)
+        {
+            City city = new City(GetNextCityName(owner), owner, tile.Index, WorldLogic.GetAdjacentTileIndexes(_world, tile.Index));
+            tile.City = city;
+            UnitLogic.ExploreFromTile(_world, owner, tile.Index, 2);
+
             return city;
         }
 
-        private static List<string> cities = new List<string>
-            {
-                "Malmö",
-                "Lund",
-                "Göteborg",
-                "Eslöv",
-                "Stockholm"
-            };
+
+
+
+
 
         private static int GetProductionCostOfNextItemInBuildingQueue(City city)
         {
@@ -42,20 +104,13 @@ namespace Logic
             }
             if (city.BuildingQueue[0].BuildingType.HasValue)
             {
-                productionCost = Data.Building.ByType[city.BuildingQueue[0].BuildingType.Value].Production;
+                productionCost = Data.Buildings.ByType[city.BuildingQueue[0].BuildingType.Value].Production;
             }
 
             return productionCost;
         }
 
-        public static City GenerateCity(World world, Player owner, Tile tile)
-        {
-            City city = new City(GetRandomCityName(), owner, tile.Index, WorldLogic.GetAdjacentTileIndexes(world, tile.Index));
-            tile.City = city;
-            UnitLogic.ExploreFromTile(world, owner, tile.Index, 2);
 
-            return city;
-        }
 
         public static IEnumerable<City> GetCities(World world, Player player)
         {

@@ -8,23 +8,23 @@ using System.Threading.Tasks;
 
 namespace Logic
 {
-    internal class TerrainLogic
+    internal class TerrainLogic : ITerrainLogic
     {
-        private Random _random;
+        private readonly Random _random;
 
         internal TerrainLogic()
         {
             _random = new Random();
         }
 
-        internal TerrainType GetRandomTerrainType()
+        private TerrainType GetRandomTerrainType()
         {
             TerrainType[] terrainTypes = Enum.GetValues<TerrainType>();
             int index = _random.Next(terrainTypes.Length);
             return (TerrainType)terrainTypes.GetValue(index);
         }
 
-        internal Terrain GenerateTerrain()
+        public Terrain GenerateTerrain()
         {
             var randomTerrainType = GetRandomTerrainType();
             return new Terrain(randomTerrainType);

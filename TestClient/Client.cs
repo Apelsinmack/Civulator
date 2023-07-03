@@ -31,7 +31,7 @@ namespace TestClient
                 if (unit.Value.MovementLeft > 0)
                 {
                     Console.WriteLine($"Move {unit.Value.Class}");
-                    unitOrders.Add(new UnitOrder(_clientGui.ConsoleReadUnitOrder(), unit.Value));
+                    unitOrders.Add(new UnitOrder(_clientGui.ConsoleReadUnitOrder(unit.Value.Class), unit.Value));
                 }
             }
         }
@@ -58,11 +58,11 @@ namespace TestClient
             _api = Api.GetInstance();
             _mapGui = new ConsoleMapGui();
             _clientGui = new ConsoleClientGui();
-            _playerLogic = new PlayerLogic();
         }
 
         public void Start()
         {
+            Data.Init.All();
             using (_namedPipeClientStream = new NamedPipeClientStream(".", "Civulator", PipeDirection.InOut))
             {
                 Console.WriteLine("Connecting to server...");
@@ -74,7 +74,7 @@ namespace TestClient
                     do
                     {
                         GameState _state = _api.GetState(_namedPipeClientStream);
-                        _playerLogic.UpdateWorld(_state.World);
+                        _playerLogic = new PlayerLogic(_state.World);
                         if (_state.World.Victory != null)
                         {
                             Console.WriteLine($"Congratulations to the victory {_state.World.Victory.Player.Name}!");

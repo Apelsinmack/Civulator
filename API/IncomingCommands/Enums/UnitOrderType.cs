@@ -15,5 +15,6 @@ namespace Api.IncomingCommands.Enums
         DownLeft,
         UpLeft,
         Fortify,
+        BuildCity
     }
 }

@@ -11,22 +11,67 @@ using System.Threading.Tasks;
 
 namespace Logic
 {
-    public static class UnitLogic
+    public class UnitLogic : IUnitLogic
     {
+        private readonly ICityLogic? _cityLogic;
+        private readonly World _world;
+        private Unit _unit;
+
+        public UnitLogic(World world, Unit unit)
+        {
+            _world = world;
+            _unit = unit;
+        }
+
+        public UnitLogic(ICityLogic cityLogic, World world, Unit unit)
+        {
+            _cityLogic = cityLogic;
+            _world = world;
+            _unit = unit;
+        }
+
+        public void Disband()
+        {
+            _world.Map.Tiles[_unit.TileIndex].UnitIndexes.Remove(_unit.Index);
+            _unit.Owner.UnitIndexes.Remove(_unit.Index);
+            _world.Units.Remove(_unit.Index);
+        }
+
+        public void DisbandAllUnits(Player owner)
+        {
+            foreach (int index in owner.UnitIndexes.ToList())
+            {
+                Unit unit = _world.Units[index];
+                _world.Map.Tiles[unit.TileIndex].UnitIndexes.Remove(index);
+                unit.Owner.UnitIndexes.Remove(index);
+                _world.Units.Remove(index);
+            }
+            owner.UnitIndexes.Clear(); //TODO: IS this needed?
+        }
+
+        public void Fortify()
+        {
+            _unit.MovementLeft = 0;
+            _unit.Fortifying = true;
+        }
+
+        public void BuildCity()
+        {
+            if (_unit.Class == UnitType.Settler)
+            {
+                _cityLogic.GenerateCity(_unit.Owner, _world.Map.Tiles[_unit.TileIndex]);
+                Disband();
+            }
+        }
+
+
+
         public static void ResetUnitMovements(World world, Player player)
         {
             foreach (int index in player.UnitIndexes)
             {
                 world.Units[index].MovementLeft = Data.UnitClass.ByType[world.Units[index].Class].Movement;
             }
-        }
-
-        public static void RemoveUnit(World world, int index)
-        {
-            State.Unit unit = world.Units[index];
-            world.Map.Tiles[unit.TileIndex].UnitIndexes.Remove(index);
-            unit.Owner.UnitIndexes.Remove(index);
-            world.Units.Remove(index);
         }
 
         public static void MoveUnit(World world, int unitIndex, int tileIndex)
@@ -40,7 +85,8 @@ namespace Logic
 
         public static void FortifyUnits(World world, Player player)
         {
-            foreach (int index in player.UnitIndexes) {
+            foreach (int index in player.UnitIndexes)
+            {
                 if (world.Units[index].Fortifying)
                 {
                     world.Units[index].Fortifying = false;

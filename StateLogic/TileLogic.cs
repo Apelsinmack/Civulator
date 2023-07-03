@@ -7,16 +7,16 @@ using System.Threading.Tasks;
 
 namespace Logic
 {
-    internal class TileLogic
+    internal class TileLogic : ITileLogic
     {
-        private TerrainLogic _terrainLogic;
+        private readonly ITerrainLogic _terrainLogic;
 
-        internal TileLogic()
+        internal TileLogic(ITerrainLogic terrainLogic)
         {
-            _terrainLogic = new TerrainLogic();
+            _terrainLogic = terrainLogic;
         }
 
-        internal Tile GenerateTile(int index)
+        public Tile GenerateTile(int index)
         {
             return new Tile(index, _terrainLogic.GenerateTerrain());
         }

@@ -110,7 +110,7 @@ namespace TestClient
             }
         }
 
-        public UnitOrderType ConsoleReadUnitOrder()
+        public UnitOrderType ConsoleReadUnitOrder(UnitType unitType)
         {
             while (true)
             {
@@ -130,6 +130,8 @@ namespace TestClient
                         return UnitOrderType.UpRight;
                     case "f":
                         return UnitOrderType.Fortify;
+                    case "b":
+                        return UnitOrderType.BuildCity;
                 }
             }
         }
