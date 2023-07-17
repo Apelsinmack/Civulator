@@ -17,6 +17,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Logic", "StateLogic\Logic.c
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Data", "Data\Data.csproj", "{1C78CE60-79AF-47E8-B334-45F7C45BFCA3}"
 EndProject
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "PythonTestClient", "PythonTestClient\PythonTestClient.pyproj", "{8E91EE1D-4547-4444-85EF-2BBACE85DBE3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -51,6 +53,8 @@ Global
 		{1C78CE60-79AF-47E8-B334-45F7C45BFCA3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1C78CE60-79AF-47E8-B334-45F7C45BFCA3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1C78CE60-79AF-47E8-B334-45F7C45BFCA3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8E91EE1D-4547-4444-85EF-2BBACE85DBE3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8E91EE1D-4547-4444-85EF-2BBACE85DBE3}.Release|Any CPU.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
