@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace Logic
 {
-    internal interface ITerrainLogic
+    public interface ITerrainLogic
     {
         Terrain GenerateTerrain();
     }

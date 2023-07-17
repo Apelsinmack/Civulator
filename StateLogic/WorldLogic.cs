@@ -8,73 +8,69 @@ using System.Threading.Tasks;
 
 namespace Logic
 {
-    public class WorldLogic
+    public class WorldLogic : IWorldLogic
     {
-        private World? _world;
-        public World? World => _world;
+        private readonly IPlayerLogic _playerLogic;
+        private readonly IUnitLogic _unitLogic;
+        private readonly ICityLogic _cityLogic;
+        private World _world;
+        private Player? _currentPlayer;
 
-        public WorldLogic() { }
+        public IPlayerLogic PlayerLogic => _playerLogic;
+        public IUnitLogic UnitLogic => _unitLogic;
+        public ICityLogic CityLogic => _cityLogic;
+        public World World => _world;
+        public Player? CurrentPlayer => _currentPlayer;
 
-        public World GenerateWorld(int mapBase, int mapHeight, List<Player> players)
+        public WorldLogic(World world, IPlayerLogic playerLogic, IUnitLogic unitLogic, ICityLogic cityLogic)
+        {
+            _world = world;
+            _playerLogic = playerLogic;
+            _unitLogic = unitLogic;
+            _cityLogic = cityLogic;
+        }
+
+        public void SpawnPlayers()
         {
             var random = new Random();
-            TerrainLogic terrainLogic = new TerrainLogic();
-            TileLogic tileLogic = new TileLogic(terrainLogic);
-            Map map = new MapLogic(tileLogic).GenerateMap(mapBase, mapHeight);
-            _world = new World(map, players);
             HashSet<int> illegalIndexes = new();
             _world.Players.ForEach(player =>
             {
                 do
                 {
-                    int randomIndex = random.Next(map.Tiles.Count);
+                    int randomIndex = random.Next(_world.Map.Tiles.Count);
                     if (!illegalIndexes.Contains(randomIndex))
                     {
-                        foreach (int illegalIndex in GetAdjacentTiles(_world, randomIndex).Select(tile => tile.Index))
+                        foreach (int illegalIndex in GetAdjacentTiles(randomIndex).Select(tile => tile.Index))
                         {
                             illegalIndexes.Add(illegalIndex);
                         }
                         illegalIndexes.Add(randomIndex);
-                        UnitLogic.GenerateUnit(_world, UnitType.Settler, player, randomIndex);
-                        UnitLogic.GenerateUnit(_world, UnitType.Warrior, player, randomIndex + 1); //TODO: Check if outside the map
+                        _unitLogic.GenerateUnit(UnitType.Settler, player, randomIndex);
+                        _unitLogic.GenerateUnit(UnitType.Warrior, player, randomIndex);
                         break;
                     }
                 }
                 while (true);
             });
-
-            return _world;
         }
 
-        //TODO: Make non static?
-        public static List<int> GetAdjacentTileIndexes(World world, int index)
+        public bool OnGoing()
         {
-            List<int> indexes = new()
-            {
-                index - world.Map.MapBase, // ↑
-                index + world.Map.MapBase // ↓
-            };
-            if (index % world.Map.MapBase % 2 == 0)
-            {
-                indexes.Add(index - world.Map.MapBase + 1); // ↗
-                indexes.Add(index + 1); // ↘
-                indexes.Add(index - 1); // ↙
-                indexes.Add(index - 1 - world.Map.MapBase); // ↖
-            }
-            else
-            {
-                indexes.Add(index + 1); // ↗
-                indexes.Add(index + 1 + world.Map.MapBase); // ↘
-                indexes.Add(index - 1 + world.Map.MapBase); // ↙
-                indexes.Add(index - 1); // ↖
-            }
-            return indexes.Where(index => index > -1 && index < world.Map.Tiles.Count()).ToList();
+            return _world.Victory == null;
         }
 
-        //TODO: Make non static?
-        public static IEnumerable<Tile> GetAdjacentTiles(World world, int index)
+        public void InitTurn()
         {
-            return world.Map.Tiles.Where(tile => GetAdjacentTileIndexes(world, index).Contains(tile.Key)).Select(tile => tile.Value);
+            _currentPlayer = _playerLogic.CurrentPlayer;
+            _cityLogic.AddProductionToCities(_currentPlayer, _unitLogic);
+            _unitLogic.ResetUnitMovements(_currentPlayer);
+            _unitLogic.FortifyUnits(_currentPlayer);
+        }
+
+        public IEnumerable<Tile> GetAdjacentTiles(int index)
+        {
+            return _world.Map.Tiles.Where(tile => Logic.MapLogic.GetAdjacentTileIndexes(_world.Map, index).Contains(tile.Key)).Select(tile => tile.Value);
         }
     }
 }
