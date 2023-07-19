@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 
+"""
+
 # Define the Convolutional Neural Network model
 class QNetwork(nn.Module):
     def __init__(self, state_size, action_size, seed):
@@ -43,3 +45,5 @@ seed = 0 # for reproducibility
 model = QNetwork(state_size, action_size, seed)
 
 print('done')
+
+"""

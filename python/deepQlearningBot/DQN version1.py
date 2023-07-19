@@ -148,5 +148,27 @@ class DQNAgent():
         self.optimizer.step()
 
 
+"""
+For testing the algoritm, we're inputting random game states more or less.
+"""
+
+def simulate_environment(agent):
+    for _ in range(10):
+        state = torch.randn(1, 4, n, m)  # Randomly generate a game state
+        action = agent.select_action(state)
+        print(f"Action selected: {action.item()}")
+
+if __name__ == '__main__':
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    state_size = (4, n, m)  # Change n, m to the dimensions of your game map
+    action_size = 10  # As per the rules of your game
+    agent = DQNAgent(state_size, action_size, device)
+    simulate_environment(agent)
 
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+state_size = (4, n, m)  # Change state size to (4,n,m) where n, m are the dimensions of your game map, the 4 represents how many channels each tile has, 1 for each warrior and city of each team.
+action_size = 10  # As per the rules of your game (= 8 directions + fortify + end turn)
+agent = DQNAgent(state_size, action_size, device)
+
+simulate_environment(agent)
