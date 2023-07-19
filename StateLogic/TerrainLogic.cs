@@ -8,11 +8,11 @@ using System.Threading.Tasks;
 
 namespace Logic
 {
-    internal class TerrainLogic : ITerrainLogic
+    public class TerrainLogic : ITerrainLogic
     {
         private readonly Random _random;
 
-        internal TerrainLogic()
+        public TerrainLogic()
         {
             _random = new Random();
         }

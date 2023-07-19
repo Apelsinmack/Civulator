@@ -7,11 +7,11 @@ using System.Threading.Tasks;
 
 namespace Logic
 {
-    internal class TileLogic : ITileLogic
+    public class TileLogic : ITileLogic
     {
         private readonly ITerrainLogic _terrainLogic;
 
-        internal TileLogic(ITerrainLogic terrainLogic)
+        public TileLogic(ITerrainLogic terrainLogic)
         {
             _terrainLogic = terrainLogic;
         }

@@ -11,8 +11,8 @@ namespace Logic
     public class CityLogic : ICityLogic
     {
         private readonly World _world;
-        private readonly City? _city;
         private readonly Random _random;
+        private City? _city;
 
         private string GetNextCityName(Player player)
         {
@@ -32,15 +32,41 @@ namespace Logic
         public CityLogic(World world)
         {
             _world = world;
-            _city = null;
             _random = new Random();
         }
 
-        public CityLogic(World world, City city)
+        public void SetCurrentCity(City? city)
         {
-            _world = world;
             _city = city;
-            _random = new Random();
+        }
+
+        public IEnumerable<City> GetCities(Player player)
+        {
+            return _world.Map.Tiles.Where(tile => tile.Value.City != null && tile.Value.City.Owner == player).Select(tile => tile.Value.City);
+        }
+
+        public void AddProductionToCities(Player player, IUnitLogic unitLogic)
+        {
+            foreach (var city in GetCities(player))
+            {
+                //TODO: Calculate new city production
+                city.AccumulatedProduction += city.Production;
+                int productionCost = GetProductionCostOfNextItemInBuildingQueue(city);
+
+                if (productionCost >= 0 && city.AccumulatedProduction >= productionCost)
+                {
+                    city.AccumulatedProduction -= productionCost;
+                    if (city.BuildingQueue[0].UnitType.HasValue)
+                    {
+                        unitLogic.GenerateUnit(city.BuildingQueue[0].UnitType.Value, player, city.TileIndex);
+                    }
+                    else if (city.BuildingQueue[0].BuildingType.HasValue)
+                    {
+                        city.Buildings.Add(city.BuildingQueue[0].BuildingType.Value);
+                    }
+                    city.BuildingQueue.RemoveAt(0);
+                }
+            }
         }
 
         public void AddBuildingToQueue(BuildingType buildingType)
@@ -78,12 +104,18 @@ namespace Logic
 
         public City GenerateCity(Player owner, Tile tile)
         {
-            City city = new City(GetNextCityName(owner), owner, tile.Index, WorldLogic.GetAdjacentTileIndexes(_world, tile.Index));
+            City city = new City(GetNextCityName(owner), owner, tile.Index, MapLogic.GetAdjacentTileIndexes(_world.Map, tile.Index));
             tile.City = city;
-            UnitLogic.ExploreFromTile(_world, owner, tile.Index, 2);
+            MapLogic.ExploreFromTile(_world, owner, tile.Index, 2);
 
             return city;
         }
+
+        public IEnumerable<City>? GetCitiesWithEmptyBuildQueue(Player player)
+        {
+            return GetAllCities(player).Where(city => city.BuildingQueue.Count() == 0);
+        }
+
 
 
 
@@ -108,38 +140,6 @@ namespace Logic
             }
 
             return productionCost;
-        }
-
-
-
-        public static IEnumerable<City> GetCities(World world, Player player)
-        {
-            return world.Map.Tiles.Where(tile => tile.Value.City != null && tile.Value.City.Owner == player).Select(tile => tile.Value.City);
-        }
-
-        public static void AddProductionToCities(World world, Player player)
-        {
-            var cities = GetCities(world, player);
-            foreach (var city in cities)
-            {
-                //TODO: Calculate new city production
-                city.AccumulatedProduction += city.Production;
-                int productionCost = GetProductionCostOfNextItemInBuildingQueue(city);
-
-                if (productionCost > -1 && city.AccumulatedProduction >= productionCost)
-                {
-                    city.AccumulatedProduction -= productionCost;
-                    if (city.BuildingQueue[0].UnitType.HasValue)
-                    {
-                        UnitLogic.GenerateUnit(world, city.BuildingQueue[0].UnitType.Value, player, city.TileIndex);
-                    }
-                    if (city.BuildingQueue[0].BuildingType.HasValue)
-                    {
-                        city.Buildings.Add(city.BuildingQueue[0].BuildingType.Value);
-                    }
-                    city.BuildingQueue.RemoveAt(0);
-                }
-            }
         }
     }
 }

@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -13,21 +14,17 @@ namespace Logic
 {
     public class UnitLogic : IUnitLogic
     {
-        private readonly ICityLogic? _cityLogic;
-        private readonly World _world;
-        private Unit _unit;
+        private World _world;
+        private Unit? _unit;
 
-        public UnitLogic(World world, Unit unit)
+        public UnitLogic(World world)
         {
             _world = world;
-            _unit = unit;
         }
 
-        public UnitLogic(ICityLogic cityLogic, World world, Unit unit)
+        public void SetCurrentUnit(Unit unit)
         {
-            _cityLogic = cityLogic;
-            _world = world;
-            _unit = unit;
+            _unit = _world.Units[unit.Index];
         }
 
         public void Disband()
@@ -46,7 +43,7 @@ namespace Logic
                 unit.Owner.UnitIndexes.Remove(index);
                 _world.Units.Remove(index);
             }
-            owner.UnitIndexes.Clear(); //TODO: IS this needed?
+            owner.UnitIndexes.Clear(); //TODO: Is this needed?
         }
 
         public void Fortify()
@@ -55,66 +52,69 @@ namespace Logic
             _unit.Fortifying = true;
         }
 
-        public void BuildCity()
+        public void BuildCity(ICityLogic cityLogic)
         {
             if (_unit.Class == UnitType.Settler)
             {
-                _cityLogic.GenerateCity(_unit.Owner, _world.Map.Tiles[_unit.TileIndex]);
+                cityLogic.GenerateCity(_unit.Owner, _world.Map.Tiles[_unit.TileIndex]);
                 Disband();
             }
         }
 
-
-
-        public static void ResetUnitMovements(World world, Player player)
+        public void MoveUnit(int newTileIndex)
         {
-            foreach (int index in player.UnitIndexes)
-            {
-                world.Units[index].MovementLeft = Data.UnitClass.ByType[world.Units[index].Class].Movement;
-            }
-        }
-
-        public static void MoveUnit(World world, int unitIndex, int tileIndex)
-        {
-            State.Unit unit = world.Units[unitIndex];
-            world.Map.Tiles[unit.TileIndex].UnitIndexes.Remove(unitIndex);
+            Unit unit = _world.Units[_unit.Index];
+            _world.Map.Tiles[_unit.TileIndex].UnitIndexes.Remove(unit.Index);
             unit.MovementLeft--;
-            unit.TileIndex = tileIndex;
-            world.Map.Tiles[tileIndex].UnitIndexes.Add(unitIndex);
+            unit.TileIndex = newTileIndex;
+            _world.Map.Tiles[newTileIndex].UnitIndexes.Add(unit.Index);
+            MapLogic.ExploreFromTile(_world, unit.Owner, newTileIndex, UnitClass.ByType[unit.Class].SightRange);
         }
 
-        public static void FortifyUnits(World world, Player player)
-        {
-            foreach (int index in player.UnitIndexes)
-            {
-                if (world.Units[index].Fortifying)
-                {
-                    world.Units[index].Fortifying = false;
-                    world.Units[index].Fortified = true;
-                }
-            }
-        }
-
-        public static Unit GenerateUnit(World world, UnitType unitClass, Player owner, int tileIndex)
+        public Unit GenerateUnit(UnitType unitClass, Player owner, int tileIndex)
         {
             int index = 0;
-            if (world.Units.Count > 0)
+            if (_world.Units.Count > 0)
             {
-                index = world.Units.Max(unit => unit.Key) + 1;
+                index = _world.Units.Max(unit => unit.Key) + 1;
             }
-            Unit unit = new Unit(index, unitClass, owner, tileIndex, Data.UnitClass.ByType[unitClass].Movement);
-            world.Units.Add(index, unit);
-            world.Map.Tiles[tileIndex].UnitIndexes.Add(index);
+            Unit unit = new Unit(index, unitClass, owner, tileIndex, UnitClass.ByType[unitClass].Movement);
+            _world.Units.Add(index, unit);
+            _world.Map.Tiles[tileIndex].UnitIndexes.Add(index);
             owner.UnitIndexes.Add(index);
-            ExploreFromTile(world, owner, tileIndex, 1);
+            MapLogic.ExploreFromTile(_world, owner, tileIndex, UnitClass.ByType[unitClass].SightRange);
 
             return unit;
         }
 
-        public static void ExploreFromTile(World world, Player player, int index, int sightRange = 1)
+        public void ResetUnitMovements(Player owner)
         {
-            //TODO: Take in to account e.g. visibility range, terrain type of the index, terrain type of the surrounding area etc.
-            player.ExploredTileIndexes.UnionWith(WorldLogic.GetAdjacentTileIndexes(world, index));
+            foreach (int index in owner.UnitIndexes)
+            {
+                _world.Units[index].MovementLeft = UnitClass.ByType[_world.Units[index].Class].Movement;
+            }
+        }
+
+        public void FortifyUnits(Player owner)
+        {
+            foreach (int index in owner.UnitIndexes)
+            {
+                if (_world.Units[index].Fortifying)
+                {
+                    _world.Units[index].Fortifying = false;
+                    _world.Units[index].Fortified = true;
+                }
+            }
+        }
+
+        public IEnumerable<KeyValuePair<int, Unit>>? GetUnfortifiedUnits(Player player)
+        {
+            return _world.Units.Where(unit => player.UnitIndexes.Contains(unit.Key) && !unit.Value.Fortifying && !unit.Value.Fortified);
+        }
+
+        public IEnumerable<KeyValuePair<int, Unit>>? GetAllUnits(Player player)
+        {
+            return _world.Units.Where(unit => player.UnitIndexes.Contains(unit.Key));
         }
     }
 }

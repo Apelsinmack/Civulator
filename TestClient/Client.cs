@@ -22,7 +22,10 @@ namespace TestClient
         private ConsoleMapGui _mapGui;
         private ConsoleClientGui _clientGui;
         private GameState _state;
-        private PlayerLogic _playerLogic;
+        private IWorldLogic _worldLogic;
+        private IPlayerLogic _playerLogic;
+        private IUnitLogic _unitLogic;
+        private ICityLogic _cityLogic;
 
         private void CycleUnits(IEnumerable<KeyValuePair<int, Unit>>? units, List<UnitOrder> unitOrders)
         {
@@ -67,7 +70,7 @@ namespace TestClient
             {
                 Console.WriteLine("Connecting to server...");
                 _namedPipeClientStream.Connect();
-                _api.GenerateWorld(_namedPipeClientStream, 20, 10, 3);
+
                 while (_namedPipeClientStream.IsConnected)
                 {
                     ConsoleClientGui.PlayerMenu playerMenu;
@@ -75,12 +78,16 @@ namespace TestClient
                     {
                         GameState _state = _api.GetState(_namedPipeClientStream);
                         _playerLogic = new PlayerLogic(_state.World);
+                        _unitLogic = new UnitLogic(_state.World);
+                        _cityLogic = new CityLogic(_state.World);
+                        _worldLogic = new WorldLogic(_state.World, _playerLogic, _unitLogic, _cityLogic);
                         if (_state.World.Victory != null)
                         {
                             Console.WriteLine($"Congratulations to the victory {_state.World.Victory.Player.Name}!");
                             Console.ReadLine();
                             return;
                         }
+                        _playerLogic.SetCurrentPlayer();
                         var player = _playerLogic.CurrentPlayer;
                         List<UnitOrder> unitOrders = new();
                         List<CityOrder> cityOrders = new();
@@ -90,21 +97,21 @@ namespace TestClient
                         switch (playerMenu = _clientGui.ConsoleReadPlayerMenu())
                         {
                             case ConsoleClientGui.PlayerMenu.CycleUnits:
-                                CycleUnits(_playerLogic.GetUnfortifiedUnits(player), unitOrders);
+                                CycleUnits(_unitLogic.GetUnfortifiedUnits(player), unitOrders);
                                 break;
                             case ConsoleClientGui.PlayerMenu.CycleAllUnits:
-                                CycleUnits(_playerLogic.GetAllUnits(player), unitOrders);
+                                CycleUnits(_unitLogic.GetAllUnits(player), unitOrders);
                                 break;
                             case ConsoleClientGui.PlayerMenu.CycleCities:
-                                CycleCities(_playerLogic.GetCitiesWithEmptyBuildQueue(player), cityOrders);
+                                CycleCities(_cityLogic.GetCitiesWithEmptyBuildQueue(player), cityOrders);
                                 break;
                             case ConsoleClientGui.PlayerMenu.CycleAllCities:
-                                CycleCities(_playerLogic.GetAllCities(player), cityOrders);
+                                CycleCities(_cityLogic.GetAllCities(player), cityOrders);
                                 break;
                             case ConsoleClientGui.PlayerMenu.EndTurn:
-                                if (_playerLogic.GetCitiesWithEmptyBuildQueue(player).Any())
+                                if (_cityLogic.GetCitiesWithEmptyBuildQueue(player).Any())
                                 {
-                                    CycleCities(_playerLogic.GetCitiesWithEmptyBuildQueue(player), cityOrders);
+                                    CycleCities(_cityLogic.GetCitiesWithEmptyBuildQueue(player), cityOrders);
                                 }
                                 endTurn = true;
                                 break;
