@@ -9,6 +9,8 @@
 *.user
 *.userosscache
 *.sln.docstates
+python/deepQlearningBot/deepQlearningBot/mlciv/
+
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

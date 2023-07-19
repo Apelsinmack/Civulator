@@ -1,0 +1,23 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.6.33829.357
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{888888A0-9F3D-457C-B088-3A5042F75D52}") = "deepQlearningBot", "deepQlearningBot\deepQlearningBot.pyproj", "{821F1FA7-6A46-429A-AC9C-3118BD0BB6FC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{821F1FA7-6A46-429A-AC9C-3118BD0BB6FC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{821F1FA7-6A46-429A-AC9C-3118BD0BB6FC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {173B5100-2D96-476D-9A7B-DECC8BB50FD3}
+	EndGlobalSection
+EndGlobal
