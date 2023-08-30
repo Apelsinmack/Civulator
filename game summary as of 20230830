@@ -1,0 +1,40 @@
+Game Summary:
+Game Objective: The primary objective is to invade the enemy city with a warrior. If a warrior enters an enemy city, the game is won by the invading player.
+Game Dynamics:
+There are only two teams.
+Each team starts with one city.
+Cities cannot produce settlers or any other units except for warriors.
+Each city spawns a new warrior every 'n' turns. Potential frequencies being every 5th or 10th turn.
+Each warrior has an action space:
+Move/attack in any of the 6 directions.
+Fortify.
+End the turn.
+Attack dynamics: If a friendly warrior moves onto a tile with an enemy warrior, they engage in combat. The outcome decides if the attacker moves to the tile or if the defender remains.
+Game State Representation:
+The game state is represented as an n×m matrix.
+Each element of this matrix is a vector of length 4. The vector elements represent:
+Presence and health of a friendly city.
+Presence and health of an enemy city.
+Presence and health of a friendly warrior.
+Presence and health of an enemy warrior.
+AI Program Summary:
+The program aims to train a bot using deep Q-learning to play the described game.
+The Q-network (DQN class) processes the game state and predicts Q-values for all possible actions.
+It contains three convolutional layers followed by a fully connected layer.
+The convolutional layers are used to process the spatial information of the game board.
+ReplayMemory class stores transitions which include the current state, taken action, resulting next state, and obtained reward. It is used to sample and provide data for training the Q-network.
+DQNAgent class defines the agent's behaviors and interactions:
+select_action uses epsilon-greedy policy to decide between exploiting current knowledge or exploring a new action.
+step logs new experiences and initiates learning when enough experiences are gathered.
+learn samples a batch of experiences and uses them to update the DQN.
+The agent maintains two networks: a primary network for predicting Q-values and a target network to stabilize learning.
+Currently, the code uses random states for testing.
+Missing Components:
+Reward Function: A function to provide feedback based on the agent's actions.
+Game Loop: Integration of the game logic to provide continuous states to the agent, execute actions, and return results.
+Game Termination Conditions: Criteria for ending the game and identifying the winner.
+Action Execution: Logic to actually execute the actions in the game and return the new state and reward.
+Points for Further Discussion:
+Adjust the number of features to correctly reflect game dynamics.
+Define the reward strategy for various in-game outcomes, e.g., successful attack, defending a tile, winning the game, etc.
+Explore the possibilities of expanding the game's dynamics or introducing new mechanics.
