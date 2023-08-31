@@ -15,9 +15,9 @@ The number of actions is set to 10 as per your description.
 class DQN(nn.Module):
     def __init__(self, h, w, outputs):
         super(DQN, self).__init__()
-        self.conv1 = nn.Conv2d(4, 16, kernel_size=5, stride=1, padding=2)
-        self.bn1 = nn.BatchNorm2d(16)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=5, stride=1, padding=2)
+        self.conv1 = nn.Conv2d(4, 6, kernel_size=5, stride=1, padding=2)
+        self.bn1 = nn.BatchNorm2d(6)
+        self.conv2 = nn.Conv2d(6, 32, kernel_size=5, stride=1, padding=2)
         self.bn2 = nn.BatchNorm2d(32)
         self.conv3 = nn.Conv2d(32, 32, kernel_size=5, stride=1, padding=2)
         self.bn3 = nn.BatchNorm2d(32)
@@ -160,6 +160,8 @@ def simulate_environment(agent):
 
 if __name__ == '__main__':
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    n = 10
+    m = 10
     state_size = (4, n, m)  # Change n, m to the dimensions of your game map
     action_size = 10  # As per the rules of your game
     agent = DQNAgent(state_size, action_size, device)
@@ -167,6 +169,8 @@ if __name__ == '__main__':
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+n = 10
+m = 10
 state_size = (4, n, m)  # Change state size to (4,n,m) where n, m are the dimensions of your game map, the 4 represents how many channels each tile has, 1 for each warrior and city of each team.
 action_size = 10  # As per the rules of your game (= 8 directions + fortify + end turn)
 agent = DQNAgent(state_size, action_size, device)
