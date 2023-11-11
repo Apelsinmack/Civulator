@@ -1,6 +1,16 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import random
+
+
+# Behöver göra mask-function
+# Behöver göra end turn logik, ta hjälp av mask function.
+# Behöver göra game environment : här ska logiken bakom skicka och ta emot finnas.
+# Game environment måste också ge spelplanens storlek osv.
+
+GAMMA = 0.99  # You can adjust this value based on your specific RL problem
+
 
 class SelectAndMoveNetwork(nn.Module):
     def __init__(self, n, m, d):
@@ -96,6 +106,13 @@ class ReplayMemory:
     def __len__(self):
         return len(self.memory)
 
+class Transition:
+    def __init__(self, state, action, reward, next_state, done):
+        self.state = state
+        self.action = action
+        self.reward = reward
+        self.next_state = next_state
+        self.done = done
 
 class DQNAgent:
     def __init__(self, n, m, d, memory):
@@ -107,7 +124,7 @@ class DQNAgent:
     def select_action(self, state, epsilon=0.1):
         if random.uniform(0, 1) < epsilon: # Exploration
             # Randomly select and move
-            return (random.choice(range(n * m)), random.choice(range(n * m)))
+            return (random.choice(range(self.n * self.m)), random.choice(range(self.n * self.m)))
         else: # Exploitation
             selected_pos, move_pos = select_and_move(state)
             return (selected_pos.item(), move_pos.item())
@@ -147,7 +164,7 @@ class DQNAgent:
         self.optimizer.step()
 
 
-""" TRAINING LOOP """
+""" TRAINING LOOP """ # spelplan = base = 20, height = 10
 
 env = YourGameEnvironmentHere()
 agent = DQNAgent(n, m, d, ReplayMemory(10000)) # example capacity
