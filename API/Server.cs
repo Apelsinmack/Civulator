@@ -62,12 +62,56 @@ namespace Api
             return null;
         }
 
-        public Actions GetActions(NamedPipeServerStream namedPipeServerStream, World world)
+        public Actions GetHumanActions(NamedPipeServerStream namedPipeServerStream, World world)
         {
             WriteData(namedPipeServerStream, new GameState(world));
             while (namedPipeServerStream.IsConnected)
             {
                 return ReadData<Actions>(namedPipeServerStream);
+            }
+            return null;
+        }
+
+        public Actions GetAIActions(NamedPipeServerStream namedPipeServerStream, World world)
+        {
+            var unitTileIndexes = world.Units.Select(unit => unit.Value.TileIndex).ToArray();
+
+            using (MemoryStream memoryStream = new MemoryStream())
+            {
+                using (BinaryWriter writer = new BinaryWriter(memoryStream))
+                {
+                    writer.Write(unitTileIndexes.Length);
+                    foreach (int unitTileIndex in unitTileIndexes)
+                    {
+                        writer.Write(unitTileIndex);
+                    }
+                }
+
+                byte[] byteArray = memoryStream.ToArray();
+
+                namedPipeServerStream.Write(byteArray, 0, byteArray.Length);
+            }
+
+            while (namedPipeServerStream.IsConnected)
+            {
+                using (MemoryStream memoryStream = new MemoryStream())
+                {
+                    byte[] lengthBuffer = new byte[4];
+                    int bytesRead;
+
+                    namedPipeServerStream.Read(lengthBuffer, 0, lengthBuffer.Length);
+                    int messageLength = BitConverter.ToInt32(lengthBuffer, 0);
+
+                    //byte[] dataBuffer = new byte[4096];
+                    //while (messageLength > 0 && (bytesRead = namedPipeServerStream.Read(dataBuffer, 0, Math.Min(dataBuffer.Length, messageLength))) > 0)
+                    //{
+                    //    memoryStream.Write(dataBuffer, 0, bytesRead);
+                    //    messageLength -= bytesRead;
+                    //}
+
+                    //byte[] dataBytes = memoryStream.ToArray();
+                    return new Actions(new List<UnitOrder>(), new List<CityOrder>(), true);
+                }
             }
             return null;
         }

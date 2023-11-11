@@ -20,7 +20,7 @@ using System.IO.Pipes;
 //    byte[] byteArray = memoryStream.ToArray();
 
 //    // Create a named pipe server
-//    using (NamedPipeServerStream pipeServer = new NamedPipeServerStream("my_pipe3", PipeDirection.InOut, 99 ))
+//    using (NamedPipeServerStream pipeServer = new NamedPipeServerStream("Civulator", PipeDirection.InOut, 99))
 //    {
 //        Console.WriteLine("Waiting for connection...");
 //        pipeServer.WaitForConnection();

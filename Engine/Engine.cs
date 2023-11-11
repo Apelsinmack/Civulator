@@ -73,7 +73,14 @@ namespace Game
                 Actions actions;
                 do
                 {
-                    actions = _server.GetActions(_namedPipeServerStream, _worldLogic.World);
+                    if (player.Human) {
+
+                        actions = _server.GetHumanActions(_namedPipeServerStream, _worldLogic.World);
+                    }
+                    else
+                    {
+                        actions = _server.GetAIActions(_namedPipeServerStream, _worldLogic.World);
+                    }
 
                     if (UnitOrders(player, actions, log)) { return; };
                     CityOrders(actions, log);
@@ -170,9 +177,9 @@ namespace Game
             IMapLogic mapLogic = new MapLogic(tileLogic);
             List<Player> players = new()
                 {
-                    new Player(Guid.NewGuid(), "Megadick", true, Leaders.ByType[LeaderType.HaraldHardrada]),
-                    new Player(Guid.NewGuid(), "Ken Q", true, Leaders.ByType[LeaderType.Hammurabi]),
-                    new Player(Guid.NewGuid(), "AnotherNerd", true, Leaders.ByType[LeaderType.QinShiHuang])
+                    new Player(Guid.NewGuid(), "Megadick", false, Leaders.ByType[LeaderType.HaraldHardrada]),
+                    new Player(Guid.NewGuid(), "Ken Q", false, Leaders.ByType[LeaderType.Hammurabi]),
+                    new Player(Guid.NewGuid(), "AnotherNerd", false, Leaders.ByType[LeaderType.QinShiHuang])
                 };
             Map map = mapLogic.GenerateMap(20, 10);
             World world = new World(map, players);
