@@ -52,7 +52,7 @@ namespace TestClient
             namedPipeClientStream.Flush();
         }
 
-        public void GenerateWorld(NamedPipeClientStream namedPipeClientStream, int mapBase, int mapHeight, int numberOfPlayers)
+        public void GenerateWorld(NamedPipeClientStream namedPipeClientStream, int mapWidth, int mapHeight, int numberOfPlayers)
         {
             while (namedPipeClientStream.IsConnected)
             {
@@ -62,7 +62,7 @@ namespace TestClient
                     new Player(Guid.NewGuid(), "Ken Q", true, Leaders.ByType[LeaderType.Hammurabi]),
                     new Player(Guid.NewGuid(), "AnotherNerd", true, Leaders.ByType[LeaderType.QinShiHuang])
                 };
-                WriteData(namedPipeClientStream, new NewGame(mapBase, mapHeight, players.GetRange(0, numberOfPlayers)));
+                WriteData(namedPipeClientStream, new NewGame(mapWidth, mapHeight, players.GetRange(0, numberOfPlayers)));
                 break;
             }
         }

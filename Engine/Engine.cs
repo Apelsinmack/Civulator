@@ -6,6 +6,7 @@ using Gui;
 using Logic;
 using State;
 using State.Enums;
+using System;
 using System.Data;
 using System.IO.Pipes;
 
@@ -23,18 +24,36 @@ namespace Game
 
         private int GetNewIndex(int currentIndex, UnitOrderType order)
         {
-            int mapBase = _worldLogic.World.Map.MapBase;
-            int newIndex = -1;
-            if (currentIndex % _worldLogic.World.Map.MapBase % 2 == 0)
+            int mapWidth = _worldLogic.World.Map.MapWidth;
+            int newIndex;
+            bool isLeftEdge = currentIndex % mapWidth == 0;
+            bool isRightEdge = (currentIndex + 1) % mapWidth == 0;
+            int oddRowAdjustment = (currentIndex / mapWidth) % 2;
+
+            if (isLeftEdge)
             {
                 newIndex = order switch
                 {
-                    UnitOrderType.Up => currentIndex - mapBase,
-                    UnitOrderType.UpRight => currentIndex - mapBase + 1,
-                    UnitOrderType.DownRight => currentIndex + 1,
-                    UnitOrderType.Down => currentIndex + mapBase,
-                    UnitOrderType.DownLeft => currentIndex - 1,
-                    UnitOrderType.UpLeft => currentIndex - mapBase - 1,
+                    UnitOrderType.UpRight => currentIndex - mapWidth + oddRowAdjustment,
+                    UnitOrderType.Right => currentIndex + 1,
+                    UnitOrderType.DownRight => currentIndex + mapWidth - oddRowAdjustment,
+                    UnitOrderType.DownLeft => currentIndex + mapWidth + (1 - oddRowAdjustment) * (mapWidth - 1),
+                    UnitOrderType.Left => currentIndex + mapWidth - 1,
+                    UnitOrderType.UpLeft => currentIndex - oddRowAdjustment * (mapWidth) - (1 - oddRowAdjustment),
+                    _ => currentIndex
+                };
+
+            }
+            else if (isRightEdge)
+            {
+                newIndex = order switch
+                {
+                    UnitOrderType.UpRight => currentIndex - mapWidth - oddRowAdjustment * (mapWidth - 1),
+                    UnitOrderType.Right => currentIndex - mapWidth + 1,
+                    UnitOrderType.DownRight => currentIndex + mapWidth - oddRowAdjustment * (mapWidth - 1),
+                    UnitOrderType.DownLeft => currentIndex + mapWidth - oddRowAdjustment,
+                    UnitOrderType.Left => currentIndex - 1,
+                    UnitOrderType.UpLeft => currentIndex - mapWidth - (1 - oddRowAdjustment),
                     _ => currentIndex
                 };
             }
@@ -42,19 +61,21 @@ namespace Game
             {
                 newIndex = order switch
                 {
-                    UnitOrderType.Up => currentIndex - mapBase,
-                    UnitOrderType.UpRight => currentIndex + 1,
-                    UnitOrderType.DownRight => currentIndex + mapBase + 1,
-                    UnitOrderType.Down => currentIndex + mapBase,
-                    UnitOrderType.DownLeft => currentIndex + mapBase - 1,
-                    UnitOrderType.UpLeft => currentIndex - 1,
+                    UnitOrderType.UpRight => currentIndex - mapWidth + oddRowAdjustment,
+                    UnitOrderType.Right => currentIndex + 1,
+                    UnitOrderType.DownRight => currentIndex + mapWidth- oddRowAdjustment,
+                    UnitOrderType.DownLeft => currentIndex + mapWidth - 1,
+                    UnitOrderType.Left => currentIndex - 1,
+                    UnitOrderType.UpLeft => currentIndex - mapWidth - (1 - oddRowAdjustment),
                     _ => currentIndex
                 };
             }
+
             if (newIndex < 0 || newIndex > _worldLogic.World.Map.Tiles.Count - 1)
             {
                 return -1;
             }
+
             return newIndex;
         }
 

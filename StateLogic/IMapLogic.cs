@@ -9,6 +9,6 @@ namespace Logic
 {
     public interface IMapLogic
     {
-        Map GenerateMap(int mapBase, int mapHeight);
+        Map GenerateMap(int mapWidth, int mapHeight);
     }
 }

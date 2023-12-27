@@ -9,13 +9,13 @@ namespace State
     [Serializable]
     public class Map
     {
-        public int MapBase { get; set; }
+        public int MapWidth { get; set; }
         public int MapHeight { get; set; }
         public Dictionary<int, Tile> Tiles { get; set; }
 
-        public Map(int mapBase, int mapHeight, Dictionary<int, Tile> tiles)
+        public Map(int mapWidth, int mapHeight, Dictionary<int, Tile> tiles)
         {
-            MapBase = mapBase;
+            MapWidth = mapWidth;
             MapHeight = mapHeight;
             Tiles = tiles;
         }

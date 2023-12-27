@@ -10,13 +10,13 @@ namespace Api.IncomingCommands
 {
     public class NewGame
     {
-        public int MapBase { get; set; }
+        public int MapWidth { get; set; }
         public int MapHeight { get; set; }
         public List<Player> Players { get; set; }
 
-        public NewGame(int mapBase, int mapHeight, List<Player> players)
+        public NewGame(int mapWidth, int mapHeight, List<Player> players)
         {
-            MapBase = mapBase;
+            MapWidth = mapWidth;
             MapHeight = mapHeight;
             Players = players;
         }

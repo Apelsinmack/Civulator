@@ -118,15 +118,15 @@ namespace TestClient
                 {
                     case "1":
                         return UnitOrderType.DownLeft;
-                    case "2":
-                        return UnitOrderType.Down;
                     case "3":
                         return UnitOrderType.DownRight;
                     case "4":
-                        return UnitOrderType.UpLeft;
-                    case "5":
-                        return UnitOrderType.Up;
+                        return UnitOrderType.Left;
                     case "6":
+                        return UnitOrderType.Right;
+                    case "7":
+                        return UnitOrderType.UpLeft;
+                    case "9":
                         return UnitOrderType.UpRight;
                     case "f":
                         return UnitOrderType.Fortify;
