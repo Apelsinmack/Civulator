@@ -1,16 +1,23 @@
+"""
+things to do: to get this working with the real game we need to concenate game state with one selection option of "end turn"
+The select thing needs masking.
+
+The select function can branch out, so that if a city is selected another agent is activated.
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import random
+from collections import namedtuple
+import numpy as np
+print('py Torch version:')
+print(torch.__version__)
+print('Cuda is available: ')
+print(torch.cuda.is_available())
 
-
-# Behöver göra mask-function
-# Behöver göra end turn logik, ta hjälp av mask function.
-# Behöver göra game environment : här ska logiken bakom skicka och ta emot finnas.
-# Game environment måste också ge spelplanens storlek osv.
-
-GAMMA = 0.99  # You can adjust this value based on your specific RL problem
-
+# Define the Transition namedtuple
+Transition = namedtuple('Transition', ('state', 'action', 'reward', 'next_state', 'done'))
 
 class SelectAndMoveNetwork(nn.Module):
     def __init__(self, n, m, d):
@@ -24,7 +31,7 @@ class SelectAndMoveNetwork(nn.Module):
 
         # Fully connected layers for unit selection and movement decision
         self.fc_select = nn.Linear(n * m * 32, n * m)
-        self.fc_move = nn.Linear(n * m * 32 + 2, n * m)  # +2 for the selected unit's position
+        self.fc_move = nn.Linear(n * m * 32 + 1, n * m)  # +1 for the selected unit's position's index
 
     def forward(self, state, selected_pos=None):
         x = F.relu(self.bn1(self.conv1(state)))
@@ -36,8 +43,11 @@ class SelectAndMoveNetwork(nn.Module):
         
         # If a position has been selected, determine where to move it
         if selected_pos is not None:
+            
+
             x = torch.cat([x, selected_pos], dim=1)  # append selected position to feature vector
             move_probs = F.softmax(self.fc_move(x), dim=1)
+            # print("move_probs:", move_probs)  # Add this line to debug
             return select_probs, move_probs
         
         return select_probs, None
@@ -48,10 +58,12 @@ def get_valid_moves_mask(state):
     For simplicity, this function just returns a tensor of ones, but you should modify it 
     based on your game's rules.
     """
-    return torch.ones(state.shape[0], state.shape[1])
+    # Assuming state has shape [d, n, m], where d=4, n=10, m=10
+    # Create a mask of shape [n*m], which corresponds to the flattened shape of select_probs
+    return torch.ones(state.shape[1] * state.shape[2]).to(state.device)  # Adjusted for compatibility
 
 def select_and_move(game_state):
-    network = SelectAndMoveNetwork(game_state.shape[0], game_state.shape[1], game_state.shape[2])
+    network = SelectAndMoveNetwork(game_state.shape[1], game_state.shape[2], game_state.shape[0])
     
     # Get unit selection probabilities
     select_probs, _ = network(game_state.unsqueeze(0))
@@ -106,16 +118,14 @@ class ReplayMemory:
     def __len__(self):
         return len(self.memory)
 
-class Transition:
-    def __init__(self, state, action, reward, next_state, done):
-        self.state = state
-        self.action = action
-        self.reward = reward
-        self.next_state = next_state
-        self.done = done
 
 class DQNAgent:
-    def __init__(self, n, m, d, memory):
+    def __init__(self, n, m, d, memory, gamma = 0.99):
+        # We might want to rething having n, m and d as self variables here. These are the height, width of tha map, d is how many units are supported.
+        self.n = n
+        self.m = m
+        self.d = d
+        self.gamma = gamma
         self.network = SelectAndMoveNetwork(n, m, d)
         self.memory = memory
         self.optimizer = torch.optim.Adam(self.network.parameters())
@@ -142,16 +152,50 @@ class DQNAgent:
         action_batch = list(zip(*batch.action)) # [(selected_1, move_1), ..., (selected_batch, move_batch)]
         reward_batch = torch.tensor(batch.reward)
         next_state_batch = torch.stack(batch.next_state)
-        done_batch = torch.tensor(batch.done)
+        done_batch = torch.tensor(batch.done, dtype=torch.float32)
+        # Assuming action_batch is a list of tuples [(selected_pos, move_pos), ...]
+        selected_positions = action_batch[0]  # Extracts the first element of each tuple
+        selected_positions_tensor = torch.tensor(selected_positions, dtype=torch.long, device=state_batch.device)
+        # Assuming selected_positions_tensor needs to be concatenated along the feature dimension
+        selected_positions_tensor = selected_positions_tensor.unsqueeze(1)  # Reshape from [2] to [2, 1] for batch_size = 2
+
 
         # Compute Q-values for current state-action pairs
-        select_probs, move_probs = self.network(state_batch)
+        select_probs, move_probs = self.network(state_batch, selected_positions_tensor)
+        if move_probs == None: # WE HAVE TO LOOK INTO THIS PROBLEM, SOMETHING IS HAPPENING AT END OF TRIANING
+            print('Lenth of action_batch: ' + str(len(action_batch)))
+            move_probs = select_probs
+        if select_probs == None:
+            
+            print('Error?')
+        # print(move_probs)
         q_values = select_probs.gather(1, torch.tensor(action_batch[0]).unsqueeze(1)) + move_probs.gather(1, torch.tensor(action_batch[1]).unsqueeze(1))
-
+        
+        
+        """
+            Please review this part of the code! I added a call to the network since we need to both select and move to perform an action so to speak. 
+            I took inspiration from the select_and_move function defined earlier. Maybe we could even utilize it here?
+        """
+        
+        
         # Compute max Q-values for next states
-        next_select_probs, next_move_probs = self.network(next_state_batch)
+        next_select_probs, _ = self.network(next_state_batch)
+        # Mask invalid selections (e.g., tiles without units)
+        # select_probs = select_probs * get_valid_moves_mask(next_state_batch)
+        
+        # Normalize again after masking
+        select_probs = select_probs / select_probs.sum()
+
+        # Sample selected position
+        selected_pos = torch.multinomial(select_probs, 1)
+        
+        
+        _, next_move_probs = self.network(next_state_batch,selected_pos)
+        if next_move_probs == None:# WE HAVE TO LOOK INTO THIS PROBLEM, SOMETHING IS HAPPENING AT END OF TRIANING
+            print('Next Move Probs is None when computing Q-vals for NEXT state')
+            next_move_probs = next_select_probs
         next_q_values = next_select_probs.max(1)[0] + next_move_probs.max(1)[0]
-        expected_q_values = reward_batch + GAMMA * next_q_values * (1 - done_batch)
+        expected_q_values = reward_batch + self.gamma * next_q_values * (1 - done_batch)
 
         # Compute the loss
         loss = self.criterion(q_values, expected_q_values.unsqueeze(1))
@@ -164,21 +208,63 @@ class DQNAgent:
         self.optimizer.step()
 
 
-""" TRAINING LOOP """ # spelplan = base = 20, height = 10
 
-env = YourGameEnvironmentHere()
+class MockEnvironment: # has a step function that returns a random new game state, reward and boolean done variable for any action.
+    def __init__(self, n, m, d):
+        self.n = n
+        self.m = m
+        self.d = d
+        self.state = None
+
+    def reset(self):
+        self.state = torch.rand((self.d, self.n, self.m))  # Random state initialization
+        return self.state
+
+    def step(self, action):
+        # Mock implementation of step function
+        # Action could be any, for simplicity let's just move to a next random state
+        next_state = torch.rand((self.d, self.n, self.m))
+        
+        # Simplified reward - random for demonstration
+        reward = np.random.rand()
+        
+        # Randomly decide if the game is done
+        done = np.random.choice([True, False], p=[0.1, 0.9])
+        
+        # For simplicity, no info dict is returned
+        return next_state, reward, done
+
+
+
+""" TRAINING LOOP """
+
+# env = YourGameEnvironmentHere()
+n, m = 10, 10
+d = 4 # (friendly warr, friendly city, enemy warr, enemy city)
+env = MockEnvironment(n, m, d)
 agent = DQNAgent(n, m, d, ReplayMemory(10000)) # example capacity
-NUM_EPISODES = 1000
-BATCH_SIZE = 32
+NUM_EPISODES = 2
+BATCH_SIZE = 3
 
 for episode in range(NUM_EPISODES):
     state = env.reset()
     done = False
     while not done:
         action = agent.select_action(state)
-        next_state, reward, done, _ = env.step(action)
+        next_state, reward, done = env.step(action) # THIS WILL HANDLE COMMUNICATION WITH THE ACTUAL GAME
         agent.store_transition(state, action, reward, next_state, done)
         state = next_state
 
         if len(agent.memory) > BATCH_SIZE:
             agent.optimize(BATCH_SIZE)
+
+
+"""
+the communication between DQN and game should be something like the while loop above:
+    the bot makes an action and sends it to the game
+    the game returns a new game state, reward information and information if the game is over
+    
+    
+    
+
+"""
