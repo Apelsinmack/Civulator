@@ -122,12 +122,14 @@ class ReplayMemory:
 class DQNAgent:
     def __init__(self, n, m, d, memory, gamma = 0.99):
         # We might want to rething having n, m and d as self variables here. These are the height, width of tha map, d is how many units are supported.
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print(f"Using device: {self.device}")
         self.n = n
         self.m = m
         self.d = d
         self.gamma = gamma
-        self.network = SelectAndMoveNetwork(n, m, d)
         self.memory = memory
+        self.network = SelectAndMoveNetwork(n, m, d).to(self.device)
         self.optimizer = torch.optim.Adam(self.network.parameters())
         self.criterion = nn.MSELoss()
 
@@ -243,8 +245,8 @@ n, m = 10, 10
 d = 4 # (friendly warr, friendly city, enemy warr, enemy city)
 env = MockEnvironment(n, m, d)
 agent = DQNAgent(n, m, d, ReplayMemory(10000)) # example capacity
-NUM_EPISODES = 2
-BATCH_SIZE = 3
+NUM_EPISODES = 100
+BATCH_SIZE = 32
 
 for episode in range(NUM_EPISODES):
     state = env.reset()
