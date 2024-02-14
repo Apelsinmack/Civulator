@@ -2,8 +2,13 @@
 """
 Created on Wed Dec 27 12:14:42 2023
 
-This file contains utility functions (methods) for converting the array-based index representation of the map to the matrix representation
-used by the Neural Network. 
+This file contains utility functions (methods) for:
+    converting the map representation back and forth between:
+        the index based representation (used by the game engine)
+        the matrix representation (used by the Neural Network). 
+    calculating distances between two tiles, aka distance_function
+    pathfinder: finds "a shortest" path between two tiles (there are usually many to choose from). Does not take into accound mountains or other obstacels. 
+        
 
 
 
@@ -76,7 +81,7 @@ def simple_pathfinder(dx, dy):
 
 def distnace_function(p1, p2):
     dx = p2[1] - p1[1]
-    dy  =p2[0] - p1[0]
+    dy = p2[0] - p1[0]
     if dx*dy > 0:
         d = max(abs(dx), abs(dy))
     else:
