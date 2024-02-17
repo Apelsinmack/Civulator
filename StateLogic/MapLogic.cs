@@ -16,39 +16,51 @@ namespace Logic
             _tileLogic = tileLogic;
         }
 
-        public Map GenerateMap(int mapBase, int mapHeight)
+        public Map GenerateMap(int mapWidth, int mapHeight)
         {
             Dictionary<int, Tile> tiles = new Dictionary<int, Tile>();
 
-            for (int i = 0; i < mapBase * mapHeight; i++)
+            for (int i = 0; i < mapWidth * mapHeight; i++)
             {
                 tiles.Add(i, _tileLogic.GenerateTile(i));
             }
 
-            return new Map(mapBase, mapHeight, tiles);
+            return new Map(mapWidth, mapHeight, tiles);
         }
 
         public static List<int> GetAdjacentTileIndexes(Map map, int index)
         {
-            List<int> indexes = new()
-            {
-                index - map.MapBase, // ↑
-                index + map.MapBase // ↓
-            };
+            bool isLeftEdge = (index) % map.MapWidth == 0;
+            bool isRightEdge = (index + 1) % map.MapWidth == 0;
+            int oddRowAdjustment = (index / map.MapWidth) % 2;
 
-            if (index % map.MapBase % 2 == 0)
-            {
-                indexes.Add(index - map.MapBase + 1); // ↗
-                indexes.Add(index + 1); // ↘
-                indexes.Add(index - 1); // ↙
-                indexes.Add(index - 1 - map.MapBase); // ↖
+            List<int> indexes = new(){ };
+
+            if (isLeftEdge) {
+                indexes.Add(index - map.MapWidth + oddRowAdjustment); // ↗
+                indexes.Add(index + 1); // →
+                indexes.Add(index + map.MapWidth + oddRowAdjustment); // ↘
+                indexes.Add(index + map.MapWidth + (1 - oddRowAdjustment) * (map.MapWidth - 1)); // ↙
+                indexes.Add(index + map.MapWidth - 1); // ←
+                indexes.Add(index - oddRowAdjustment * (map.MapWidth) - (1 - oddRowAdjustment)); // ↖
+
+            }
+            else if (isRightEdge) {
+                indexes.Add(index - map.MapWidth - oddRowAdjustment * (map.MapWidth - 1)); // ↗
+                indexes.Add(index - map.MapWidth + 1); // →
+                indexes.Add(index + map.MapWidth - oddRowAdjustment * (map.MapWidth - 1)); // ↘
+                indexes.Add(index + map.MapWidth - (1 - oddRowAdjustment)); // ↙
+                indexes.Add(index - 1); // ←
+                indexes.Add(index - map.MapWidth - (1 - oddRowAdjustment)); // ↖
             }
             else
             {
-                indexes.Add(index + 1); // ↗
-                indexes.Add(index + 1 + map.MapBase); // ↘
-                indexes.Add(index - 1 + map.MapBase); // ↙
-                indexes.Add(index - 1); // ↖
+                indexes.Add(index - map.MapWidth + oddRowAdjustment); // ↗
+                indexes.Add(index + 1); // →
+                indexes.Add(index + map.MapWidth + oddRowAdjustment); // ↘
+                indexes.Add(index + map.MapWidth - (1 - oddRowAdjustment)); // ↙
+                indexes.Add(index - 1); // ←
+                indexes.Add(index - map.MapWidth - (1 - oddRowAdjustment)); // ↖
             }
 
             return indexes.Where(index => index > -1 && index < map.Tiles.Count()).ToList();

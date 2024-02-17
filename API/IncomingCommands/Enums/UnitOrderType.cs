@@ -8,11 +8,11 @@ namespace Api.IncomingCommands.Enums
 {
     public enum UnitOrderType
     {
-        Up,
         UpRight,
+        Right,
         DownRight,
-        Down,
         DownLeft,
+        Left,
         UpLeft,
         Fortify,
         BuildCity

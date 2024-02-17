@@ -37,17 +37,7 @@ namespace Gui
             }
         }
 
-        private void PrintFirstMapRow(List<Tile> tiles)
-        {
-            foreach (Tile tile in tiles)
-            {
-                PrintTile(tile, true);
-                PrintVoid();
-            }
-            Console.WriteLine();
-        }
-
-        private void PrintLastMapRow(List<Tile> tiles)
+        private void PrintLastMapRowOLD(List<Tile> tiles)
         {
             bool isEven = true;
 
@@ -61,17 +51,6 @@ namespace Gui
                 {
                     PrintTile(tile, false);
                 }
-                isEven = !isEven;
-            }
-            Console.WriteLine();
-        }
-
-        private void PrintMapRow(List<Tile> tiles, bool isFirstPart)
-        {
-            bool isEven = true;
-            foreach (Tile tile in tiles)
-            {
-                PrintTile(tile, isEven == isFirstPart);
                 isEven = !isEven;
             }
             Console.WriteLine();
@@ -141,52 +120,29 @@ namespace Gui
 
             foreach (Tile tile in world.Map.Tiles.Values)
             {
-                bool isEdge = (tile.Index + 1) % world.Map.MapBase == 0;
+                bool isEdge = (tile.Index + 1) % world.Map.MapWidth == 0;
+                bool isRowEven = (tile.Index / world.Map.MapWidth) % 2 == 1;
+                bool isFirstCellInRow = tile.Index % world.Map.MapWidth == 0;
 
-                if (isFirstRow)
+                if (isRowEven && isFirstCellInRow)
                 {
-                    if (isEven)
-                    {
-                        firstPart.Add(tile);
-                    }
-                    secondPart.Add(tile);
-                }
-                else
-                {
-                    if (isEven)
-                    {
-                        firstPart.Add(tile);
-                        secondPart.Add(tile);
-                    }
-                    else
-                    {
-                        firstPart.Add(latestPart[secondPart.Count]);
-                        secondPart.Add(tile);
-                    }
+                    PrintVoid();
                 }
 
-                isEven = !isEven;
+                PrintTile(tile, false);
+                PrintTile(tile, true);
+
 
                 if (isEdge)
                 {
-                    if (isFirstRow)
+                    if (!isRowEven)
                     {
-                        PrintFirstMapRow(firstPart);
-                        PrintMapRow(secondPart, false);
+                        PrintVoid();
                     }
-                    else
-                    {
-                        PrintMapRow(firstPart, true);
-                        PrintMapRow(secondPart, false);
-                    }
-                    isEven = true;
-                    isFirstRow = false;
-                    latestPart = secondPart.ToList();
-                    firstPart = new List<Tile>();
-                    secondPart = new List<Tile>();
+                    Console.WriteLine();
                 }
             }
-            PrintLastMapRow(latestPart);
+            PrintLastMapRowOLD(latestPart);
             Console.ResetColor();
             Console.ForegroundColor = _currentPlayer.Leader.Color;
             log.ForEach(line => Console.WriteLine(line));
