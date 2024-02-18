@@ -55,7 +55,7 @@ def matrix_to_array_map(map_matrix, height, width):
 def simple_pathfinder(dx, dy):
     # fundera pÃ¥ att Ã¤ndra argument till punkterna P1, P2
     orders = []
-    while abs(dx * dy) > 0:
+    while abs(dx) + abs(dy) > 0:
         while dx > 0 and dy >0:
             orders.append('SE')
             dx -= 1
@@ -64,17 +64,17 @@ def simple_pathfinder(dx, dy):
             orders.append('NW')
             dx += 1
             dy += 1
-        while dx > 0:
+        while dx > 0 and dy == 0:
             orders.append('E')
             dx -= 1
-        while dx < 0:
+        while dx < 0 and dy==0:
             orders.append('W')
             dx += 1
         while dy > 0:
-            orders.append('S')
+            orders.append('SW')
             dy -= 1
         while dy < 0:
-            orders.append('N')
+            orders.append('NE')
             dy += 1
     return orders
                
@@ -137,3 +137,20 @@ map_matrix[array_index_to_matrix_index(array_index, width)] = 66
 orders_test = simple_pathfinder(15,-10)    
 print(orders_test)
 print(len(orders_test))
+
+
+print(simple_pathfinder(0,0)) # non
+
+print(simple_pathfinder(1,0)) # East OK
+
+print(simple_pathfinder(1,1)) # SE OK
+
+print(simple_pathfinder(1,-1)) # 
+
+print(simple_pathfinder(0,1))
+
+print(simple_pathfinder(0,-1))
+
+print(simple_pathfinder(-1,-1))
+
+print(simple_pathfinder(-1,1))

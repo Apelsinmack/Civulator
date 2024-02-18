@@ -44,7 +44,7 @@ class SelectAndMoveNetwork(nn.Module):
         # If a position has been selected, determine where to move it
         if selected_pos is not None:
             
-
+            selected_pos = selected_pos.float().view(-1, 1) 
             x = torch.cat([x, selected_pos], dim=1)  # append selected position to feature vector
             move_probs = F.softmax(self.fc_move(x), dim=1)
             # print("move_probs:", move_probs)  # Add this line to debug
@@ -219,11 +219,14 @@ class MockEnvironment: # has a step function that returns a random new game stat
         self.state = None
 
     def reset(self):
+        #todo : recieve state from from server
+        #todo2: translate server state to matrix format.
         self.state = torch.rand((self.d, self.n, self.m))  # Random state initialization
         return self.state
 
     def step(self, action):
-        # Mock implementation of step function
+        # send action to server
+        # recieve reward-information inclding game over and next state
         # Action could be any, for simplicity let's just move to a next random state
         next_state = torch.rand((self.d, self.n, self.m))
         
@@ -249,13 +252,22 @@ NUM_EPISODES = 100
 BATCH_SIZE = 32
 
 for episode in range(NUM_EPISODES):
-    state = env.reset()
+    next_state = env.reset()
     done = False
     while not done:
-        action = agent.select_action(state)
-        next_state, reward, done = env.step(action) # THIS WILL HANDLE COMMUNICATION WITH THE ACTUAL GAME
-        agent.store_transition(state, action, reward, next_state, done)
         state = next_state
+        action = agent.select_action(state)
+        #beräkna e, w, n ,s från action
+        # 0 up right
+        # 1 right
+        # 2 down right
+        # 3 down left
+        # 4 left
+        # 5 upleft
+        # 6 forify
+        
+        next_state, reward, done = env.step(action) # THIS WILL HANDLE COMMUNICATION WITH THE ACTUAL GAME
+        agent.store_transition(state, action, reward, next_state, done)        
 
         if len(agent.memory) > BATCH_SIZE:
             agent.optimize(BATCH_SIZE)
@@ -267,6 +279,9 @@ the communication between DQN and game should be something like the while loop a
     the game returns a new game state, reward information and information if the game is over
     
     
-    
+To do in the future: Let chat gpt comment on games! we need chat gpt to be able to see the game in some way.
+Maybe we should state the most valuble tiles around each player in text format and let it summarize in words or somehting!
+
+   
 
 """
