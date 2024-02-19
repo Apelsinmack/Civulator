@@ -254,7 +254,7 @@ BATCH_SIZE = 32
 for episode in range(NUM_EPISODES):
     next_state = env.reset()
     done = False
-    while not done:
+    while not done: # We need 2 variables, one for end turn and one for end game. - in order to introduce more agents to the mix.
         state = next_state
         action = agent.select_action(state)
         #beräkna e, w, n ,s från action
