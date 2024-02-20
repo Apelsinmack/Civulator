@@ -4,7 +4,9 @@ the map is always cylindrical in this mode
 """
 import random
 import np as np
-
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 class Unit:
     def __init__(self, player, location, unit_type='Warrior', health=100):
@@ -13,12 +15,14 @@ class Unit:
         self.max_health = health
         self.player = player
         self.location = location
+        self.order = None
         self.movement_points = self.default_movement_points(unit_type)
         self.max_movement_points = self.movement_points
         self.attack_power = 25
         self.promotion = 0
         self.xp = 0
         self.defence_bonus = 0
+        
         self.verbose = True
         self.dead = False
 
@@ -27,20 +31,29 @@ class Unit:
         return f"Type: {self.unit_type}, Health: {self.health}, Team: {self.player}, Location: {self.location}"
 
     # Example methods you might want to add
-    def move(self, new_location):
+    def teleport(self, new_location):
         self.location = new_location
         # retrieve defence value
         if self.verbose:
-            print(f"Moving to {self.location}") 
+            print(f"Teleporting to {self.location}")
+    
+    def move(self, new_location): # No pathfinding.
+        self.location = new_location
+        self.movement_points -= 1
+    
     
     def attack(self, target: 'Unit'):
+        kill = False
         target.take_damage(self.attack_power)
         if target.dead == True:
             self.location = target.location # does not take into account for ranged attacks.
+            self.xp += 10
+            kill = True
         self.movement_points = 0
-        self.take_damage()
+        self.take_damage(target.attack_power//2)
         if self.verbose:
             print(f"{self.player} {self.unit_type} attacks {target.player} {target.unit_type} for {self.attack_power} damage.")
+        return kill
 
 
 
@@ -62,48 +75,22 @@ class Unit:
             print(f"{self.unit_type} healed by {amount}. Health now {self.health}")
         
     def default_movement_points(self, unit_type):
+        #
         if unit_type == 'Warrior':
-            return 1
+            return 1.
 
     def fortify(self):
         self.defence_bonus += 3
+        self.defence_bonus = min(self.defence_bonus, 6)
     
     def end_of_turn_action(self):
         if self.movement_points == self.max_movement_points:
             # calculate healing amout
             self.heal(10)
             self.fortify()
-        
-            self.heal(10) # change depending on location etc.
-            self.defence_bonus += 3
-            self.defence_bonus = min(self.defence_bonus, 6) # incorporate terrain / ciry defence here. Fortify adds +3 def for a maximum of +6.
-        self.movement_points = self.default_movement_points(self.unit_type)
-
-
-
-
-
-
-
-
-
-
-"""
-environment class
-
-def reset():
-    set game map
-    set number of teams
-    provide units for all teams and starting locations
-    Provide a city for each team.
-    
-    Logic for who is the current player / agent
-    
-    def step():
-        recieves an action (selection and movement)
-        returns the new state, including info of units lost etc.
-
-"""
+        else: 
+            self.defence_bonus = 0 # change to the tile defence in question
+        self.movement_points = self.max_movement_points
 
 class Civilization:
     def __init__(self, name):
@@ -127,6 +114,10 @@ class Civilization:
                 if unit.position == position:
                     return unit
             return
+        
+        def end_turn(self):
+            for unit in self.units:
+                unit.end_of_turn_action()
                     
 
 
@@ -134,11 +125,12 @@ class GameEnvironment:
     def __init__(self, n, m, d):
         self.n = n
         self.m = m
-        self.d = 2 # dimensionality for game state.
+        self.d = 1 # dimensionality for game state. (multiplied by nbr of players)
         self.turn_counter = 0
         self.current_player = ''
         self.players = {} # the dictionary should be ordered. (comment for later cython implementation)
         self.done = False
+        self.state = None
 
     
     def add_civ(self, name):
@@ -149,6 +141,8 @@ class GameEnvironment:
         self.players.clear()
         for i in range(number_of_players):
             self.add_civ(f"Player {i+1}")
+        
+        self.state = torch.zeros(self.n,self.m, self.d*number_of_players)
         
         # calculate starting locations
         if number_of_players == 2:
@@ -169,7 +163,48 @@ class GameEnvironment:
             player.add_unit(player.starting_location + offset2)
             
         self.current_player = self.players[0].name
+    
+    
+    def get_next_tile(p1, p2):
+        #unit wants to move from position p1 to p2, this function returns the next tile in the path.
+        dx, dy = p2[0]-p1[0], p2[1]-p1[1]
         
+        # while abs(dx) + abs(dy) > 0:
+        if abs(p2-p1) > 0:
+            if dx > 0 and dy > 0:
+                # orders.append('SE')
+                p1 += np.array([1,1])
+                
+                dx -= 1
+                dy -= 1
+            if dx < 0 and dy < 0:
+                # orders.append('NW')
+                p1 -= np.array([1,1])
+                
+                dx += 1
+                dy += 1
+            if dx > 0 and dy == 0:
+                # orders.append('E')
+                p1[0] += 1
+                
+                dx -= 1
+            if dx < 0 and dy==0:
+                # orders.append('W')
+                p1[0] -= 1
+               
+                dx += 1
+            if dy > 0:
+                # orders.append('SW')
+                p1[1] += 1
+               
+                dy -= 1
+            if dy < 0:
+                # orders.append('NE')
+                p1[1] -= 1
+                
+                dy += 1
+        return p1     
+    
     def simple_pathfinder(p1, p2):
         dx, dy = p2[0]-p1[0], p2[1] - p1[1]
         orders = []
@@ -219,13 +254,14 @@ class GameEnvironment:
         else:
             return keys[0]  # Default to first player if not set
     
-    def find_enemy_units(self, player = None):
+    def get_enemy_units(self, player = None):
         if player is None:
             player = self.current_player
         enemy_units = []
         for i in range(self.number_of_players - 1):
             player = self.get_next_player(player)
-            for unit in player.units: enemy_units.append(unit)
+            for unit in player.units: 
+                enemy_units.append(unit)
         return enemy_units
     
     def check_if_adjacent(p1,p2):
@@ -246,15 +282,28 @@ class GameEnvironment:
         order = action[1]
         for unit in self.players[self.current_player].units:
             if select == unit.location:
-                # check if it's move or attack! will only initiate attack with selected opponents. 
-                enemy_units = self.find_enemy_units()
-                attack = False
-                for enemy in enemy_units:
-                    if enemy.position == order and self.check_if_adjacent(enemy.position, unit.position):
-                        #we are attacking
-                        attack = True
-                        unit.attack(enemy)
-                        break
+                # Unit Selected!
+                unit.order = order
+                # check if it's move or attack!
+                enemy_units = self.get_enemy_units()
+                while unit.movement_points > 0:
+                    next_tile = self.get_next_tile(unit.location,unit.order)
+                    # Attack Check!
+                    for enemy in enemy_units:
+                        if enemy.position == next_tile:
+                            #we are attacking
+                            attack = True
+                            kill = unit.attack(enemy)
+                            if kill:
+                                reward = 1
+                            break
+                    if not attack:
+                        unit.move(next_tile)
+        # Calculate new state
+        self.update_state()
+                
+                
+                
                 
                 
                 
@@ -306,39 +355,13 @@ game_over = False
 # create map
 n = 10 # rows in map
 m = 15 # columns in map
-
-# crate teams
-teams = ['Team 1', 'Team 2']
-
-# create units
-team_1_units = []
-team_2_units = []
+d = 2
 
 
-team_units = {
-    teams[0] : team_1_units,
-    teams[1] : team_2_units
-}
+env = GameEnvironment(n, m, d)
+env.reset(2)
 
 
-for i in range(3):
-    team_units['Team 1'].append(Unit('Team 1', (n//2, m // 3 + i)))
-    team_units['Team 2'].append(Unit('Team 2', (n//2, m - m//3-i)))
-
-
-
-# start game
-while game_over == False:
-    for team in teams:
-        #while not end of turn
-        print('yo')    
-            #recieve action
-            
-            #update end of turn
-            
-
-# send state to player 1
-# recieve    
     
     
     

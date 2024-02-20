@@ -31,7 +31,7 @@ class SelectAndMoveNetwork(nn.Module):
 
         # Fully connected layers for unit selection and movement decision
         self.fc_select = nn.Linear(n * m * 32, n * m)
-        self.fc_move = nn.Linear(n * m * 32 + 1, n * m)  # +1 for the selected unit's position's index
+        self.fc_move = nn.Linear(n * m * 32 + 1, n * m)  # +1 for the selected unit's position's index -< this i don't understand!!!
 
     def forward(self, state, selected_pos=None):
         x = F.relu(self.bn1(self.conv1(state)))
