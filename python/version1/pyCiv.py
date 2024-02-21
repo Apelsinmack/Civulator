@@ -19,7 +19,7 @@ class Tile:
         #something to implement in the future - should be able to help offload some stuff.
 
 class Unit:
-    def __init__(self, player, location, unit_type='Warrior', health=100):
+    def __init__(self, player, location, map_size ,unit_type='Warrior', health=100):
         self.unit_type = unit_type
         self.health = health
         self.max_health = health
@@ -34,6 +34,7 @@ class Unit:
         self.defence_bonus = 0
         self.verbose = True
         self.dead = False
+        self.map_size = map_size
 
 
     def __str__(self):
@@ -41,7 +42,7 @@ class Unit:
 
     # Example methods you might want to add
     def teleport(self, new_location):
-        self.location = new_location
+        self.location = new_location % self.map_size
         # retrieve defence value
         if self.verbose:
             print(f"Teleporting to {self.location}")
@@ -83,10 +84,13 @@ class Unit:
             # self.location = np.array([-1,-1]) # graveyard. # Flyttas till egen funtion!
 
     def heal(self, amount):
+        if self.health == self.max_health:
+            return
         self.health += amount
         self.health = min(self.health, self.max_health)
         if self.verbose:
             print(f"{self.unit_type} healed by {amount}. Health now {self.health}")
+        
         
     def default_movement_points(self, unit_type):
         #
@@ -122,7 +126,7 @@ class Player:
         
         # We will need a dict or list of locations of interest, this should contain all units and cities.
         
-    def add_unit(self, location, unit_type='Warrior'):
+    def add_unit(self, location, map_size, unit_type='Warrior'):
         self.units.append(Unit(self.name, location, unit_type))
     
     def remove_unit(self, unit):
@@ -141,6 +145,13 @@ class Player:
     def check_if_player_is_dead(self):
         if len(self.units) == 0:
             self.player_is_dead = True
+        
+    def get_unmoved_positions(self):
+        untouched_locations = []
+        for unit in self.units:
+            if unit.movement_points > 0:
+                untouched_locations.append(unit.location)
+        return untouched_locations
                     
 
 
@@ -148,13 +159,13 @@ class GameEnvironment:
     def __init__(self, n, m, d):
         self.n = n
         self.m = m
-        self.d = 1 # dimensionality for game state. (multiplied by nbr of players)
+        self.d = 2 # dimensionality for game state. (multiplied by nbr of players)
         self.turn_counter = 0
         self.current_player = ''
         self.players = [] # the dictionary should be ordered. (comment for later cython implementation)
         self.done = False
-        self.state = None
-        self.number_of_players = len(self.players)
+        self.state = torch.zeros(self.d,self.n,self.m)
+        self.number_of_players = d # needs to be fixed!
 
     def check_if_done(self):
         self.players = [player for player in self.players if len(player.units) > 0]
@@ -173,28 +184,30 @@ class GameEnvironment:
         for i in range(number_of_players):
             self.add_player(f"Player {i+1}")
         
-        self.state = torch.zeros(self.n,self.m, self.d)
+        self.state = torch.zeros(self.d,self.n,self.m)
         
         # calculate starting locations
         if number_of_players == 2:
             starting_locations = []
             
-            self.players[0].starting_location = np.array([random.randint(1,n-1), random.randint(1, m//2-1)])
-            self.players[1].starting_location = np.array([random.randint(1,n-1), random.randint(m//2, m-1)])
+            self.players[0].starting_location = np.array([random.randint(1,self.n-1), random.randint(1, self.m//2-1)])
+            self.players[1].starting_location = np.array([random.randint(1,self.n-1), random.randint(self.m//2, self.m-1)])
         else:
             for player in self.players:
-                player.starting_location =(random.randint(0,n),random.randint(0,m)) #needs work, might create players on top of each other!!!!
+                player.starting_location =(random.randint(0,self.n),random.randint(0,self.m)) #needs work, might create players on top of each other!!!!
                 # make this like 2playter version but partition the map in equal parts.
             
                 
         for player in self.players:
             offset1 = np.array([1, 1])
             offset2 = np.array([0, 1])
-            player.add_unit(player.starting_location)
-            player.add_unit(player.starting_location + offset1)
-            player.add_unit(player.starting_location + offset2)
+            map_size = np.array([self.n,self.m])
+            player.add_unit(player.starting_location% map_size, map_size)
+            player.add_unit((player.starting_location + offset1)% map_size, map_size)
+            player.add_unit((player.starting_location + offset2)% map_size, map_size)
             
         self.current_player = self.players[0]
+        return self.state
     
     
     def get_next_tile(self, p1, p2):
@@ -317,7 +330,7 @@ class GameEnvironment:
         order = action[1]
         if (action[0] == [0,0]).all():
             "End Turn"
-            self.players[self.current_player].end_turn()
+            self.current_player.end_turn()
             self.current_player = self.get_next_player(self.current_player)
         else:
             for unit in self.current_player.units:
@@ -349,7 +362,7 @@ class GameEnvironment:
     
     def update_state_tensor(self):
         # Assuming self.n, self.m, and self.d are already defined
-        self.state = torch.zeros(self.n, self.m, self.d * self.number_of_players)
+        self.state = torch.zeros(self.d, self.n, self.m)
         
         # Assuming self.current_player and self.players are defined
         # Update for current player's units
@@ -357,7 +370,7 @@ class GameEnvironment:
         layer_index = 0  # Assuming the current player's units are friendly and go in the 0th layer of d
         for unit in player.units:
             i, j = unit.location  # Assuming unit.location is a tuple or list with 2 elements
-            self.state[i, j, layer_index] = unit.health  # Update health for friendly unit at (i, j)
+            self.state[layer_index,i, j] = unit.health  # Update health for friendly unit at (i, j)
         
         # Update for other players' units
         for player_index, player in enumerate(self.players):
@@ -366,7 +379,7 @@ class GameEnvironment:
             layer_index += 1  # Different layer for each player
             for unit in player.units:
                 i, j = unit.location
-                self.state[i, j, layer_index] = -unit.health  # Negative health for enemy units
+                self.state[layer_index, i, j] = -unit.health  # Negative health for enemy units
 
 
 
@@ -376,27 +389,27 @@ Game Loop
 
 """
 
-# initialize the game
-game_over = False
-# create map
-n = 10 # rows in map
-m = 15 # columns in map
-number_of_players  = 2
-number_of_unit_types = 1
-d = number_of_players * number_of_unit_types
+# # initialize the game
+# game_over = False
+# # create map
+# n = 10 # rows in map
+# m = 15 # columns in map
+# number_of_players  = 2
+# number_of_unit_types = 1
+# d = number_of_players * number_of_unit_types
 
 
-env = GameEnvironment(n, m, d)
-env.reset(number_of_players)
+# env = GameEnvironment(n, m, d)
+# env.reset(number_of_players)
 
-p1warr = env.players[0].units[0]
-p2warr = env.players[1].units[0]
+# p1warr = env.players[0].units[0]
+# p2warr = env.players[1].units[0]
 
-# p1warr.teleport(p2warr.location + np.array([0,-1]))
-state, reward, done = env.step([p1warr.location, p2warr.location])
+# # p1warr.teleport(p2warr.location + np.array([0,-1]))
+# state, reward, done = env.step([p1warr.location, p2warr.location])
 
 
 #%%
-for i in range(2):
-    for unit in env.players[i].units:
-        print(unit.location)
+# for i in range(2):
+#     for unit in env.players[i].units:
+#         print(unit.location)
