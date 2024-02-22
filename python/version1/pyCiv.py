@@ -19,7 +19,7 @@ class Tile:
         #something to implement in the future - should be able to help offload some stuff.
 
 class Unit:
-    def __init__(self, player, location, map_size ,unit_type='Warrior', health=100):
+    def __init__(self, player, location ,unit_type='Warrior', health=100):
         self.unit_type = unit_type
         self.health = health
         self.max_health = health
@@ -34,11 +34,13 @@ class Unit:
         self.defence_bonus = 0
         self.verbose = True
         self.dead = False
-        self.map_size = map_size
+        self.map_size = None # dont think this is the place for this. Unused atm.
+        self.level = 1
+        
 
 
     def __str__(self):
-        return f"Type: {self.unit_type}, Health: {self.health}, Team: {self.player}, Location: {self.location}"
+        return f"Type: {self.unit_type}, Health: {self.health}, Team: {self.player.name}, Location: {self.location}"
 
     # Example methods you might want to add
     def teleport(self, new_location):
@@ -58,15 +60,21 @@ class Unit:
     
     def attack(self, target: 'Unit'):
         kill = False
+        if self.xp > 100:
+            self.attack_power += 3
+            self.xp = 0
+            self.level +=1
+            print(f"{self.player.name} {self.unit_type} is now level {self.level}")
         target.take_damage(self.attack_power)
+        self.xp += 10
         if target.dead == True:
             self.location = target.location # does not take into account for ranged attacks.
-            self.xp += 10
+            self.xp += 20
             kill = True
         self.movement_points = 0
         self.take_damage(target.attack_power//2)
         if self.verbose:
-            print(f"{self.player} {self.unit_type} attacks {target.player} {target.unit_type} for {self.attack_power} damage.")
+            print(f"{self.player.name} {self.unit_type} attacks {target.player.name} {target.unit_type} for {self.attack_power} damage.")
         return kill
 
 
@@ -78,9 +86,9 @@ class Unit:
             print(f"{self.unit_type} took {damage} damage. Health now {self.health}")
         if self.health <= 0:
             self.dead = True
-            self.player.remove_unit()
+            self.player.remove_unit(self)
             if self.verbose:
-                print(f"{self.player} {self.unit_type} died.")
+                print(f"{self.player.name} {self.unit_type} died.")
             # self.location = np.array([-1,-1]) # graveyard. # Flyttas till egen funtion!
 
     def heal(self, amount):
@@ -89,7 +97,7 @@ class Unit:
         self.health += amount
         self.health = min(self.health, self.max_health)
         if self.verbose:
-            print(f"{self.unit_type} healed by {amount}. Health now {self.health}")
+            print(f"{self.player.name} {self.unit_type} healed by {amount}. Health now {self.health}")
         
         
     def default_movement_points(self, unit_type):
@@ -127,7 +135,7 @@ class Player:
         # We will need a dict or list of locations of interest, this should contain all units and cities.
         
     def add_unit(self, location, map_size, unit_type='Warrior'):
-        self.units.append(Unit(self.name, location, unit_type))
+        self.units.append(Unit(self, location, unit_type))
     
     def remove_unit(self, unit):
         if unit in self.units:
@@ -144,6 +152,7 @@ class Player:
             unit.end_of_turn_action()
     def check_if_player_is_dead(self):
         if len(self.units) == 0:
+            print(f"{self.name} is dead.")
             self.player_is_dead = True
         
     def get_unmoved_positions(self):
@@ -156,16 +165,16 @@ class Player:
 
 
 class GameEnvironment:
-    def __init__(self, n, m, d):
+    def __init__(self, n, m, number_of_players):
         self.n = n
         self.m = m
-        self.d = 2 # dimensionality for game state. (multiplied by nbr of players)
+        self.d = number_of_players + 1 # friendly units, movement points, enemy units. 
         self.turn_counter = 0
-        self.current_player = ''
+        self.current_player = None
         self.players = [] # the dictionary should be ordered. (comment for later cython implementation)
         self.done = False
         self.state = torch.zeros(self.d,self.n,self.m)
-        self.number_of_players = d # needs to be fixed!
+        self.number_of_players = number_of_players # needs to be fixed!
 
     def check_if_done(self):
         self.players = [player for player in self.players if len(player.units) > 0]
@@ -180,6 +189,7 @@ class GameEnvironment:
     def reset(self, number_of_players):   
         # Clear existing players and add new ones
         self.players.clear()
+        self.turn_counter = 1
         self.number_of_players = number_of_players
         for i in range(number_of_players):
             self.add_player(f"Player {i+1}")
@@ -329,9 +339,12 @@ class GameEnvironment:
         select = action[0]
         order = action[1]
         if (action[0] == [0,0]).all():
-            "End Turn"
+            print(f"{self.current_player.name} End Turn")
             self.current_player.end_turn()
             self.current_player = self.get_next_player(self.current_player)
+            if self.current_player == self.players[0]:
+                self.turn_counter += 1
+                print(f"Turn {self.turn_counter}")
         else:
             for unit in self.current_player.units:
                 if (select == unit.location).all(): # we need a function that keeps track of all the locations of all the units
@@ -347,9 +360,10 @@ class GameEnvironment:
                             if (enemy.location == next_tile).all():
                                 #we are attacking
                                 attack = True
+                                reward += 0.25
                                 kill = unit.attack(enemy)
                                 if kill:
-                                    reward = 1
+                                    reward += 1
                                 break
                         if not attack:
                             unit.move(next_tile)
@@ -359,7 +373,11 @@ class GameEnvironment:
 
         return self.state, reward, self.done
         
+    """
     
+    UPDATE TO d=3
+    
+    """
     def update_state_tensor(self):
         # Assuming self.n, self.m, and self.d are already defined
         self.state = torch.zeros(self.d, self.n, self.m)
@@ -371,6 +389,7 @@ class GameEnvironment:
         for unit in player.units:
             i, j = unit.location  # Assuming unit.location is a tuple or list with 2 elements
             self.state[layer_index,i, j] = unit.health  # Update health for friendly unit at (i, j)
+            self.state[-1,i, j] = unit.movement_points  # Update move_points for friendly unit at (i, j)
         
         # Update for other players' units
         for player_index, player in enumerate(self.players):
@@ -396,7 +415,7 @@ Game Loop
 # m = 15 # columns in map
 # number_of_players  = 2
 # number_of_unit_types = 1
-# d = number_of_players * number_of_unit_types
+# d = number_of_players * number_of_unit_types + 1 (#for movement points)
 
 
 # env = GameEnvironment(n, m, d)

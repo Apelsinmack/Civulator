@@ -53,13 +53,31 @@ class SelectAndMoveNetwork(nn.Module):
         
         return select_probs, None
 
+def get_valid_select_mask(state):
+    """
+    Generate a mask indicating valid selections based on the game state.
+    Only units with movement points left are considered valid for selection.
+    """
+    # Extract the layer representing movement points of friendly units
+    movement_points_layer = state[-1, :, :]  # Shape: [n, m]
+    
+    # Generate a mask where positions with movement points > 0 are marked as 1, else 0
+    valid_select_mask = (movement_points_layer > 0).float()  # Convert boolean mask to float
+    valid_select_mask[0,0] = 1
+     
+    # Flatten the mask to match the shape [n*m], corresponding to flattened select_probs
+    return valid_select_mask.flatten().to(state.device)
+
+
 def get_valid_moves_mask(state):
     """
     Generate a mask indicating valid moves based on the game state.
     For simplicity, this function just returns a tensor of ones, but you should modify it 
     based on your game's rules.
+    
+    This will mask any friendly units, if mountains are present, we might initialize a permanent mask-matrix to modify at this stage.
     """
-    # Assuming state has shape [d, n, m], where d=4, n=10, m=10
+    # Assuming state has shape [d, n, m],
     # Create a mask of shape [n*m], which corresponds to the flattened shape of select_probs
     return torch.ones(state.shape[1] * state.shape[2]).to(state.device)  # Adjusted for compatibility
 
@@ -70,7 +88,7 @@ def select_and_move(game_state):
     select_probs, _ = network(game_state.unsqueeze(0))
     
     # Mask invalid selections (e.g., tiles without units)
-    select_probs = select_probs * get_valid_moves_mask(game_state)
+    select_probs = select_probs * get_valid_select_mask(game_state)
     
     # Normalize again after masking
     select_probs = select_probs / select_probs.sum()
@@ -245,16 +263,18 @@ class MockEnvironment: # has a step function that returns a random new game stat
 """ TRAINING LOOP """
 
 # env = YourGameEnvironmentHere()
-n, m = 10, 10
-d = 2 # (friendly warr, friendly city, enemy warr, enemy city)
+n, m = 5, 6
+d = 3 #
+number_of_players = 2
 # env = MockEnvironment(n, m, d)
-env = pyCiv.GameEnvironment(n, m, d)
+env = pyCiv.GameEnvironment(n, m, number_of_players)
 # reset?
 agent = DQNAgent(n, m, d, ReplayMemory(10000)) # example capacity
-NUM_EPISODES = 100
+NUM_EPISODES = 20
 BATCH_SIZE = 32
 
 for episode in range(NUM_EPISODES):
+    print(f"Starting episode {episode}")
     next_state = env.reset(2)
     done = False
     while not done: # We need 2 variables, one for end turn and one for end game. - in order to introduce more agents to the mix.
@@ -282,6 +302,10 @@ for episode in range(NUM_EPISODES):
             current_dir = os.getcwd()
             save_path = os.path.join(current_dir, f'weights/model_episode_{episode}.pth')
             torch.save(agent.network.state_dict(), save_path)        
+
+# Priority 1 changes:
+# We have to make sure that no warriors are at the same location ever!
+# We have to have a real end-turn mechanic! This is priority
             
 # This will have to be looked into later! right now the score will always be the same probably since we play until all are dead and we dont get new units. All games end with score 3.
 
@@ -324,3 +348,14 @@ Maybe we should state the most valuble tiles around each player in text format a
    
 
 """
+#%%
+for i in range(2):
+    for unit in env.players[i].units:
+        print(f"team {i} has:")
+        print(unit.unit_type)
+        print(unit.health)
+        print(unit.location)
+
+
+    
+
