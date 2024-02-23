@@ -28,7 +28,7 @@ class Unit:
         self.order = None
         self.movement_points = self.default_movement_points(unit_type)
         self.max_movement_points = self.movement_points
-        self.attack_power = 25
+        self.attack_power = 50
         self.promotion = 0
         self.xp = 0
         self.defence_bonus = 0
@@ -338,7 +338,7 @@ class GameEnvironment:
         reward = 0
         select = action[0]
         order = action[1]
-        if (action[0] == [0,0]).all():
+        if (action[0] == [self.n,0]).all():
             print(f"{self.current_player.name} End Turn")
             self.current_player.end_turn()
             self.current_player = self.get_next_player(self.current_player)
@@ -360,10 +360,15 @@ class GameEnvironment:
                             if (enemy.location == next_tile).all():
                                 #we are attacking
                                 attack = True
-                                reward += 0.25
+                                reward += unit.attack_power
                                 kill = unit.attack(enemy)
                                 if kill:
-                                    reward += 1
+                                    reward += enemy.max_health
+                                    # ANSI escape code for red
+                                    RED = '\033[91m'
+                                    # ANSI escape code to reset color
+                                    RESET = '\033[0m'
+                                    print(f"{RED}{self.current_player.name}'s {unit.unit_type} killed {enemy.player.name}'s {enemy.unit_type}{RESET}")
                                 break
                         if not attack:
                             unit.move(next_tile)

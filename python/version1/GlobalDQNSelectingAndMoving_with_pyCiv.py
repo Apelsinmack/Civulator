@@ -31,7 +31,7 @@ class SelectAndMoveNetwork(nn.Module):
         self.bn2 = nn.BatchNorm2d(32)
 
         # Fully connected layers for unit selection and movement decision
-        self.fc_select = nn.Linear(n * m * 32, n * m)
+        self.fc_select = nn.Linear(n * m * 32, n * m + 1)
         self.fc_move = nn.Linear(n * m * 32 + 1, n * m)  # +1 for the selected unit's position's index -< this i don't understand!!!
 
     def forward(self, state, selected_pos=None):
@@ -63,11 +63,15 @@ def get_valid_select_mask(state):
     
     # Generate a mask where positions with movement points > 0 are marked as 1, else 0
     valid_select_mask = (movement_points_layer > 0).float()  # Convert boolean mask to float
-    valid_select_mask[0,0] = 1
+    
      
     # Flatten the mask to match the shape [n*m], corresponding to flattened select_probs
     return valid_select_mask.flatten().to(state.device)
 
+def adjust_mask_for_end_turn(original_mask):
+    # Add a `1` at the end of the original mask to account for the "end turn" action
+    end_turn_mask = torch.cat([original_mask, torch.tensor([1.0]).to(original_mask.device)])
+    return end_turn_mask
 
 def get_valid_moves_mask(state):
     """
@@ -88,7 +92,8 @@ def select_and_move(game_state):
     select_probs, _ = network(game_state.unsqueeze(0))
     
     # Mask invalid selections (e.g., tiles without units)
-    select_probs = select_probs * get_valid_select_mask(game_state)
+    original_mask = get_valid_select_mask(game_state)
+    select_probs = select_probs * adjust_mask_for_end_turn(original_mask)
     
     # Normalize again after masking
     select_probs = select_probs / select_probs.sum()
@@ -139,7 +144,7 @@ class ReplayMemory:
 
 
 class DQNAgent:
-    def __init__(self, n, m, d, memory, gamma = 0.99):
+    def __init__(self, n, m, d, memory, gamma = 0.9):
         # We might want to rething having n, m and d as self variables here. These are the height, width of tha map, d is how many units are supported.
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
@@ -305,7 +310,8 @@ for episode in range(NUM_EPISODES):
 
 # Priority 1 changes:
 # We have to make sure that no warriors are at the same location ever!
-# We have to have a real end-turn mechanic! This is priority
+# We need to make sure the game can end! We need a city to attack. When 2v1, the loosing player was just fleeing all the time.
+# DONE We have to have a real end-turn mechanic! This is priority
             
 # This will have to be looked into later! right now the score will always be the same probably since we play until all are dead and we dont get new units. All games end with score 3.
 
