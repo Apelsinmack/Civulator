@@ -178,7 +178,7 @@ class GameEnvironment:
 
     def check_if_done(self):
         self.players = [player for player in self.players if len(player.units) > 0]
-        if len(self.players) == 1:
+        if len(self.players) == 1 or self.turn_counter > 100:
             self.done = True
 
                 
@@ -191,6 +191,7 @@ class GameEnvironment:
         self.players.clear()
         self.turn_counter = 1
         self.number_of_players = number_of_players
+        self.done = False
         for i in range(number_of_players):
             self.add_player(f"Player {i+1}")
         
@@ -217,6 +218,7 @@ class GameEnvironment:
             player.add_unit((player.starting_location + offset2)% map_size, map_size)
             
         self.current_player = self.players[0]
+        self.update_state_tensor()
         return self.state
     
     
@@ -339,12 +341,12 @@ class GameEnvironment:
         select = action[0]
         order = action[1]
         if (action[0] == [self.n,0]).all():
-            print(f"{self.current_player.name} End Turn")
             self.current_player.end_turn()
             self.current_player = self.get_next_player(self.current_player)
             if self.current_player == self.players[0]:
                 self.turn_counter += 1
-                print(f"Turn {self.turn_counter}")
+                if self.turn_counter % 100 == 0:
+                    print(f"Turn {self.turn_counter}")
         else:
             for unit in self.current_player.units:
                 if (select == unit.location).all(): # we need a function that keeps track of all the locations of all the units
@@ -372,6 +374,9 @@ class GameEnvironment:
                                 break
                         if not attack:
                             unit.move(next_tile)
+        # Check if done!
+        self.check_if_done()
+        
         # Calculate new state
         self.update_state_tensor()
         

@@ -355,12 +355,12 @@ Maybe we should state the most valuble tiles around each player in text format a
 
 """
 #%%
-for i in range(2):
-    for unit in env.players[i].units:
-        print(f"team {i} has:")
-        print(unit.unit_type)
-        print(unit.health)
-        print(unit.location)
+# for i in range(2):
+#     for unit in env.players[i].units:
+#         print(f"team {i} has:")
+#         print(unit.unit_type)
+#         print(unit.health)
+#         print(unit.location)
 
 
     
