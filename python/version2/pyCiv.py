@@ -8,6 +8,31 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+class Map:
+    def _init__(self, nbr_rows, nbr_columns):
+        self.n = nbr_rows
+        self.m = nbr_columns
+        self.tiles = np.empty((self.n, self.m), dtype=object)
+    
+    def generate_map(self):
+        for i in range(self.n):
+            for j in range(self.m):
+                self.tiles[i,j] = Tile(i,j)
+        
+
+
+class Map:
+    def __init__(self, width, height):
+        # Initialize a 2D array of object type, since each element will be a Tile instance
+        self.tiles = np.empty((height, width), dtype=object)
+        for y in range(height):
+            for x in range(width):
+                self.tiles[y, x] = Tile()
+
+    def get_tile(self, x, y):
+        return self.tiles[y, x]
+
+
 class Tile:
     def __init__(self, row, column):
         self.row = row
@@ -16,6 +41,9 @@ class Tile:
         self.movement_cost = 1
         self.production_value = np.array([2,1]) # food, production
         self.resourse_luxiry_or_strategic = None
+        self.units = np.empty(2,dtype = object)
+        self.general = []
+        self.siege_units = []
         #something to implement in the future - should be able to help offload some stuff.
 
 class Unit:
