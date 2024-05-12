@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
 
 class Map:
     def _init__(self, nbr_rows, nbr_columns):
@@ -19,19 +20,6 @@ class Map:
             for j in range(self.m):
                 self.tiles[i,j] = Tile(i,j)
         
-
-
-class Map:
-    def __init__(self, width, height):
-        # Initialize a 2D array of object type, since each element will be a Tile instance
-        self.tiles = np.empty((height, width), dtype=object)
-        for y in range(height):
-            for x in range(width):
-                self.tiles[y, x] = Tile()
-
-    def get_tile(self, x, y):
-        return self.tiles[y, x]
-
 
 class Tile:
     def __init__(self, row, column):
@@ -118,6 +106,7 @@ class Unit:
             # self.location = np.array([-1,-1]) # graveyard. # Flyttas till egen funtion!
 
     def heal(self, amount):
+        self.movement_points = 0
         if self.health == self.max_health:
             return
         self.health += amount
@@ -134,6 +123,7 @@ class Unit:
     def fortify(self):
         self.defence_bonus += 3
         self.defence_bonus = min(self.defence_bonus, 6)
+        self.movement_points = 0
     
     def end_of_turn_action(self):
         if self.movement_points == self.max_movement_points:
@@ -171,8 +161,9 @@ class City:
         self.player = new_player
 
 class Player:
-    def __init__(self, name):
+    def __init__(self, name, player_index):
         self.name = name
+        self.player_index = player_index
         self.units = []
         self.cities = []
         self.gold = 0
@@ -232,6 +223,11 @@ class GameEnvironment:
         self.done = False
         self.state = torch.zeros(self.d,self.n,self.m)
         self.number_of_players = number_of_players # needs to be fixed!
+        self.reward = {"Capture Enemy City": 1000}
+        
+        
+        
+
 
     def check_if_done(self):
         # updates the list of players to contain only players with cities left.
@@ -242,9 +238,10 @@ class GameEnvironment:
                 
     
     def add_player(self, name):
-        self.players.append(Player(name))
+        self.players.append(Player(name, len(self.players)))
 
-    def reset(self, number_of_players):   
+    def reset(self, number_of_players):
+        self.done = False
         # Clear existing players and add new ones
         self.players.clear()
         self.turn_counter = 1
@@ -256,8 +253,6 @@ class GameEnvironment:
         
         # calculate starting locations
         if number_of_players == 2:
-            starting_locations = []
-            
             self.players[0].starting_location = np.array([random.randint(1,self.n-1), random.randint(1, self.m//2-1)])
             self.players[1].starting_location = np.array([random.randint(1,self.n-1), random.randint(self.m//2, self.m-1)])
         else:
@@ -275,7 +270,8 @@ class GameEnvironment:
             player.add_unit((player.starting_location + offset2)% map_size, map_size)
             player.add_city(player.starting_location)
             
-        self.current_player = self.players[0]
+        self.current_player = self.players[0] # Player 1 starts the game
+        self.update_state_tensor()
         return self.state
     
     
@@ -360,14 +356,8 @@ class GameEnvironment:
         return orders        
 
     def get_next_player(self, player): 
-        # Find the next player in the dictionary
-        "needs work"
-        if player in self.players:
-            current_index = self.players.index(player)
-            next_index = (current_index + 1) % len(self.players)  # Use modulo for cycling
-            return self.players[next_index]
-        else:
-            return self.players[0]  # Default to first player if not set
+        # Find the next player in the list
+        return self.players[(player.player_index+1) % len(self.players)]
     
     def get_enemy_units(self, player = None):
         if player is None:
@@ -395,17 +385,25 @@ class GameEnvironment:
     def step(self, action):
         
         reward = 0
+        if len(self.players) == 1:
+            print('one is dead')
         select = action[0]
         order = action[1]
-        if (action[0] == [self.n,0]).all():
-            print(f"{self.current_player.name} End Turn")
+        if (action[0] == [self.n,0]).all(): # Why didn this trigger during training?
+            # print(f"{self.current_player.name} End Turn")
             self.current_player.end_turn()
             self.current_player = self.get_next_player(self.current_player)
-            if self.current_player == self.players[0]:
+            if self.current_player == self.players[0]: #We've cycld through all players, time to increase turn counter
                 self.turn_counter += 1
-                print(f"Turn {self.turn_counter}")
+                if self.turn_counter % 10 == 0:
+                    print(f"Turn {self.turn_counter}")
+        elif (select == order).all():
+            # find unit on selected tile
+            for unit in self.current_player.units:
+                if (unit.location == select).all():
+                    unit.fortify()
         else:
-            enemy_players = self.players
+            enemy_players = self.players.copy()
             enemy_players.remove(self.current_player)
             enemy_cities = []
             for player in enemy_players:
@@ -436,11 +434,12 @@ class GameEnvironment:
                                     print(f"{RED}{self.current_player.name}'s {unit.unit_type} killed {enemy.player.name}'s {enemy.unit_type}{RESET}")
                                     # Assuming unit.location, city.location, and enemy_cities are all set up correctly
                                     for city in enemy_cities:
-                                        if unit.location == city.location:
+                                        if unit.location.all() == city.location.all():
                                             # Match found, warrior is standing on this city's location
                                             city.set_player(self.current_player)  # Change the city's owner to current_player
-                                            reward += 1000
-                                            self.done = True
+                                            reward += self.reward['Capture Enemy City']
+                                            self.check_if_done()
+                                            print('We Are Done')
                                             # Calculate new state
                                             self.update_state_tensor()
                                             return self.state, reward, self.done
@@ -452,22 +451,20 @@ class GameEnvironment:
                         if not attack:
                             unit.move(next_tile)
                             for city in enemy_cities:
-                                if unit.location == city.location:
+                                if unit.location.all() == city.location.all():
                                     # Match found, warrior is standing on this city's location
                                     city.set_player(self.current_player)  # Change the city's owner to current_player
+                                    reward += self.reward['Capture Enemy City']
+                                    self.check_if_done()
                                     break  # Assuming only one city can occupy a location, we break out of the loop
 
         # Calculate new state
         self.update_state_tensor()
+        self.check_if_done()
         
 
         return self.state, reward, self.done
-        
-    """
-    
-    UPDATE TO d=3
-    
-    """
+
     def update_state_tensor(self):
         # Assuming self.n, self.m, and self.d are already defined
         self.state = torch.zeros(self.d, self.n, self.m)
@@ -476,7 +473,7 @@ class GameEnvironment:
         # Update for current player's units
         player = self.current_player
         layer_index = 0  # Assuming the current player's units are friendly and go in the 0th layer of d
-        for city in player.cities:
+        for city in player.cities: 
             i, j = city.location
             self.state[0 ,i, j] = 100
         for unit in player.units:
@@ -486,6 +483,9 @@ class GameEnvironment:
             
         layer_index = 3
         # Update for other players' units
+        """
+            Borde kunna updatera detta för att enbart cycla genom players, skippa current player.
+        """
         for player_index, player in enumerate(self.players):
             if player == self.current_player:
                 continue  # Skip the current player
@@ -497,7 +497,9 @@ class GameEnvironment:
                 i, j = unit.location
                 self.state[layer_index+1, i, j] = -unit.health  # Negative health for enemy units
             layer_index += 2
+    
 
+        
 
 
 

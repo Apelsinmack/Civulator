@@ -1,7 +1,8 @@
 """
-Things to think about:
-    The selecting and then moving choices multiply in a combinatorial way, we need to adress this at some point.
-    The current version is cheating but solves the problem for now (it's not testing all possabilities in the max(Q) - step)
+things to do: to get this working with the real game we need to concenate game state with one selection option of "end turn"
+The select thing needs masking.
+
+The select function can branch out, so that if a city is selected another agent is activated.
 """
 import pyCiv
 import torch
@@ -58,7 +59,7 @@ def get_valid_select_mask(state):
     Only units with movement points left are considered valid for selection.
     """
     # Extract the layer representing movement points of friendly units
-    movement_points_layer = state[-1, :, :]  # Shape: [n, m]
+    movement_points_layer = state[2, :, :]  # Shape: [n, m]
     
     # Generate a mask where positions with movement points > 0 are marked as 1, else 0
     valid_select_mask = (movement_points_layer > 0).float()  # Convert boolean mask to float
@@ -72,20 +73,25 @@ def adjust_mask_for_end_turn(original_mask):
     end_turn_mask = torch.cat([original_mask, torch.tensor([1.0]).to(original_mask.device)])
     return end_turn_mask
 
-def get_valid_moves_mask(state):
-    """
-    Generate a mask indicating valid moves based on the game state.
-    For simplicity, this function just returns a tensor of ones, but you should modify it 
-    based on your game's rules.
+def get_valid_moves_mask(state, selected_pos):
     
-    This will mask any friendly units, if mountains are present, we might initialize a permanent mask-matrix to modify at this stage.
-    """
-    # Assuming state has shape [d, n, m],
+    # The state has shape [d, n, m],
     # Create a mask of shape [n*m], which corresponds to the flattened shape of select_probs
-    return torch.ones(state.shape[1] * state.shape[2]).to(state.device)  # Adjusted for compatibility
+    valid_move_mask = (state[1, :, :] <= 0).float()
+    valid_move_mask = valid_move_mask.view(-1)  # Flatten the mask
+    # Ensure the selected position is within valid range
+    if selected_pos >= 0 and selected_pos < valid_move_mask.size(0):
+        valid_move_mask[selected_pos] = 1.0  # Ensure the selected position is always valid
+    else:
+        if (selected_pos==30).all():
+            return valid_move_mask.to(state.device)  # Return the adjusted mask
+        else:
+            print("Warning: Selected position is out of valid range!")
+    return valid_move_mask.to(state.device)  # Return the adjusted mask
+    
 
-def select_and_move(game_state):
-    network = SelectAndMoveNetwork(game_state.shape[1], game_state.shape[2], game_state.shape[0])
+def select_and_move(game_state, network):
+    # network = SelectAndMoveNetwork(game_state.shape[1], game_state.shape[2], game_state.shape[0])
     
     # Get unit selection probabilities
     select_probs, _ = network(game_state.unsqueeze(0))
@@ -104,7 +110,7 @@ def select_and_move(game_state):
     _, move_probs = network(game_state.unsqueeze(0), selected_pos)
     
     # Mask invalid moves (e.g., tiles not adjacent to the selected unit)
-    move_probs = move_probs * get_valid_moves_mask(game_state)
+    move_probs = move_probs * get_valid_moves_mask(game_state, selected_pos).unsqueeze(0)
     
     # Normalize again after masking
     move_probs = move_probs / move_probs.sum()
@@ -113,15 +119,6 @@ def select_and_move(game_state):
     move_pos = torch.multinomial(move_probs, 1)
     
     return selected_pos, move_pos
-
-
-# I don't think this function is used atm. :-/
-#def select_action(state, net, epsilon=0.1):
-#    if random.random() < epsilon:
-#        return random.randint(0, action_space_size - 1)  # replace action_space_size with the correct value
-#    else:
-#        with torch.no_grad():
-#            return net(state).argmax().item()
 
 class ReplayMemory:
     def __init__(self, capacity):
@@ -161,7 +158,7 @@ class DQNAgent:
             # Randomly select and move
             return (random.choice(range(self.n * self.m)), random.choice(range(self.n * self.m)))
         else: # Exploitation
-            selected_pos, move_pos = select_and_move(state)
+            selected_pos, move_pos = select_and_move(state, self.network)
             return (selected_pos.item(), move_pos.item())
 
     def store_transition(self, state, action, reward, next_state, done):
@@ -274,9 +271,9 @@ number_of_players = 2
 env = pyCiv.GameEnvironment(n, m, number_of_players)
 # reset?
 agent = DQNAgent(n, m, d, ReplayMemory(10000)) # example capacity
-NUM_EPISODES = 20
+NUM_EPISODES = 64 
 BATCH_SIZE = 32
-
+states = []
 for episode in range(NUM_EPISODES):
     print(f"Starting episode {episode}")
     next_state = env.reset(2)
@@ -284,16 +281,9 @@ for episode in range(NUM_EPISODES):
     while not done: # We need 2 variables, one for end turn and one for end game. - in order to introduce more agents to the mix.
         state = next_state
         action = agent.select_action(state)
-        action_matrix = [np.array([action[0] // m, action[0] % n]), np.array([action[0] // m, action[1] % n])]
-        #beräkna e, w, n ,s från action
-        # 0 up right
-        # 1 right
-        # 2 down right
-        # 3 down left
-        # 4 left
-        # 5 upleft
-        # 6 forify
-        
+        action_matrix = [np.array([action[0] // m, action[0] % n]), np.array([action[1] // m, action[1] % n])]
+
+        states.append(state)
         next_state, reward, done = env.step(action_matrix)
         agent.store_transition(state, action, reward, next_state, done)
     
@@ -307,60 +297,78 @@ for episode in range(NUM_EPISODES):
             save_path = os.path.join(current_dir, f'weights/model_episode_{episode}.pth')
             torch.save(agent.network.state_dict(), save_path)        
 
-# Priority 1 changes:
-# We have to make sure that no warriors are at the same location ever!
-# We need to make sure the game can end! We need a city to attack. When 2v1, the loosing player was just fleeing all the time.
-# DONE We have to have a real end-turn mechanic! This is priority
-            
-# This will have to be looked into later! right now the score will always be the same probably since we play until all are dead and we dont get new units. All games end with score 3.
 
-"""
-num_test_episodes = 10
-
-agent.network.eval()  # Switch to evaluation mode
-
-total_reward = 0
-for _ in range(num_test_episodes):
-    state = env.reset()
-    done = False
-    while not done:
-        # Assuming your agent's select_action method can operate in eval mode
-        action = agent.select_action(state, eval_mode=True)
-        next_state, reward, done = env.step(action)
-        total_reward += reward
-        state = next_state
-
-average_reward = total_reward / num_test_episodes
-print(f'Average Reward: {average_reward}')
-    
-"""
-
-
-
-
-
-
-
-"""
-the communication between DQN and game should be something like the while loop above:
-    the bot makes an action and sends it to the game
-    the game returns a new game state, reward information and information if the game is over
-    
-    
-To do in the future: Let chat gpt comment on games! we need chat gpt to be able to see the game in some way.
-Maybe we should state the most valuble tiles around each player in text format and let it summarize in words or somehting!
-
-   
-
-"""
 #%%
-for i in range(2):
-    for unit in env.players[i].units:
-        print(f"team {i} has:")
-        print(unit.unit_type)
-        print(unit.health)
-        print(unit.location)
+# def evaluate_model(env, agent, num_games):
+#     states = []
+#     player_turn = []
+#     episode_num = 0
+#     for _ in range(num_games):
+#         state = env.reset(2)
+#         states.append(state)
+#         player_turn.append(env.current_player.name)
+#         done = False
+#         step_num = 0
+#         while not done:
+#             action = agent.select_action(state, epsilon=0)  # Use greedy policy for evaluation
+#             action_matrix = [np.array([action[0] // m, action[0] % n]), np.array([action[1] // m, action[1] % n])]
+#             next_state, reward, done = env.step(action_matrix)
+            
+#             state = next_state
+#             step_num +=1
+#             states.append(state)
+#             player_turn.append(env.current_player.name)
+#             if env.turn_counter > 20:
+#                 done = True
+        
+#         episode_num+=1
+        
+#     return states, player_turn
 
 
+# # Assuming you have already defined agent and env somewhere in your script
+
+# # Put the network in evaluation mode
+# agent.network.eval()
+# with torch.no_grad():
+#     states, player_turn = evaluate_model(env, agent, num_games=3)  # Run 3 evaluation games
+
+#%%
+
+import matplotlib.pyplot as plt
+
+def coords(i,j):
+    x = j - np.cos(np.pi/3) * i
+    y = j * np.sin(np.pi/3)
+    return x, y
+
+for k in range(40):
+    fig, ax = plt.subplots(1,1,figsize=(5,5), dpi=100)
+    state = states[k]
+    # player=player_turn[k]
+
+    for (i, j), value in np.ndenumerate(state[0]):
+        if value > 0:  # Assuming positive values indicate cities
+            x, y = coords(i,j)
+            ax.plot(x, y, '*', color='red', markersize=10)  # Plot cities as red stars
+    for (i, j), value in np.ndenumerate(state[1]):
+        if value > 0:
+            x,y = coords(i,j)
+            ax.plot(x, y, 'x', color='red', markersize=14)  
+    for (i, j), value in np.ndenumerate(state[3]):
+        if value < 0:
+            x, y = coords(i,j)
+            ax.plot(x, y, '*', color='blue', markersize=10)  # Plot cities as red stars
+    for (i, j), value in np.ndenumerate(state[4]):
+        if value < 0:
+            x, y = coords(i,j)
+            ax.plot(x, y, 'x', color='blue', markersize=14)  # Plot cities as red stars
+        
     
-
+    ax.set_aspect('equal')
+    ax.set_ylim(0,5)
+    ax.set_xlim(0,6)
+    # ax.invert_yaxis()  # Invert the y-axis to get the origin at the top-left corner as in most map displays
+    plt.show()
+    plt.clf()
+        
