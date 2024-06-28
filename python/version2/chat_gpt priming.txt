@@ -1,0 +1,26 @@
+Hello! I'm building a civilization 6 simulater / api to use for my machine learning project. I'm training a bot using a deep Q network.
+Let me go over the details:
+
+At the momet the game version suppors only 2 players. Will fix this soon!
+The current version supports warriors and cities, cities dont function like in civ yet, instead, cities are trasnferred to the player occupying them (with a unit). If a player doesnt have any cities left they loose. at the moment we have 2 players with one city each, and each player starts with 3 warriors at the start of the game. I want to implement more of the game later when the basics of the machine learning part is working properly.
+
+The state space is represented as follows:
+
+We have a tensor of dimesions d x n x m, where n is the number of map tile rows, m is the number of columns. Each tile is represented by a vector of d elements and they are as follows: d0: friendly cities health, d1: friendly warriors health, d2: friendly warriors movement points, d4: -(enemy cities health), d5: -(enemy warriors health).
+
+At the moment im only initializing the game with 2 players but if i would insert 3 players all enemy platers will go into d4 and d5, so the current player wont be able to distinguish between enemies, however this will be subject to change at a later version.
+
+I think this is the most important part of the design so far. If at any point you need some clarification on how something is implemented don't hesistate to ask. It's good if we can agree on what all code shall do before we implement it. 
+
+I will now give you the full training script before we get to work:
+
+
+"""
+things to do: to get this working with the real game we need to concenate game state with one selection option of "end turn"
+The select thing needs masking.
+
+The select function can branch out, so that if a city is selected another agent is activated.
+"""
+
+
+

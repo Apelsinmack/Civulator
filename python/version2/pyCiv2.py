@@ -1,0 +1,682 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sun May 12 20:43:02 2024
+
+@author: steen
+"""
+
+"""
+simple version of civ in python
+the map is always cylindrical in this mode
+"""
+import random
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+
+class Game_Map:
+    def __init__(self, nbr_rows, nbr_columns):
+        self.n = nbr_rows
+        self.m = nbr_columns
+        self.tiles = np.empty((self.n, self.m), dtype=object)
+    
+    def generate_map(self):
+        for i in range(self.n):
+            for j in range(self.m):
+                self.tiles[i,j] = Tile(i,j)
+    def reset_and_generate_map(self):
+        # Clear the old map by creating a new empty array
+        self.tiles = np.empty((self.n, self.m), dtype=object)
+        # Generate the map again with new tiles
+        self.generate_map()
+        
+
+class Tile:
+    def __init__(self, row, column):
+        self.row = row
+        self.column = column
+        self.defence_bonus = 0
+        self.movement_cost = 1
+        self.production_value = np.array([2,1]) # food, production
+        self.resourse_luxiry_or_strategic = None
+        self.units = []
+        self.general = []
+        self.siege_units = []
+        self.city = None
+        self.buildings = None
+        #something to implement in the future - should be able to help offload some stuff.
+
+class Unit:
+    def __init__(self, player, location, game_map, unit_type='Warrior', health=100):
+        self.unit_type = unit_type
+        self.health = health
+        self.max_health = health
+        self.game_map = game_map
+        self.player = player
+        self.location = location
+        self.game_map.tiles[tuple(location)].units.append(self)
+        self.order = None
+        self.movement_points = self.default_movement_points(unit_type)
+        self.max_movement_points = self.movement_points
+        self.attack_power = 50
+        self.promotion = 0
+        self.xp = 0
+        self.defence_bonus = 0
+        self.verbose = True
+        self.dead = False
+        self.map_size = None # dont think this is the place for this. Unused atm.
+        self.level = 1
+        
+    def __str__(self):
+        return f"Type: {self.unit_type}, Health: {self.health}, Team: {self.player.name}, Location: {self.location}"
+    
+    def get_next_tile(self, p1, p2):
+        #unit wants to move from position p1 to p2, this function returns the next tile in the path.
+        dx, dy = p2[0]-p1[0], p2[1]-p1[1]
+        if np.linalg.norm(p2-p1) == 1:
+            return p2
+        # while abs(dx) + abs(dy) > 0:
+        if np.linalg.norm(p2-p1) > 0:
+            if dx > 0 and dy > 0:
+                # orders.append('SE')
+                p1 += np.array([1,1])
+                
+                dx -= 1
+                dy -= 1
+            if dx < 0 and dy < 0:
+                # orders.append('NW')
+                p1 -= np.array([1,1])
+                
+                dx += 1
+                dy += 1
+            if dx > 0 and dy == 0:
+                # orders.append('E')
+                p1[0] += 1
+                
+                dx -= 1
+            if dx < 0 and dy==0:
+                # orders.append('W')
+                p1[0] -= 1
+               
+                dx += 1
+            if dy > 0:
+                # orders.append('SW')
+                p1[1] += 1
+               
+                dy -= 1
+            if dy < 0:
+                # orders.append('NE')
+                p1[1] -= 1
+                
+                dy += 1
+        return p1     
+    
+    def execute(self,order):
+        if (order == tuple(self.location)):
+            if self.unit_type == 'Settler':
+                self.found_city()
+            else:
+                self.fortify()
+        else:
+            next_tile = self.get_next_tile(self.location, order)
+            #check if tile is empty
+            if len(self.game_map.tiles[tuple(next_tile)].units) == 0:
+                self.move(next_tile)
+            #check if tile is occupied, then if it is so by a friendly or enemy unit
+            elif len(self.game_map.tiles[tuple(next_tile)].units) == 1:
+                #check if friendly unit
+                if self.game_map.tiles[tuple(next_tile)].units[0].player == self.player:
+                    self.movement_points = 0
+                    print('cant move to friendly units location - i will loose my movement points')
+                else:
+                    self.attack(self.game_map.tiles[tuple(next_tile)].units[0])
+        
+        
+
+    
+    def move_on_map(self, loc_a, loc_b):
+        self.game_map.tiles[tuple(loc_b)].units.append(self.game_map.tiles[tuple(loc_a)].units.pop())
+    
+    def teleport(self, new_location):
+        self.move_on_map(self.location, new_location)
+        self.location = new_location % self.map_size
+        # retrieve defence value
+        if self.verbose:
+            print(f"Teleporting to {self.location}")
+    
+    def move(self, new_location): # No pathfinding.
+        new_location = np.array(new_location)
+        if (new_location == self.location).all():
+            return
+        self.move_on_map(self.location, new_location) # update map
+        self.location = new_location
+        self.movement_points -= 1
+    
+    
+    def attack(self, target: 'Unit'):
+        kill = False
+        attack_location = np.array(target.location)
+        if self.xp > 50 * self.level:
+            self.attack_power += 10
+            self.xp -= 50 * self.level
+            self.level +=1
+            self.health = self.max_health
+            print(f"{self.player.name} {self.unit_type} is now level {self.level}")
+        kill = target.take_damage(self.attack_power)
+        self.xp += 45
+        if kill == True:
+            self.move_on_map(self.location, attack_location)
+            self.location = attack_location # does not take into account for ranged attacks.
+            self.xp += 150
+            kill = True
+            self.movement_points=0
+            self.take_damage(min(target.attack_power//2, (1 + self.health)//2))
+            return kill
+        self.movement_points = 0
+        self.take_damage(target.attack_power//2)
+        if self.verbose:
+            print(f"{self.player.name} {self.unit_type} attacks {target.player.name} {target.unit_type} for {self.attack_power} damage.")
+        return kill
+
+
+
+
+    def take_damage(self, damage):
+        kill = False
+        self.health -= damage
+        if self.verbose:
+            print(f"{self.unit_type} took {damage} damage. Health now {self.health}")
+        if self.health <= 0:
+            kill = True
+            self.dead = True
+            self.game_map.tiles[tuple(self.location)].units.remove(self)
+            self.player.remove_unit(self)
+        return kill
+
+    def heal(self, amount):
+        self.movement_points = 0
+        if self.health == self.max_health:
+            return
+        self.health += amount
+        self.health = min(self.health, self.max_health)
+        if self.verbose:
+            print(f"{self.player.name} {self.unit_type} healed by {amount}. Health now {self.health}")
+        
+        
+    def default_movement_points(self, unit_type):
+        #
+        if unit_type == 'Warrior':
+            return 1.
+
+    def fortify(self):
+        self.defence_bonus += 3
+        self.defence_bonus = min(self.defence_bonus, 6)
+        self.movement_points = 0
+     
+    def found_city(self):
+        self.player.add_city(self.location)
+        
+    def preform_special_action(self):
+        if self.unit_type == 'Warrior':
+            self.fortify()
+        if self.unit_type == 'Settler':
+            self.found_city()
+    
+    def end_of_turn_action(self):
+        if self.movement_points == self.max_movement_points:
+            # calculate healing amout
+            self.heal(10)
+            self.fortify()
+        else: 
+            self.defence_bonus = 0 # change to the tile defence in question
+        self.movement_points = self.max_movement_points
+
+class City:
+    def __init__(self, player, location, game_map, name, health=1):
+        self.player = player
+        self.location = location
+        self.game_map = game_map
+        self.name = name
+        
+        self.max_health = health
+        self.health = health
+        self.population = 1
+        
+        self.production = 0
+        self.food = 0
+        self.science = 0
+        self.culture = 0
+        self.faith = 0
+        self.worth = 100 # This could be used sometime maybe.
+        
+        
+    def set_player(self, new_player):
+        # Check if the city is owned by a player
+        if self.player:
+            self.player.cities.remove(self)       
+        
+        new_player.cities.append(self)
+        self.player = new_player
+
+class Player:
+    def __init__(self, name, player_index, game_map):
+        self.name = name
+        self.player_index = player_index
+        self.game_map = game_map
+        self.units = []
+        self.cities = []
+        self.gold = 0
+        self.science = 0
+        self.culture = 0
+        self.faith = 0
+        self.income = 0
+        self.starting_location = (0,0)
+        self.player_is_dead = False
+        self.units_with_no_movement = []
+        # kanske ändra till en dict som heter typ resources som innehåller guld, science etc samt en dict som heter incomes som innehåller samma sak.
+        
+        # We will need a dict or list of locations of interest, this should contain all units and cities.
+        
+    def add_unit(self, location, map_size, unit_type='Warrior'):
+        self.units.append(Unit(self, location, self.game_map, unit_type))
+    
+    def add_city(self, location):
+        city_name = self.name + ' City'
+        new_city = City(self, location, self.game_map, city_name)
+        self.cities.append(new_city)
+        self.game_map.tiles[tuple(location)].city = new_city
+        
+    
+    def remove_unit(self, unit):
+        if unit in self.units:
+            self.units.remove(unit)
+        
+    def get_unit_at_pos(self, position):
+        for unit in self.units:
+            if unit.position == position:
+                return unit
+        return
+    
+    def end_turn(self):
+        for unit in self.units:
+            unit.end_of_turn_action()
+    def is_dead(self):
+        if len(self.cities) == 0:
+            print(f"{self.name} is dead.")
+            self.player_is_dead = True
+        
+    def get_unmoved_positions(self):
+        untouched_locations = []
+        for unit in self.units:
+            if unit.movement_points > 0:
+                untouched_locations.append(unit.location)
+        return untouched_locations
+                    
+
+
+class GameEnvironment:
+    def __init__(self, n, m, number_of_players):
+        self.n = n #rows of map
+        self.m = m #cols of map
+        self.game_map = Game_Map(n,m)
+        self.game_map.generate_map()
+        self.d = 2 * number_of_players + 1 # own cities, own units, movement points,  enemy cities, enemy units = Nplayers*2 +1 
+        self.turn_counter = 0
+        self.current_player = None
+        self.players = [] # the dictionary should be ordered. (comment for later cython implementation)
+        self.done = False
+        self.state = torch.zeros(self.d,self.n,self.m)
+        self.number_of_players = number_of_players # needs to be fixed!
+        self.reward = {"Capture Enemy City": 1000}
+        
+        
+        
+
+
+    def check_if_done(self):
+        # updates the list of players to contain only players with cities left.
+        # self.players = [player for player in self.players if len(player.cities) > 0]
+        # if len(self.players) == 1:
+        #     self.done = True
+        for player in self.players:
+            if player.is_dead():
+                self.players.remove(player)
+                del player
+        
+        if len(self.players) == 1:
+            self.done = True
+
+                
+    
+    def add_player(self, name):
+        self.players.append(Player(name, len(self.players), self.game_map))
+
+    def reset(self, number_of_players):
+        self.done = False
+        self.turn_counter = 1
+        self.game_map.reset_and_generate_map()
+        # Clear existing players and add new ones
+        self.players.clear()
+        self.number_of_players = number_of_players
+        for i in range(number_of_players):
+            self.add_player(f"Player {i+1}")
+        
+        self.state = torch.zeros(self.d,self.n,self.m)
+        
+        # generate starting locations
+        if number_of_players == 2:
+            self.players[0].starting_location = np.array([random.randint(1,self.n-1), random.randint(1, self.m//2-1)])
+            self.players[1].starting_location = np.array([random.randint(1,self.n-1), random.randint(self.m//2, self.m-1)])
+        else:
+            for player in self.players:
+                player.starting_location =(random.randint(0,self.n),random.randint(0,self.m)) #needs work, might create players on top of each other!!!!
+                # make this like 2playter version but partition the map in equal parts.
+            
+                
+        for player in self.players:
+            offset1 = np.array([1, 1])
+            offset2 = np.array([0, 1])
+            map_size = np.array([self.n,self.m])
+            player.add_unit(player.starting_location% map_size, map_size)
+            player.add_unit((player.starting_location + offset1)% map_size, map_size)
+            player.add_unit((player.starting_location + offset2)% map_size, map_size)
+            player.add_city(player.starting_location)
+            
+            
+        self.current_player = self.players[0] # Player 1 starts the game
+        self.update_state_tensor()
+        return self.state
+    
+    
+    def get_next_tile(self, p1, p2):
+        #unit wants to move from position p1 to p2, this function returns the next tile in the path.
+        dx, dy = p2[0]-p1[0], p2[1]-p1[1]
+        if np.linalg.norm(p2-p1) == 1:
+            return p2
+        # while abs(dx) + abs(dy) > 0:
+        if np.linalg.norm(p2-p1) > 0:
+            if dx > 0 and dy > 0:
+                # orders.append('SE')
+                p1 += np.array([1,1])
+                
+                dx -= 1
+                dy -= 1
+            if dx < 0 and dy < 0:
+                # orders.append('NW')
+                p1 -= np.array([1,1])
+                
+                dx += 1
+                dy += 1
+            if dx > 0 and dy == 0:
+                # orders.append('E')
+                p1[0] += 1
+                
+                dx -= 1
+            if dx < 0 and dy==0:
+                # orders.append('W')
+                p1[0] -= 1
+               
+                dx += 1
+            if dy > 0:
+                # orders.append('SW')
+                p1[1] += 1
+               
+                dy -= 1
+            if dy < 0:
+                # orders.append('NE')
+                p1[1] -= 1
+                
+                dy += 1
+        return p1     
+    
+    def simple_pathfinder(p1, p2):
+        dx, dy = p2[0]-p1[0], p2[1] - p1[1]
+        orders = []
+        # while abs(dx) + abs(dy) > 0:
+        while abs(p2-p1) > 0:
+            while dx > 0 and dy > 0:
+                # orders.append('SE')
+                p1 += np.array([1,1])
+                orders.append(p1)
+                dx -= 1
+                dy -= 1
+            while dx < 0 and dy < 0:
+                # orders.append('NW')
+                p1 -= np.array([1,1])
+                orders.append(p1)
+                dx += 1
+                dy += 1
+            while dx > 0 and dy == 0:
+                # orders.append('E')
+                p1[0] += 1
+                orders.append(p1)
+                dx -= 1
+            while dx < 0 and dy==0:
+                # orders.append('W')
+                p1[0] -= 1
+                orders.append(p1)
+                dx += 1
+            while dy > 0:
+                # orders.append('SW')
+                p1[1] += 1
+                orders.append(p1)
+                dy -= 1
+            while dy < 0:
+                # orders.append('NE')
+                p1[1] -= 1
+                orders.append(p1)
+                dy += 1
+        return orders        
+
+    def get_next_player(self, player): 
+        # Find the next player in the list
+        return self.players[(player.player_index+1) % len(self.players)]
+    
+    def get_enemy_units(self, player = None):
+        if player is None:
+            player = self.current_player
+        enemy_units = []
+        for i in range(self.number_of_players - 1):
+            player = self.get_next_player(player)
+            for unit in player.units: 
+                enemy_units.append(unit)
+        return enemy_units
+    
+    def check_if_adjacent(p1,p2):
+        dp = p2-p1
+        if np.sign(dp[0]) == np.sign(dp[1]) and max(abs(dp[0]), abs(dp[1])) == 1 or dp[0]*dp[1] == 0 and max(abs(dp[0]), abs(dp[1])):
+            return True
+        else:
+            return False
+    
+    def end_turn(self, select):
+        if select == (self.n,0):
+            return True
+        else: return False
+            
+        # if dp == np.array([-1,0]) or dp == np.array([-1,-1]) or dp == np.array([0,-1]) or :
+        #     dp == np.array([0,1]) or dp == np.array([1,1]) or dp == np.array([1,0]):
+        #         return True
+        
+            
+    def step(self, action):
+        reward = 0
+        select = tuple(action[0])
+        order = tuple(action[1])
+        if self.end_turn(select): #ends turn, sets next player to current player, adds turn counter if all players have moved this turn.
+            self.current_player.end_turn()
+            self.current_player = self.get_next_player(self.current_player)
+            if self.current_player == self.players[0]: #We've cycld through all players, time to increase turn counter
+                self.turn_counter += 1
+                if self.turn_counter % 10 == 0:
+                    print(f"Turn {self.turn_counter}")
+        
+        else: 
+            assert (len(self.game_map.tiles[select].units) == 1, "There should be exactly one unit in the selected tile")
+            selected_unit = self.game_map.tiles[select].units[0]
+            while selected_unit.movement_points > 0:
+                selected_unit.execute(order)
+                    
+                
+        
+        
+        
+
+        # Calculate new state
+        self.update_state_tensor()
+        self.check_if_done()
+        
+
+        return self.state, reward, self.done    
+    # def step(self, action):
+        
+    #     reward = 0
+    #     if len(self.players) == 1:
+    #         print('one is dead')
+    #     select = action[0]
+    #     order = action[1]
+    #     if (action[0] == [self.n,0]).all(): 
+    #         # print(f"{self.current_player.name} End Turn")
+    #         self.current_player.end_turn()
+    #         self.current_player = self.get_next_player(self.current_player)
+    #         if self.current_player == self.players[0]: #We've cycld through all players, time to increase turn counter
+    #             self.turn_counter += 1
+    #             if self.turn_counter % 10 == 0:
+    #                 print(f"Turn {self.turn_counter}")
+    #     elif (select == order).all():
+    #         # find unit on selected tile
+    #         for unit in self.current_player.units:
+    #             if (unit.location == select).all():
+    #                 unit.fortify()
+    #     else:
+    #         enemy_players = self.players.copy()
+    #         enemy_players.remove(self.current_player)
+    #         enemy_cities = []
+    #         for enemy_player in enemy_players:
+    #             for city in enemy_player.cities:
+    #                 enemy_cities.append(city)
+    #         for unit in self.current_player.units:
+    #             if (select == unit.location).all(): # we need a function that keeps track of all the locations of all the units
+    #                 # Unit Selected!
+    #                 unit.order = order
+    #                 # check if it's move or attack!
+    #                 enemy_units = self.get_enemy_units(self.current_player)
+    #                 while unit.movement_points > 0:
+    #                     next_tile = self.get_next_tile(unit.location,unit.order)
+    #                     attack = False
+    #                     # Attack Check!
+    #                     for enemy in enemy_units: # here we need the same function again -keep track of all units!
+    #                         if (enemy.location == next_tile).all():
+    #                             #we are attacking
+    #                             attack = True
+    #                             reward += unit.attack_power
+    #                             kill = unit.attack(enemy)
+    #                             if kill:
+    #                                 reward += enemy.max_health
+    #                                 # ANSI escape code for red
+    #                                 RED = '\033[91m'
+    #                                 # ANSI escape code to reset color
+    #                                 RESET = '\033[0m'
+    #                                 print(f"{RED}{self.current_player.name}'s {unit.unit_type} killed {enemy.player.name}'s {enemy.unit_type}{RESET}")
+    #                                 # Assuming unit.location, city.location, and enemy_cities are all set up correctly
+    #                                 for city in enemy_cities:
+    #                                     if unit.location.all() == city.location.all():
+    #                                         # Match found, warrior is standing on this city's location
+    #                                         city.set_player(self.current_player)  # Change the city's owner to current_player
+    #                                         reward += self.reward['Capture Enemy City']
+    #                                         self.check_if_done()
+    #                                         print('We Are Done')
+    #                                         # Calculate new state
+    #                                         self.update_state_tensor()
+    #                                         return self.state, reward, self.done
+    #                                         break  # Assuming only one city can occupy a location, we break out of the loop
+
+                                        
+                                        
+    #                             break
+    #                     if not attack:
+    #                         unit.move(next_tile)
+    #                         for city in enemy_cities:
+    #                             if (unit.location == city.location).all():
+    #                                 # Match found, warrior is standing on this city's location
+    #                                 city.set_player(self.current_player)  # Change the city's owner to current_player
+    #                                 reward += self.reward['Capture Enemy City']
+    #                                 self.check_if_done()
+    #                                 break  # Assuming only one city can occupy a location, we break out of the loop
+
+    #     # Calculate new state
+    #     self.update_state_tensor()
+    #     self.check_if_done()
+        
+
+    #     return self.state, reward, self.done
+
+    def update_state_tensor(self):
+        # Assuming self.n, self.m, and self.d are already defined
+        self.state = torch.zeros(self.d, self.n, self.m)
+        
+        # Assuming self.current_player and self.players are defined
+        # Update for current player's units
+        player = self.current_player
+        layer_index = 0  # Assuming the current player's units are friendly and go in the 0th layer of d
+        for city in player.cities: 
+            i, j = city.location
+            self.state[0 ,i, j] = 100
+        for unit in player.units:
+            i, j = unit.location  # Assuming unit.location is a tuple or list with 2 elements
+            self.state[1,i, j] = unit.health  # Update health for friendly unit at (i, j)
+            self.state[2,i, j] = unit.movement_points  # Update move_points for friendly unit at (i, j)
+            
+        layer_index = 3
+        # Update for other players' units
+        """
+            Borde kunna updatera detta för att enbart cycla genom players, skippa current player.
+        """
+        for player_index, player in enumerate(self.players):
+            if player == self.current_player:
+                continue  # Skip the current player
+              # Different layer for each player
+            for city in player.cities:
+                i, j = city.location
+                self.state[layer_index, i, j] = -city.worth
+            for unit in player.units:
+                i, j = unit.location
+                self.state[layer_index+1, i, j] = -unit.health  # Negative health for enemy units
+            layer_index += 2
+    
+
+        
+
+
+
+"""
+Game Loop
+
+"""
+
+# # initialize the game
+# game_over = False
+# # create map
+# n = 10 # rows in map
+# m = 15 # columns in map
+# number_of_players  = 2
+# number_of_unit_types = 1
+# d = number_of_players * number_of_unit_types + 1 (#for movement points)
+
+
+# env = GameEnvironment(n, m, d)
+# env.reset(number_of_players)
+
+# p1warr = env.players[0].units[0]
+# p2warr = env.players[1].units[0]
+
+# # p1warr.teleport(p2warr.location + np.array([0,-1]))
+# state, reward, done = env.step([p1warr.location, p2warr.location])
+
+
+#%%
+# for i in range(2):
+#     for unit in env.players[i].units:
+#         print(unit.location)

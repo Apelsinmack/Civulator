@@ -4,7 +4,7 @@ The select thing needs masking.
 
 The select function can branch out, so that if a city is selected another agent is activated.
 """
-import pyCiv
+import pyCiv2
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -268,7 +268,7 @@ n, m = 5, 6
 d = 5 #
 number_of_players = 2
 # env = MockEnvironment(n, m, d)
-env = pyCiv.GameEnvironment(n, m, number_of_players)
+env = pyCiv2.GameEnvironment(n, m, number_of_players)
 # reset?
 agent = DQNAgent(n, m, d, ReplayMemory(10000)) # example capacity
 NUM_EPISODES = 64 
@@ -279,9 +279,10 @@ for episode in range(NUM_EPISODES):
     next_state = env.reset(2)
     done = False
     while not done: # We need 2 variables, one for end turn and one for end game. - in order to introduce more agents to the mix.
+
         state = next_state
         action = agent.select_action(state)
-        action_matrix = [np.array([action[0] // m, action[0] % n]), np.array([action[1] // m, action[1] % n])]
+        action_matrix = [np.array([action[0] // m, action[0] % m]), np.array([action[1] // m, action[1] % m])]
 
         states.append(state)
         next_state, reward, done = env.step(action_matrix)
@@ -335,40 +336,40 @@ for episode in range(NUM_EPISODES):
 
 #%%
 
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
-def coords(i,j):
-    x = j - np.cos(np.pi/3) * i
-    y = j * np.sin(np.pi/3)
-    return x, y
+# def coords(i,j):
+#     x = j - np.cos(np.pi/3) * i
+#     y = j * np.sin(np.pi/3)
+#     return x, y
 
-for k in range(40):
-    fig, ax = plt.subplots(1,1,figsize=(5,5), dpi=100)
-    state = states[k]
-    # player=player_turn[k]
+# for k in range(40):
+#     fig, ax = plt.subplots(1,1,figsize=(5,5), dpi=100)
+#     state = states[k]
+#     # player=player_turn[k]
 
-    for (i, j), value in np.ndenumerate(state[0]):
-        if value > 0:  # Assuming positive values indicate cities
-            x, y = coords(i,j)
-            ax.plot(x, y, '*', color='red', markersize=10)  # Plot cities as red stars
-    for (i, j), value in np.ndenumerate(state[1]):
-        if value > 0:
-            x,y = coords(i,j)
-            ax.plot(x, y, 'x', color='red', markersize=14)  
-    for (i, j), value in np.ndenumerate(state[3]):
-        if value < 0:
-            x, y = coords(i,j)
-            ax.plot(x, y, '*', color='blue', markersize=10)  # Plot cities as red stars
-    for (i, j), value in np.ndenumerate(state[4]):
-        if value < 0:
-            x, y = coords(i,j)
-            ax.plot(x, y, 'x', color='blue', markersize=14)  # Plot cities as red stars
+#     for (i, j), value in np.ndenumerate(state[0]):
+#         if value > 0:  # Assuming positive values indicate cities
+#             x, y = coords(i,j)
+#             ax.plot(x, y, '*', color='red', markersize=10)  # Plot cities as red stars
+#     for (i, j), value in np.ndenumerate(state[1]):
+#         if value > 0:
+#             x,y = coords(i,j)
+#             ax.plot(x, y, 'x', color='red', markersize=14)  
+#     for (i, j), value in np.ndenumerate(state[3]):
+#         if value < 0:
+#             x, y = coords(i,j)
+#             ax.plot(x, y, '*', color='blue', markersize=10)  # Plot cities as red stars
+#     for (i, j), value in np.ndenumerate(state[4]):
+#         if value < 0:
+#             x, y = coords(i,j)
+#             ax.plot(x, y, 'x', color='blue', markersize=14)  # Plot cities as red stars
         
     
-    ax.set_aspect('equal')
-    ax.set_ylim(0,5)
-    ax.set_xlim(0,6)
-    # ax.invert_yaxis()  # Invert the y-axis to get the origin at the top-left corner as in most map displays
-    plt.show()
-    plt.clf()
+#     ax.set_aspect('equal')
+#     ax.set_ylim(0,5)
+#     ax.set_xlim(0,6)
+#     # ax.invert_yaxis()  # Invert the y-axis to get the origin at the top-left corner as in most map displays
+#     plt.show()
+#     plt.clf()
         
