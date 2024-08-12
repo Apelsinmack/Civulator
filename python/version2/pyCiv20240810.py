@@ -205,11 +205,12 @@ class GameEnvironment:
         self.defend_XP = 3
         self.kill_XP = 4
         
-        self.kill_reward = 10
-        self.damage_reward = 3
+        self.kill_reward = 50
+        self.damage_reward = 10
         self.city_capture_reward = 60
-        self.win_reward = 1000
-        self.reward = {"Capture Enemy City": 1000}
+        self.win_reward = 100
+        self.reward = {"Capture Enemy City": 100}
+        self.max_turns = 100
         
 
     def distance_function(self, p1, p2):
@@ -257,6 +258,9 @@ class GameEnvironment:
         return orders
     
     def check_if_done(self):
+        if self.max_turns:
+            if self.turn_counter > self.max_turns:
+                self.done = True
         number_of_players_alive = 0
         for player in self.players:
             player.check_if_dead()
@@ -461,11 +465,11 @@ class GameEnvironment:
        
     def step(self, action):
         if self.current_player.is_dead:
-            reward = - 100
+            reward = 0
+            self.current_player.end_turn()
             next_player = self.get_next_player(self.current_player)
             self.current_player = next_player
             self.update_state_tensor()
-            self.check_if_done()
             return self.state, reward, self.done
         reward = 0
         select = action[0]  # FIX SELECT AND ORDER TO BE i, j indexes - 8/8 -24 erik

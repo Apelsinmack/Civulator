@@ -59,7 +59,7 @@ def get_valid_select_mask(state):
     movement_points_layer = state[2, :, :]  # Shape: [n, m]
     
     # Generate a mask where positions with movement points > 0 are marked as 1, else 0
-    valid_select_mask = (movement_points_layer > 0).float()  # Convert boolean mask to float
+    valid_select_mask = (movement_points_layer > 0.1).float()  # Convert boolean mask to float
     
      
     # Flatten the mask to match the shape [n*m], corresponding to flattened select_probs
@@ -92,6 +92,7 @@ def select_and_move(game_state, network):
     
     # Get unit selection probabilities
     select_probs, _ = network(game_state.unsqueeze(0))
+    # print(select_probs)
     
     # Mask invalid selections (e.g., tiles without units)
     original_mask = get_valid_select_mask(game_state)
@@ -151,12 +152,31 @@ class DQNAgent:
         self.criterion = nn.MSELoss()
 
     def select_action(self, state, epsilon=0.1):
-        if random.uniform(0, 1) < epsilon: # Exploration
-            # Randomly select and move
-            return (random.choice(range(self.n * self.m)), random.choice(range(self.n * self.m)))
-        else: # Exploitation
+        if random.uniform(0, 1) < epsilon:  # Exploration
+            # Generate valid selection mask
+            valid_select_mask = get_valid_select_mask(state)
+            valid_positions = torch.where(valid_select_mask > 0)[0].tolist()  # Get valid positions
+            
+            if len(valid_positions) > 0:
+                # Randomly select a valid position
+                selected_pos = random.choice(valid_positions)
+            else:
+                selected_pos = random.choice(range(self.n * self.m))  # Fallback to random choice if no valid positions found
+            
+            # Assuming you want to select a random move to a valid position (based on valid_moves_mask)
+            valid_moves_mask = get_valid_moves_mask(state, selected_pos)
+            valid_moves = torch.where(valid_moves_mask > 0)[0].tolist()
+            
+            if len(valid_moves) > 0:
+                move_pos = random.choice(valid_moves)
+            else:
+                move_pos = random.choice(range(self.n * self.m))  # Fallback to random choice if no valid moves found
+            
+            return (selected_pos, move_pos)
+        else:  # Exploitation
             selected_pos, move_pos = select_and_move(state, self.network)
             return (selected_pos.item(), move_pos.item())
+
 
     def store_transition(self, state, action, reward, next_state, done):
         self.memory.push(state, action, reward, next_state, done)
