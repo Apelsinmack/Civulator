@@ -1,8 +1,5 @@
 """
-things to do: to get this working with the real game we need to concenate game state with one selection option of "end turn"
-The select thing needs masking.
-
-The select function can branch out, so that if a city is selected another agent is activated.
+For Version2
 """
 import pyCiv20240810
 import torch
@@ -276,7 +273,7 @@ BATCH_SIZE = 32
 states = []
 for episode in range(NUM_EPISODES):
     print(f"Starting episode {episode}")
-    next_state = env.reset(2)
+    next_state = env.reset()
     done = False
     while not done: # We need 2 variables, one for end turn and one for end game. - in order to introduce more agents to the mix.
 

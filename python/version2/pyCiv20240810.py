@@ -1,6 +1,10 @@
 """
 simple version of civ in python
-the map is always cylindrical in this mode
+Version 2 of pyCiv implements classes for map tiles:
+    units and cities are referenced in the tiles (in addition to being referenced in the player class)
+    This means you can pick a tile and see if there is a unit standing on it, as well as pick a player and see where all their units are
+    Allows for different terrain types with different yields and defencive bonuses, hopefully also rivers can be implemented.
+    EXAMPLE tile.rivers = [river1, river2], where river1 = ['NE', 'S'] could mean we have 2 rivers flowing on the tile, river1 exits the tile to the north east and the south.
 """
 import random
 import numpy as np
@@ -55,36 +59,29 @@ class Unit:
     def __str__(self):
         return f"Type: {self.unit_type}, Health: {self.health}, Team: {self.player.name}, Location: {self.location}"
     
-    def attack(self, target: 'Unit'):
-        kill = False
-        if self.xp > 100:
-            self.attack_power += 3
-            self.xp = 0
-            self.level +=1
-            print(f"{self.player.name} {self.unit_type} is now level {self.level}")
-        target.take_damage(self.attack_power)
-        self.xp += 10
-        if target.dead == True:
-            self.location = target.location # does not take into account for ranged attacks.
-            self.xp += 20
-            kill = True
-        self.movement_points = 0
-        self.take_damage(target.attack_power//2)
-        if self.verbose:
-            print(f"{self.player.name} {self.unit_type} attacks {target.player.name} {target.unit_type} for {self.attack_power} damage.")
-        return kill
+    # def attack(self, target: 'Unit'):
+    #     kill = False
+    #     if self.xp > 100:
+    #         self.attack_power += 3
+    #         self.xp = 0
+    #         self.level +=1
+    #         print(f"{self.player.name} {self.unit_type} is now level {self.level}")
+    #     target.take_damage(self.attack_power)
+    #     self.xp += 10
+    #     if target.dead == True:
+    #         self.location = target.location # does not take into account for ranged attacks.
+    #         self.xp += 20
+    #         kill = True
+    #     self.movement_points = 0
+    #     self.take_damage(target.attack_power//2)
+    #     if self.verbose:
+    #         print(f"{self.player.name} {self.unit_type} attacks {target.player.name} {target.unit_type} for {self.attack_power} damage.")
+    #     return kill
 
 
     def take_damage(self, damage): # WE USE THIS
         self.health -= damage
-        if self.verbose:
-            print(f"{self.unit_type} took {damage} damage. Health now {self.health}")
-        if self.health <= 0:
-            self.dead = True
-            self.player.remove_unit(self)
-            if self.verbose:
-                print(f"{self.player.name} {self.unit_type} died.")
-            # self.location = np.array([-1,-1]) # graveyard. # Flyttas till egen funtion!
+
 
     def heal(self, amount):
         self.movement_points = 0
@@ -104,21 +101,15 @@ class Unit:
             return 1
 
     def fortify(self):
-
         if self.defence_bonus <= 3:
             self.defence_bonus += 3
-
-#         self.defence_bonus += 3
-#         self.defence_bonus = min(self.defence_bonus, 6)
-# >>>>>>> 06cb28a975e57a05145499c0f16921296617339b
-#         self.movement_points = 0
     
     def end_of_turn_action(self):
         if self.movement_points == self.max_movement_points:
             # calculate healing amout
             self.heal(10)
         else: 
-            self.defence_bonus = 0 # change to the tile defence in question
+            self.defence_bonus = 0
         self.movement_points = self.max_movement_points
 
 class City:
@@ -160,16 +151,15 @@ class Player:
         self.faith = 0
         self.income = 0
         self.starting_location = (0,0)
-        self.player_is_dead = False
+        self.is_dead = False
         self.units_with_no_movement = []
         
             
-    def add_unit(self, location, unit_type='Warrior'):
-        self.units.append(Unit(self, location, unit_type))
+    def add_unit(self, unit):
+        self.units.append(unit)
     
-    def add_city(self, location):
-        city_name = self.name + ' City'
-        self.cities.append(City(self, location, city_name))
+    def add_city(self, city):
+        self.cities.append(city)
     
     def remove_unit(self, unit):
         if unit in self.units:
@@ -184,17 +174,17 @@ class Player:
     def end_turn(self):
         for unit in self.units:
             unit.end_of_turn_action()
-    def check_if_player_is_dead(self):
+    def check_if_dead(self):
         if len(self.cities) == 0:
             print(f"{self.name} is dead.")
-            self.player_is_dead = True
+            self.is_dead = True
         
-    def get_unmoved_positions(self):
-        untouched_locations = []
-        for unit in self.units:
-            if unit.movement_points > 0:
-                untouched_locations.append(unit.location)
-        return untouched_locations
+    # def get_unmoved_positions(self):
+    #     untouched_locations = []
+    #     for unit in self.units:
+    #         if unit.movement_points > 0:
+    #             untouched_locations.append(unit.location)
+    #     return untouched_locations
                     
 
 
@@ -230,42 +220,80 @@ class GameEnvironment:
         else:
             d = abs(dx) + abs(dy)
         return d
-
-    def check_if_done(self):
-        # updates the list of players to contain only players with cities left.
-        self.players = [player for player in self.players if len(player.cities) > 0]
-        if len(self.players) == 1:
-            self.done = True
-
-                
     
+    def path_finder(self, p1, p2):
+        orders = []
+        current_position = p1.copy()  # Create a copy of p1 to work with
+        dx, dy = p2 - p1
+        
+        while self.distance_function(p2, current_position) > 0:
+            if dx > 0 and dy > 0:
+                current_position += np.array([1, 1])
+                orders.append(current_position.copy())  # Append a copy of the updated position
+                dx -= 1
+                dy -= 1
+            elif dx < 0 and dy < 0:
+                current_position -= np.array([1, 1])
+                orders.append(current_position.copy())  # Append a copy of the updated position
+                dx += 1
+                dy += 1
+            elif dx > 0 and dy == 0:
+                current_position += np.array([1, 0])
+                orders.append(current_position.copy())  # Append a copy of the updated position
+                dx -= 1
+            elif dx < 0 and dy == 0:
+                current_position -= np.array([1, 0])
+                orders.append(current_position.copy())  # Append a copy of the updated position
+                dx += 1
+            elif dy > 0:
+                current_position += np.array([0, 1])
+                orders.append(current_position.copy())  # Append a copy of the updated position
+                dy -= 1
+            elif dy < 0:
+                current_position -= np.array([0, 1])
+                orders.append(current_position.copy())  # Append a copy of the updated position
+                dy += 1
+    
+        return orders
+    
+    def check_if_done(self):
+        number_of_players_alive = 0
+        for player in self.players:
+            player.check_if_dead()
+            if not player.is_dead:
+                number_of_players_alive += 1
+        
+        if number_of_players_alive <= 1:
+            self.done = True
+                       
     def add_player(self, name):
         self.players.append(Player(name, len(self.players)))
         
     def add_unit(self, player, coordinates, unit_type):
-        player.add_unit(coordinates, unit_type)
-        self.map.tiles[tuple(coordinates)].units.append(player.units[-1])
-    def add_city(self, player, coordinates):
-        player.add_city(coordinates)
-        self.map.tiles[tuple(coordinates)].city = player.cities[-1]
+        unit = Unit(player, coordinates, unit_type)
+        player.add_unit(unit)
+        self.map.tiles[tuple(coordinates)].units.append(unit)
         
+    def add_city(self, player, coordinates):
+        city_name = player.name + ' City'
+        city = City(player, coordinates, city_name)
+        player.add_city(city)
+        self.map.tiles[tuple(coordinates)].city = city        
     
-
-    def reset(self, number_of_players):
+    def reset(self):
         self.done = False
         # Clear existing players and add new ones
         self.map = Map(self.n, self.m)
         self.map.generate_map()
         self.players.clear()
         self.turn_counter = 1
-        self.number_of_players = number_of_players
-        for i in range(number_of_players):
+        for i in range(self.number_of_players):
             self.add_player(f"Player {i+1}")
         
         self.state = torch.zeros(self.d,self.n,self.m)
         
         # calculate starting locations
-        if number_of_players == 2:
+        if self.number_of_players == 2:
             self.players[0].starting_location = np.array([random.randint(0,self.n-1), random.randint(0, self.m//2-1)])
             self.players[1].starting_location = np.array([random.randint(0,self.n-1), random.randint(self.m//2, self.m-1)])
         else:
@@ -282,7 +310,7 @@ class GameEnvironment:
             self.add_unit(player, coord0, 'Warrior')
             self.add_unit(player, coord1, 'Warrior')
             self.add_unit(player, coord2, 'Warrior')
-            self.add_city(player, coord0)
+            self.add_city(player, player.starting_location)
             
         self.current_player = self.players[0] # Player 1 starts the game
         self.update_state_tensor()
@@ -298,6 +326,9 @@ class GameEnvironment:
         player = unit.player
         if unit in player.units:
             player.units.remove(unit)
+            
+        # Print:
+        print(f'{unit.player.name} {unit.unit_type} deleted')
     
         # Additional cleanup (if necessary)
         del unit  # Optional, not strictly necessary in Python due to garbage collection
@@ -315,10 +346,11 @@ class GameEnvironment:
                 unit.movement_points = 0
                 
             else:
-               path = self.path_finder(unit.coordinates, order) 
+               path = self.path_finder(unit.coordinates.copy(), order) 
                while unit.movement_points > 0 and len(path) > 0: 
                    next_tile_coord = path.pop(0)
                    
+                   #CHECK IF TILE IS FREE
                    if len(self.map.tiles[tuple(next_tile_coord)].units)==0:
                        # Tile free, let's move there
                        if unit in self.map.tiles[tuple(unit.coordinates)].units:
@@ -338,10 +370,17 @@ class GameEnvironment:
                        else:
                            #Enemy unit detected, attack!
                            enemy_unit = self.map.tiles[tuple(next_tile_coord)].units[0]
-                           # Attack Logic
-                           enemy_unit_defence_modifier = 1 - (self.map.tiles[tuple(enemy_unit.coordinates)].defence_bonus + enemy_unit.defence_bonus)/10
-                           enemy_unit.take_damage(unit.attack_power * unit.health / unit.max_health * enemy_unit_defence_modifier) 
-                           unit.take_damage(enemy_unit.attack_power * enemy_unit.health / enemy_unit.max_health)
+                           
+                           # ATTACK LOGIC
+                           # ------------
+                           
+                           print(f'{unit.player.name} {unit.unit_type} attacks {enemy_unit.player.name} {enemy_unit.unit_type}')
+                           
+                           defence_modifier = 1 - (self.map.tiles[tuple(enemy_unit.coordinates)].defence_bonus + enemy_unit.defence_bonus)/10
+                           unit_attack_modifier = max(.25,(unit.health / unit.max_health))
+                           enemy_unit_attack_modifier = max(.25, enemy_unit.health / enemy_unit.max_health)
+                           enemy_unit.take_damage(unit.attack_power * unit_attack_modifier * defence_modifier) 
+                           unit.take_damage(enemy_unit.attack_power * enemy_unit_attack_modifier)
                            unit.xp += self.attack_XP
                            enemy_unit.xp += self.defend_XP
                            
@@ -366,7 +405,7 @@ class GameEnvironment:
                                # Move the unit on the map
                                self.map.tiles[tuple(unit.coordinates)].units.remove(unit)
                                unit.coordinates = next_tile_coord
-                               self.map.tiles[tuple(unit.coorinates)].units.append(unit)
+                               self.map.tiles[tuple(unit.coordinates)].units.append(unit)
                                unit.movement_points = 0
                                
                                
@@ -376,89 +415,15 @@ class GameEnvironment:
                               self.delete_unit(unit)
                               return reward
                
-               #Check if we captured a new city
-               if self.map.tiles[tuple(unit.coordinates)].city:
-                   if self.map.tiles[tuple(unit.coordinates)].city.player != unit.player:
-                      self.map.tiles[tuple(unit.coordinates)].city.set_owner(unit.player)
-                      reward += self.city_capture_reward
+                   #Check if we captured a new city
+                   if self.map.tiles[tuple(unit.coordinates)].city:
+                       if self.map.tiles[tuple(unit.coordinates)].city.player != unit.player:
+                           self.map.tiles[tuple(unit.coordinates)].city.set_owner(unit.player)
+                           reward += self.city_capture_reward
                        
                    
                
         return reward               
-
-    def path_finder(self, p1, p2):
-        orders = []
-        dx, dy = p2 - p1
-        
-        while self.distance_function(p2, p1) > 0:
-            if dx > 0 and dy > 0:
-                p1 += np.array([1, 1])
-                orders.append(p1.copy())  # Append a copy of p1
-                dx -= 1
-                dy -= 1
-            elif dx < 0 and dy < 0:
-                p1 -= np.array([1, 1])
-                orders.append(p1.copy())  # Append a copy of p1
-                dx += 1
-                dy += 1
-            elif dx > 0 and dy == 0:
-                p1 += np.array([1, 0])
-                orders.append(p1.copy())  # Append a copy of p1
-                dx -= 1
-            elif dx < 0 and dy == 0:
-                p1 -= np.array([1, 0])
-                orders.append(p1.copy())  # Append a copy of p1
-                dx += 1
-            elif dy > 0:
-                p1 += np.array([0, 1])
-                orders.append(p1.copy())  # Append a copy of p1
-                dy -= 1
-            elif dy < 0:
-                p1 -= np.array([0, 1])
-                orders.append(p1.copy())  # Append a copy of p1
-                dy += 1
-    
-        return orders  
-    # def get_next_tile(self, p1, p2):
-    #     #unit wants to move from position p1 to p2, this function returns the next tile in the path.
-    #     dx, dy = p2[0]-p1[0], p2[1]-p1[1]
-    #     if np.linalg.norm(p2-p1) == 1:
-    #         return p2
-    #     # while abs(dx) + abs(dy) > 0:
-    #     if np.linalg.norm(p2-p1) > 0:
-    #         if dx > 0 and dy > 0:
-    #             # orders.append('SE')
-    #             p1 += np.array([1,1])
-                
-    #             dx -= 1
-    #             dy -= 1
-    #         if dx < 0 and dy < 0:
-    #             # orders.append('NW')
-    #             p1 -= np.array([1,1])
-                
-    #             dx += 1
-    #             dy += 1
-    #         if dx > 0 and dy == 0:
-    #             # orders.append('E')
-    #             p1[0] += 1
-                
-    #             dx -= 1
-    #         if dx < 0 and dy==0:
-    #             # orders.append('W')
-    #             p1[0] -= 1
-               
-    #             dx += 1
-    #         if dy > 0:
-    #             # orders.append('SW')
-    #             p1[1] += 1
-               
-    #             dy -= 1
-    #         if dy < 0:
-    #             # orders.append('NE')
-    #             p1[1] -= 1
-                
-    #             dy += 1
-    #     return p1                
 
     def get_next_player(self, player): 
         # Find the next player in the list
@@ -495,14 +460,13 @@ class GameEnvironment:
         
        
     def step(self, action):
-        if self.current_player.check_if_player_is_dead():
+        if self.current_player.is_dead:
+            reward = - 100
             next_player = self.get_next_player(self.current_player)
-            self.players.remove(self.current_player)
-            self.number_of_players -= 1
             self.current_player = next_player
-            # remove current player and get the next player and update number of players (or remove this attribute), 
-            print('one player is dead')
+            self.update_state_tensor()
             self.check_if_done()
+            return self.state, reward, self.done
         reward = 0
         select = action[0]  # FIX SELECT AND ORDER TO BE i, j indexes - 8/8 -24 erik
         order = action[1]
@@ -524,20 +488,15 @@ class GameEnvironment:
         if len(self.map.tiles[tuple(select)].units) == 1: # Check that we've selected a unit- we should have! Maybe assert? Maybe remove this all together?
             reward += self.execute(self.map.tiles[tuple(select)].units[0], order)
             
-            """ #this function should contain pathfinding, what to do if the tile is empty, 
-                has enemy or has friendly unit as well as capturing city (and anything else)"""
         else:
             print('Selected empty tile :(')
         # Calculate new state
         self.update_state_tensor()
-        self.check_if_done()
         return self.state, reward, self.done
 
     def update_state_tensor(self):
         # Assuming self.n, self.m, and self.d are already defined
         self.state = torch.zeros(self.d, self.n, self.m)
-        
-        # Assuming self.current_player and self.players are defined
         # Update for current player's units
         player = self.current_player
         layer_index = 0  # Assuming the current player's units are friendly and go in the 0th layer of d
@@ -565,6 +524,8 @@ class GameEnvironment:
                 i, j = unit.coordinates
                 self.state[layer_index+1, i, j] = -unit.health  # Negative health for enemy units
             layer_index += 2
+        
+        self.check_if_done()
     
 
         
