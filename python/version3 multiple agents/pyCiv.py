@@ -49,16 +49,41 @@ class Unit:
         self.order = None
         self.movement_points = self.default_movement_points()
         self.max_movement_points = self.movement_points
-        self.attack_power = 50
+        self.attack_power = self.default_attack_power()
+        self.ranged_attack_power = self.default_ranged_power()
+        self.range = self.default_range()
         self.promotion = 0
         self.xp = 0
-        self.verbose = True
+        self.verbose = False
         self.level = 1
         self.defence_bonus = 0
+        
         
     def __str__(self):
         return f"Type: {self.unit_type}, Health: {self.health}, Team: {self.player.name}, Location: {self.location}"
     
+    def default_attack_power(self):
+        ap = {'Warrior' : 50,
+              'Archer' : 15,
+              'Horseman' : 75,
+              'Spearman': 50, 
+              'Settler' : 0}
+        return ap[self.unit_type]
+    def default_ranged_power(self):
+        ranged_ap = {'Warrior' : 0,
+              'Archer' : 50,
+              'Horseman' : 0,
+              'Spearman': 0,
+              'Settler' : 0}
+        return ranged_ap
+        
+    def default_range(self):
+        attack_range = {'Warrior' : 1,
+              'Archer' : 2,
+              'Horseman' : 1,
+              'Spearman': 1,
+              'Settler' : 0}
+        return attack_range
     # def attack(self, target: 'Unit'):
     #     kill = False
     #     if self.xp > 100:
@@ -141,10 +166,10 @@ class City:
 class Player:
     def __init__(self, name, player_index):
         self.name = name
-        self.units = [] 
         self.player_index = player_index
         self.units = []
         self.cities = []
+        self.settlers = []
         self.gold = 0
         self.science = 0
         self.culture = 0
@@ -176,7 +201,7 @@ class Player:
             unit.end_of_turn_action()
     def check_if_dead(self):
         if len(self.cities) == 0:
-            print(f"{self.name} is dead.")
+            
             self.is_dead = True
         
     # def get_unmoved_positions(self):
@@ -225,34 +250,43 @@ class GameEnvironment:
     def path_finder(self, p1, p2):
         orders = []
         current_position = p1.copy()  # Create a copy of p1 to work with
-        dx, dy = p2 - p1
+        destination = p2.copy()
         
-        while self.distance_function(p2, current_position) > 0:
+        
+        if self.distance_function(current_position, destination) > self.distance_function(p1, (destination + np.array([0,self.m]))):
+            destination = destination + np.array([0, self.m])
+        
+        
+        dx, dy = destination - current_position
+        modulus = np.array([self.n,self.m])
+        
+        
+        while self.distance_function(destination, current_position) > 0:
             if dx > 0 and dy > 0:
                 current_position += np.array([1, 1])
-                orders.append(current_position.copy())  # Append a copy of the updated position
+                orders.append(current_position.copy()%modulus)  # Append a copy of the updated position
                 dx -= 1
                 dy -= 1
             elif dx < 0 and dy < 0:
                 current_position -= np.array([1, 1])
-                orders.append(current_position.copy())  # Append a copy of the updated position
+                orders.append(current_position.copy()%modulus)  # Append a copy of the updated position
                 dx += 1
                 dy += 1
             elif dx > 0 and dy == 0:
                 current_position += np.array([1, 0])
-                orders.append(current_position.copy())  # Append a copy of the updated position
+                orders.append(current_position.copy()%modulus)  # Append a copy of the updated position
                 dx -= 1
             elif dx < 0 and dy == 0:
                 current_position -= np.array([1, 0])
-                orders.append(current_position.copy())  # Append a copy of the updated position
+                orders.append(current_position.copy()%modulus)  # Append a copy of the updated position
                 dx += 1
             elif dy > 0:
                 current_position += np.array([0, 1])
-                orders.append(current_position.copy())  # Append a copy of the updated position
+                orders.append(current_position.copy()%modulus)  # Append a copy of the updated position
                 dy -= 1
             elif dy < 0:
                 current_position -= np.array([0, 1])
-                orders.append(current_position.copy())  # Append a copy of the updated position
+                orders.append(current_position.copy()%modulus)  # Append a copy of the updated position
                 dy += 1
     
         return orders
@@ -261,11 +295,17 @@ class GameEnvironment:
         if self.max_turns:
             if self.turn_counter > self.max_turns:
                 self.done = True
+        
+        #Check if alive twice : We want to print player is dead only the same turn the player died.
         number_of_players_alive = 0
-        for player in self.players:
-            player.check_if_dead()
+        for player in self.players:            
+            if not player.is_dead:
+                player.check_if_dead()
+                if player.is_dead:
+                    print(f"{player.name} is dead.")
             if not player.is_dead:
                 number_of_players_alive += 1
+                
         
         if number_of_players_alive <= 1:
             self.done = True
@@ -382,9 +422,11 @@ class GameEnvironment:
                            print(f'{unit.player.name} {unit.unit_type} attacks {enemy_unit.player.name} {enemy_unit.unit_type}')
                            
                            defence_modifier = 1 - (self.map.tiles[tuple(enemy_unit.coordinates)].defence_bonus + enemy_unit.defence_bonus)/10
-                           unit_attack_modifier = max(.25,(unit.health / unit.max_health))
-                           enemy_unit_attack_modifier = max(.25, enemy_unit.health / enemy_unit.max_health)
-                           enemy_unit.take_damage(unit.attack_power * unit_attack_modifier * defence_modifier) 
+                           unit_attack_modifier = max(.6,(unit.health / unit.max_health))
+                           
+                           enemy_unit.take_damage(unit.attack_power * unit_attack_modifier * defence_modifier)
+                           enemy_unit_attack_modifier = max(.6, enemy_unit.health / enemy_unit.max_health)
+                           
                            unit.take_damage(enemy_unit.attack_power * enemy_unit_attack_modifier)
                            unit.xp += self.attack_XP
                            enemy_unit.xp += self.defend_XP
@@ -479,9 +521,12 @@ class GameEnvironment:
         if (select.tolist() == [self.n,0]):
             # print(f"{self.current_player.name} End Turn")
             self.current_player.end_turn()
-            self.current_player = self.get_next_player(self.current_player)
-            if self.current_player == self.players[0]: #We've cycld through all players, time to increase turn counter
+            self.current_player = self.get_next_player(self.current_player)            
+            first_alive_player = next(player for player in self.players if not player.is_dead)
+            # Check if the current player is this first alive player
+            if self.current_player == first_alive_player:
                 self.turn_counter += 1
+
                 #OPTIONAL PRINT STATEMENT
                 if self.turn_counter % 10 == 0:
                     print(f"Turn {self.turn_counter}")

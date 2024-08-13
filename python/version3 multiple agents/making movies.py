@@ -15,4 +15,4 @@ with imageio.get_writer(os.path.join(save_dir, 'game_replay.mp4'), fps=30, forma
         image = imageio.imread(filename)
         writer.append_data(image)
 
-print(f"Movie created and saved to {os.path.join(save_dir, 'game_replay.mp4')}")
+print(f"Movie created and saved to {os.path.join(save_dir, 'game_replay2.mp4')}")

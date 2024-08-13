@@ -57,9 +57,9 @@ def plot_state(state, filename, player_colors=['red', 'blue']):
             city_layer = state[0 + 2*i +1]
             unit_layer = state[1 + 2*i +1]
         
-        for (x, y), value in np.ndenumerate(city_layer):
+        for (r, c), value in np.ndenumerate(city_layer):
             if value != 0:
-                plt.scatter(y, x, marker='s', color=color, s=100)  # Plot cities as squares
+                plt.scatter(c, r, marker='s', color=color, s=100)  # Plot cities as squares
         
         for (x, y), value in np.ndenumerate(unit_layer):
             if value != 0:
