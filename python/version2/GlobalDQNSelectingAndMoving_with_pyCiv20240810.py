@@ -279,41 +279,47 @@ class MockEnvironment: # has a step function that returns a random new game stat
 
 
 """ TRAINING LOOP """
+# GlobalDQNSelectingAndMoving_with_pyCiv20240810.py
 
-# env = YourGameEnvironmentHere()
-n, m = 5, 6
-d = 5 #
-number_of_players = 2
-# env = MockEnvironment(n, m, d)
-env = pyCiv20240810.GameEnvironment(n, m, number_of_players)
-# reset?
-agent = DQNAgent(n, m, d, ReplayMemory(10000)) # example capacity
-NUM_EPISODES = 64 
-BATCH_SIZE = 32
-states = []
-for episode in range(NUM_EPISODES):
-    print(f"Starting episode {episode}")
-    next_state = env.reset()
-    done = False
-    while not done: # We need 2 variables, one for end turn and one for end game. - in order to introduce more agents to the mix.
-
-        state = next_state
-        action = agent.select_action(state)
-        action_matrix = [np.array([action[0] // m, action[0] % m]), np.array([action[1] // m, action[1] % m])]
-
-        states.append(state)
-        next_state, reward, done = env.step(action_matrix)
-        agent.store_transition(state, action, reward, next_state, done)
+if __name__ == "__main__":
+    # Any code here will run only if this script is executed directly.
+    # Example: Your training or gameplay loop
+        
     
-   
-        if len(agent.memory) > BATCH_SIZE:
-            agent.optimize(BATCH_SIZE)
-            # Save the model weights after each episode
-            if not os.path.exists('weights'):  # Check if the directory exists
-                os.makedirs('weights')  # Create the directory if it does not exist
-            current_dir = os.getcwd()
-            save_path = os.path.join(current_dir, f'weights/model_episode_{episode}.pth')
-            torch.save(agent.network.state_dict(), save_path)        
+    # env = YourGameEnvironmentHere()
+    n, m = 5, 6
+    d = 5 #
+    number_of_players = 2
+    # env = MockEnvironment(n, m, d)
+    env = pyCiv20240810.GameEnvironment(n, m, number_of_players)
+    # reset?
+    agent = DQNAgent(n, m, d, ReplayMemory(10000)) # example capacity
+    NUM_EPISODES = 64 
+    BATCH_SIZE = 32
+    states = []
+    for episode in range(NUM_EPISODES):
+        print(f"Starting episode {episode}")
+        next_state = env.reset()
+        done = False
+        while not done: # We need 2 variables, one for end turn and one for end game. - in order to introduce more agents to the mix.
+    
+            state = next_state
+            action = agent.select_action(state)
+            action_matrix = [np.array([action[0] // m, action[0] % m]), np.array([action[1] // m, action[1] % m])]
+    
+            states.append(state)
+            next_state, reward, done = env.step(action_matrix)
+            agent.store_transition(state, action, reward, next_state, done)
+        
+       
+            if len(agent.memory) > BATCH_SIZE:
+                agent.optimize(BATCH_SIZE)
+                # Save the model weights after each episode
+                if not os.path.exists('weights'):  # Check if the directory exists
+                    os.makedirs('weights')  # Create the directory if it does not exist
+                current_dir = os.getcwd()
+                save_path = os.path.join(current_dir, f'weights/model_episode_{episode}.pth')
+                torch.save(agent.network.state_dict(), save_path)        
 
 
 #%%
