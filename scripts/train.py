@@ -29,7 +29,7 @@ def set_random_seeds(seed=42):
 
 
 def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
-         batch_size=32, debug=True):
+         batch_size=32, max_turns=250, debug=True):
     """Main training function.
 
     Args:
@@ -37,6 +37,7 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
         checkpoint_episode: Specific episode to resume from (None = latest)
         num_episodes: Number of training episodes
         batch_size: Batch size for optimization
+        max_turns: Maximum turns per game before forced end
         debug: Enable debug output (ASCII map display)
     """
     set_random_seeds()
@@ -47,6 +48,7 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
     d = 2 * number_of_players + 1
 
     env = GameEnvironment(n, m, number_of_players)
+    env.max_turns = max_turns
 
     # Create agents
     memories = [ReplayMemory(10000) for _ in range(number_of_players)]
@@ -114,6 +116,7 @@ if __name__ == "__main__":
     parser.add_argument("--episode", type=int, help="Specific checkpoint episode to load")
     parser.add_argument("--episodes", type=int, default=64, help="Number of episodes")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
+    parser.add_argument("--max-turns", type=int, default=250, help="Max turns per game")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
     args = parser.parse_args()
 
@@ -122,5 +125,6 @@ if __name__ == "__main__":
         checkpoint_episode=args.episode,
         num_episodes=args.episodes,
         batch_size=args.batch_size,
+        max_turns=args.max_turns,
         debug=args.debug,
     )
