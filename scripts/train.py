@@ -1,0 +1,126 @@
+"""Entry point for training Civulator agents."""
+
+import os
+import re
+import sys
+import argparse
+import random
+
+import numpy as np
+import torch
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from civulator.game import GameEnvironment
+from civulator.agents import DQNAgent
+from civulator.agents.replay_memory import ReplayMemory
+from civulator.training import train_agents
+
+
+def set_random_seeds(seed=42):
+    """Set random seeds for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+
+def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
+         batch_size=32, debug=True):
+    """Main training function.
+
+    Args:
+        resume_training: Whether to resume from a checkpoint
+        checkpoint_episode: Specific episode to resume from (None = latest)
+        num_episodes: Number of training episodes
+        batch_size: Batch size for optimization
+        debug: Enable debug output (ASCII map display)
+    """
+    set_random_seeds()
+
+    # Environment setup
+    n, m = 4, 8
+    number_of_players = 2
+    d = 2 * number_of_players + 1
+
+    env = GameEnvironment(n, m, number_of_players)
+
+    # Create agents
+    memories = [ReplayMemory(10000) for _ in range(number_of_players)]
+    agents = [
+        DQNAgent(n, m, d, memories[0], learning_rate=0.001),
+        DQNAgent(n, m, d, memories[1], learning_rate=0.001),
+    ]
+
+    if number_of_players > 2:
+        memories.append(ReplayMemory(10000))
+        agents.append(DQNAgent(n, m, d, memories[2], learning_rate=0.001))
+
+    # Load checkpoints if resuming
+    if resume_training:
+        if checkpoint_episode is not None:
+            checkpoint_paths = [
+                f"weights/agent_{i}_episode_{checkpoint_episode}.pth"
+                for i in range(number_of_players)
+            ]
+        else:
+            weight_files = os.listdir("weights") if os.path.exists("weights") else []
+            episodes = []
+            for file in weight_files:
+                match = re.match(r"agent_0_episode_(\d+)\.pth", file)
+                if match:
+                    episodes.append(int(match.group(1)))
+
+            if episodes:
+                latest_episode = max(episodes)
+                print(f"Found latest checkpoint at episode {latest_episode}")
+                checkpoint_paths = [
+                    f"weights/agent_{i}_episode_{latest_episode}.pth"
+                    for i in range(number_of_players)
+                ]
+            else:
+                print("No checkpoints found. Starting fresh.")
+                resume_training = False
+
+        if resume_training:
+            for i, agent in enumerate(agents):
+                try:
+                    checkpoint = torch.load(checkpoint_paths[i])
+                    agent.network.load_state_dict(checkpoint["model_state_dict"])
+                    agent.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+                    print(f"Loaded checkpoint for Agent {i}")
+                except Exception as e:
+                    print(f"Failed to load checkpoint for Agent {i}: {e}")
+
+    # Train
+    win_counts, win_history = train_agents(
+        env, agents, num_episodes=num_episodes, batch_size=batch_size, debug=debug
+    )
+
+    print("\nTraining complete!")
+    print("Final win counts:")
+    for i, count in win_counts.items():
+        print(f"  Player {i+1}: {count} wins")
+
+    return win_counts, win_history
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Train Civulator DQN agents")
+    parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
+    parser.add_argument("--episode", type=int, help="Specific checkpoint episode to load")
+    parser.add_argument("--episodes", type=int, default=64, help="Number of episodes")
+    parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
+    parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    args = parser.parse_args()
+
+    main(
+        resume_training=args.resume,
+        checkpoint_episode=args.episode,
+        num_episodes=args.episodes,
+        batch_size=args.batch_size,
+        debug=args.debug,
+    )

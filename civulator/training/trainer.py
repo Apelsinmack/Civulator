@@ -1,0 +1,203 @@
+"""Training orchestration for multi-agent DQN training."""
+
+import os
+import time
+
+import numpy as np
+import matplotlib.pyplot as plt
+import torch
+
+from ..agents.networks import get_valid_select_mask
+
+
+def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False):
+    """Train multiple agents with proper state tracking and win counting.
+
+    Args:
+        env: The GameEnvironment
+        agents: List of DQNAgent instances (one per player)
+        num_episodes: Number of training episodes
+        batch_size: Batch size for optimization
+        debug: Whether to display debug information
+
+    Returns:
+        tuple: (win_counts dict, win_history list)
+    """
+    win_counts = {i: 0 for i in range(len(agents))}
+    win_history = []
+
+    for episode in range(num_episodes):
+        print(f"Starting episode {episode}")
+        env.reset()
+        done = False
+
+        current_player_index = env.current_player.player_index
+        current_agent = agents[current_player_index]
+        next_state = current_agent.build_state_tensor(env)
+
+        last_state_by_agent = {i: next_state for i in range(len(agents))}
+        last_action_by_agent = {i: None for i in range(len(agents))}
+
+        step_counter = 0
+
+        while not done:
+            step_counter += 1
+            if step_counter > 10000:
+                print("WARNING: Step limit exceeded, breaking loop")
+                break
+
+            current_player_index = env.current_player.player_index
+            current_agent = agents[current_player_index]
+
+            state = next_state
+            last_state_by_agent[current_player_index] = state
+
+            action = current_agent.select_action(state, epsilon=0.3)
+            last_action_by_agent[current_player_index] = action
+
+            # Convert action indices to coordinates
+            action_matrix = [
+                np.array([action[0] // env.m, action[0] % env.m]),
+                np.array([action[1] // env.m, action[1] % env.m]),
+            ]
+
+            # Execute action
+            if action[0] == env.n * env.m:
+                # End turn
+                env.current_player.end_turn()
+                env.next_turn()
+                reward = 0
+                done = env.done
+            else:
+                try:
+                    _, reward, done = env.step(action_matrix)
+                except AttributeError as e:
+                    print(f"AttributeError during step: {e}")
+                    reward = 0
+                    done = env.done
+
+            # Get next state
+            next_state = current_agent.build_state_tensor(env)
+
+            # Store transition
+            if env.current_player.player_index == current_player_index:
+                current_agent.store_transition(state, action, reward, next_state, done)
+            else:
+                current_agent.store_pending_transition(state, action, reward)
+
+            # Complete pending transitions for the next player
+            if env.current_player.player_index != current_player_index:
+                next_player_index = env.current_player.player_index
+                next_player_agent = agents[next_player_index]
+                next_state = next_player_agent.build_state_tensor(env)
+
+                if next_player_agent.pending_transitions:
+                    next_player_agent.complete_pending_transition(next_state, done)
+
+            # Optimize
+            if len(current_agent.memory) > batch_size:
+                current_agent.optimize(batch_size)
+
+        # Resolve remaining pending transitions
+        for agent in agents:
+            while agent.pending_transitions:
+                agent.complete_pending_transition(agent.pending_transitions[0][0], True)
+
+        # Determine winner
+        winner = determine_winner(env)
+        if winner is not None:
+            win_counts[winner] += 1
+            win_history.append(winner)
+        else:
+            win_history.append(-1)
+
+        print(
+            f"Episode {episode} completed. "
+            f"Winner: {'None' if winner is None else f'Player {winner+1}'}"
+        )
+        print(
+            f"Win counts: "
+            + ", ".join(f"Player {i+1}: {c}" for i, c in win_counts.items())
+        )
+
+        # Save checkpoints
+        _save_checkpoints(agents, episode)
+
+    save_win_history(win_history, num_episodes)
+    return win_counts, win_history
+
+
+def determine_winner(env):
+    """Determine the winner based on the environment state.
+
+    Returns:
+        int: Index of winning player, or None
+    """
+    alive_players = [i for i, p in enumerate(env.players) if not p.is_dead]
+
+    if len(alive_players) == 1:
+        return alive_players[0]
+
+    if env.done and env.turn_counter >= env.max_turns:
+        scores = []
+        for player in env.players:
+            if player.is_dead:
+                scores.append(-1)
+            else:
+                scores.append(len(player.cities) * 10 + len(player.units))
+
+        max_score = max(scores)
+        if scores.count(max_score) == 1:
+            return scores.index(max_score)
+
+    return None
+
+
+def _save_checkpoints(agents, episode):
+    """Save model weights for all agents."""
+    os.makedirs("weights", exist_ok=True)
+    for i, agent in enumerate(agents):
+        save_path = f"weights/agent_{i}_episode_{episode}.pth"
+        torch.save(
+            {
+                "model_state_dict": agent.network.state_dict(),
+                "optimizer_state_dict": agent.optimizer.state_dict(),
+            },
+            save_path,
+        )
+
+
+def save_win_history(win_history, num_episodes):
+    """Save win history data and generate rolling win rate plot."""
+    os.makedirs("stats", exist_ok=True)
+    timestamp = int(time.time())
+
+    np.save(f"stats/win_history_{timestamp}.npy", np.array(win_history))
+
+    if len(win_history) >= 10:
+        plt.figure(figsize=(10, 6))
+
+        players = sorted(set(w for w in win_history if w >= 0))
+
+        for player in players:
+            window_size = 10
+            rolling_wins = []
+            for i in range(len(win_history) - window_size + 1):
+                window = win_history[i : i + window_size]
+                win_rate = window.count(player) / window_size
+                rolling_wins.append(win_rate)
+
+            plt.plot(
+                range(window_size - 1, len(win_history)),
+                rolling_wins,
+                label=f"Player {player + 1}",
+            )
+
+        plt.title("Rolling Win Rate (Window: 10 Episodes)")
+        plt.xlabel("Episode")
+        plt.ylabel("Win Rate")
+        plt.legend()
+        plt.grid(True)
+        plt.savefig(f"stats/win_rate_plot_{timestamp}.png")
+
+    print("Win history and analytics saved to stats/ directory")

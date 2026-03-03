@@ -403,3 +403,7 @@ FodyWeavers.xsd
 *.sln.iml
 
 python/version3\ multiple\ agents/weights/
+
+# Training artifacts
+weights/
+stats/
