@@ -4,9 +4,21 @@
 
 ## What Is This?
 
-Civulator is a simplified Civilization-like game built as a training environment for deep reinforcement learning agents. The game simulates hex-grid turn-based strategy with cities, units, combat, and terrain. RL agents learn to play via DQN with a Select-and-Move action architecture.
+Civulator is a **research project** exploring deep reinforcement learning in a simplified Civilization-like strategy game. The goal is not just to build a working agent, but to **systematically measure what works and what doesn't** -- comparing architectures, state representations, reward functions, and training configurations through controlled experiments.
+
+Every change should be accompanied by evidence: training curves, win rate plots, and documented comparisons against previous versions. We improve incrementally by measuring performance, not by guessing.
+
+The game simulates hex-grid turn-based strategy with cities, units, combat, and terrain. RL agents learn to play via DQN with a Select-and-Move action architecture.
 
 **Origin**: Started as a collaboration between Erik (Python/RL) and Patrik (C# game engine). Patrik has left the project. The C# code is archived/legacy -- only the Python codebase is active.
+
+## Research Methodology
+
+- **Baseline first**: Before changing anything, establish a measurable baseline (win rate, training curve shape, convergence speed).
+- **One variable at a time**: When testing a new idea (e.g., different state encoder, new reward function), change only that variable and compare against the baseline.
+- **Document everything**: Each experiment should record: what was changed, hypothesis, training parameters, results (plots), and conclusions.
+- **Keep old results**: Training plots and win histories are saved in `stats/`. Never delete previous results -- they are the project's scientific record.
+- **Reproducibility**: Use fixed random seeds. Log hyperparameters. Save model checkpoints so experiments can be replicated or resumed.
 
 ## Project Location
 
@@ -14,10 +26,10 @@ Civulator is a simplified Civilization-like game built as a training environment
 
 ## Current State (as of 2026-03-03)
 
-- **Latest working version**: `python/v2_debugging/`
-- **Older versions**: `python/v1 basic structure cities and warriors/version1-4` (kept for reference, not active)
-- **C# code**: Legacy, archived. Not part of active development.
-- **Training status**: Agents train but learning is unstable. No CUDA acceleration yet (RTX 3070 available).
+- **Codebase**: Refactored into `civulator/` package (game, agents, training, utils)
+- **Old versions**: Archived in `archive/python_versions/` and `archive/csharp/`
+- **GPU**: PyTorch 2.6.0+cu124, RTX 3070 confirmed working
+- **Training status**: Agents train but learning is unstable. No baseline measurements yet -- establishing these is the first research priority.
 
 ## Architecture Overview
 
