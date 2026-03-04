@@ -334,6 +334,14 @@ All encoding schemes above still have the problem: if two friendly units stand o
 17. **More map generation types** (currently all map types → basic random).
 18. **Unit production queue** (cities produce units over multiple turns).
 
+### Phase 5: Performance Scaling (when needed)
+
+Not a priority until the RL architecture is working and episode throughput becomes the bottleneck. Current speed (~6s/episode on 4x8 map) is fine for iterating on the learning algorithm.
+
+19. **Vectorized environments** -- run 8-16 games in parallel on CPU, batch GPU calls. This is how stable-baselines3 and similar frameworks get throughput. Likely the biggest win for least effort.
+20. **Cython for hot paths** -- hex adjacency, pathfinding, and combat resolution are called thousands of times per episode. Cythonizing just these functions could give 10-50x speedup on the game loop with minimal code changes.
+21. **C++ game engine with Python bindings** -- full rewrite of the headless game in C/C++ (like how Atari/MuJoCo gym environments work). Maximum performance but large engineering effort. Only justified if scaling to large maps (20x30+), self-play tournaments, or population-based training.
+
 ---
 
 ## 7. Shared Infrastructure with Breach
