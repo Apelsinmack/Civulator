@@ -32,7 +32,8 @@ class DQNAgent:
         learning_rate: Adam learning rate
     """
 
-    def __init__(self, n, m, d, memory, gamma=0.9, learning_rate=0.001):
+    def __init__(self, n, m, d, memory, gamma=0.9, learning_rate=0.001,
+                 conv_channels=(16, 32), fc_hidden=None):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
         self.n = n
@@ -40,7 +41,9 @@ class DQNAgent:
         self.d = d
         self.gamma = gamma
         self.memory = memory
-        self.network = SelectAndMoveNetwork(n, m, d).to(self.device)
+        self.network = SelectAndMoveNetwork(
+            n, m, d, conv_channels=conv_channels, fc_hidden=fc_hidden
+        ).to(self.device)
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=learning_rate)
         self.criterion = torch.nn.MSELoss()
         self.pending_transitions = []
@@ -94,40 +97,43 @@ class DQNAgent:
         return (selected_pos, move_pos)
 
     def _greedy_action(self, state):
-        """Select the best action according to the network."""
+        """Select the best action according to the network (argmax over Q-values)."""
         with torch.no_grad():
             state_tensor = state.unsqueeze(0)
 
-            select_probs, _ = self.network(state_tensor)
-            select_probs = select_probs.squeeze(0)
+            select_qvalues, _ = self.network(state_tensor)
+            select_qvalues = select_qvalues.squeeze(0)
 
+            # Mask invalid selections with -inf so argmax ignores them
             original_mask = get_valid_select_mask(state)
-            select_probs_masked = select_probs * adjust_mask_for_end_turn(original_mask)
+            select_mask = adjust_mask_for_end_turn(original_mask)
+            select_qvalues_masked = select_qvalues.clone()
+            select_qvalues_masked[select_mask == 0] = float('-inf')
 
-            if select_probs_masked.sum().item() <= 0:
+            if (select_qvalues_masked == float('-inf')).all():
                 return (self.n * self.m, random.randint(0, self.n * self.m - 1))
 
-            select_probs_masked = select_probs_masked / select_probs_masked.sum()
-            selected_pos = torch.multinomial(select_probs_masked, 1).item()
+            selected_pos = torch.argmax(select_qvalues_masked).item()
 
             if selected_pos == self.n * self.m:
                 move_pos = random.randint(0, self.n * self.m - 1)
             else:
-                _, move_probs = self.network(
+                _, move_qvalues = self.network(
                     state_tensor,
                     torch.tensor([[selected_pos]], device=state.device).float(),
                 )
-                move_probs = move_probs.squeeze(0)
+                move_qvalues = move_qvalues.squeeze(0)
 
+                # Mask invalid moves with -inf
                 valid_moves_mask = get_valid_moves_mask(state, selected_pos)
-                move_probs_masked = move_probs * valid_moves_mask
+                move_qvalues_masked = move_qvalues.clone()
+                move_qvalues_masked[valid_moves_mask == 0] = float('-inf')
 
-                if move_probs_masked.sum().item() <= 0:
+                if (move_qvalues_masked == float('-inf')).all():
                     valid_moves = torch.where(valid_moves_mask > 0)[0].tolist()
                     move_pos = random.choice(valid_moves) if valid_moves else selected_pos
                 else:
-                    move_probs_masked = move_probs_masked / move_probs_masked.sum()
-                    move_pos = torch.multinomial(move_probs_masked, 1).item()
+                    move_pos = torch.argmax(move_qvalues_masked).item()
 
         return (selected_pos, move_pos)
 
@@ -135,44 +141,49 @@ class DQNAgent:
         self.memory.push(state, action, reward, next_state, done)
 
     def compute_loss(self, batch_size):
-        """Compute DQN loss from a batch of replay memory."""
+        """Compute DQN loss from a batch of replay memory.
+
+        Uses additive Q-value decomposition (branching DQN):
+            Q(s, a_select, a_move) = Q_select(s, a_select) + Q_move(s, a_select, a_move)
+        """
         transitions = self.memory.sample(batch_size)
         batch = Transition(*zip(*transitions))
 
         state_batch = torch.stack(batch.state)
         action_batch = list(zip(*batch.action))
-        reward_batch = torch.tensor(batch.reward, device=self.device)
+        reward_batch = torch.tensor(batch.reward, device=self.device, dtype=torch.float32)
         next_state_batch = torch.stack(batch.next_state)
         done_batch = torch.tensor(batch.done, dtype=torch.float32, device=self.device)
 
-        selected_positions = action_batch[0]
-        selected_positions_tensor = torch.tensor(
-            selected_positions, dtype=torch.long, device=state_batch.device
-        ).unsqueeze(1)
+        select_actions = torch.tensor(action_batch[0], dtype=torch.long, device=self.device)
+        move_actions = torch.tensor(action_batch[1], dtype=torch.long, device=self.device)
 
-        # Current Q-values
-        select_probs, move_probs = self.network(state_batch, selected_positions_tensor)
-        if move_probs is None:
-            move_probs = select_probs
+        selected_positions_tensor = select_actions.unsqueeze(1)
+
+        # Current Q-values: Q(s, a_s, a_m) = Q_select(s, a_s) + Q_move(s, a_s, a_m)
+        select_qvalues, move_qvalues = self.network(state_batch, selected_positions_tensor)
+        if move_qvalues is None:
+            move_qvalues = select_qvalues
 
         q_values = (
-            select_probs.gather(1, torch.tensor(action_batch[0], device=self.device).unsqueeze(1))
-            + move_probs.gather(1, torch.tensor(action_batch[1], device=self.device).unsqueeze(1))
+            select_qvalues.gather(1, select_actions.unsqueeze(1))
+            + move_qvalues.gather(1, move_actions.unsqueeze(1))
         )
 
-        # Next state Q-values
-        next_select_probs, _ = self.network(next_state_batch)
-        next_select_probs_norm = next_select_probs / next_select_probs.sum()
-        selected_pos = torch.multinomial(next_select_probs_norm, 1)
+        # Next state max Q-values (no gradient needed)
+        with torch.no_grad():
+            next_select_qvalues, _ = self.network(next_state_batch)
+            # Best select action per sample
+            best_select = next_select_qvalues.argmax(dim=1, keepdim=True)
 
-        _, next_move_probs = self.network(next_state_batch, selected_pos)
-        if next_move_probs is None:
-            next_move_probs = next_select_probs
+            _, next_move_qvalues = self.network(next_state_batch, best_select)
+            if next_move_qvalues is None:
+                next_move_qvalues = next_select_qvalues
 
-        next_q_values = next_select_probs.max(1)[0] + next_move_probs.max(1)[0]
-        expected_q_values = reward_batch + self.gamma * next_q_values * (1 - done_batch)
+            next_q_values = next_select_qvalues.max(1)[0] + next_move_qvalues.max(1)[0]
+            expected_q_values = reward_batch + self.gamma * next_q_values * (1 - done_batch)
 
-        loss = self.criterion(q_values, expected_q_values.unsqueeze(1))
+        loss = self.criterion(q_values.squeeze(1), expected_q_values)
         return loss
 
     def optimize(self, batch_size):

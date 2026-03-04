@@ -22,6 +22,7 @@ class Player:
         """Process the start of a player's turn."""
         for unit in self.units:
             unit.reset_movement()
+            unit.heal()
 
         for city in self.cities:
             city.process_turn(self.game_env)

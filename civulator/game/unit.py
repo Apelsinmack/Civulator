@@ -104,6 +104,18 @@ class Unit:
         if self.fortification < 2:
             self.fortification += 1
 
+    def heal(self):
+        """Heal at start of turn. Fortified units heal more.
+
+        +10 HP base, +20 HP if fortified. Capped at 100.
+        """
+        if self.health >= 100:
+            return
+        if self.fortification > 0:
+            self.health = min(100, self.health + 20)
+        else:
+            self.health = min(100, self.health + 10)
+
     def get_combat_strength(self, is_attacking=False, target=None):
         """
         Calculate total combat strength with all modifiers.
@@ -168,20 +180,54 @@ class Unit:
 
     def move(self, new_coordinates, game_env):
         """
-        Move the unit to new coordinates using the pathfinder.
+        Move the unit to new coordinates.
+
+        For adjacent tiles (distance 1), moves directly without pathfinding.
+        For longer moves, uses the pathfinder to determine the route.
 
         Returns:
             tuple: (moved: bool, final_position: tuple)
         """
-        start_pos = np.array(self.coordinates)
-        dest_pos = np.array(new_coordinates)
-
-        path = game_env.path_finder(start_pos, dest_pos)
-
-        if not path or len(path) <= 1:
+        dest = tuple(new_coordinates)
+        if dest == self.coordinates:
             return False, self.coordinates
 
-        path = path[1:]  # Skip starting position
+        # Check terrain at destination
+        terrain_at_dest = game_env.get_terrain_at(dest)
+        if terrain_at_dest is None or Terrain.MOVEMENT_COSTS.get(terrain_at_dest, 1) >= 999:
+            return False, self.coordinates
+
+        # Check if destination is adjacent (distance 1) — bypass pathfinder
+        adj_coords = game_env.map.get_adjacent_coords(self.coordinates)
+        if dest in adj_coords:
+            movement_cost = Terrain.MOVEMENT_COSTS.get(terrain_at_dest, 1)
+            if game_env.is_river_between(self.coordinates, dest):
+                movement_cost += 1
+
+            if self.movement_points < movement_cost:
+                return False, self.coordinates
+
+            # Check occupancy: can move if empty or destination is the target (for attack)
+            if game_env.is_occupied(dest):
+                # Allow moving onto enemy units (attack handled by caller)
+                units_at_dest = game_env.get_units_at(dest)
+                if any(u.player == self.player for u in units_at_dest):
+                    return False, self.coordinates  # Friendly unit blocking
+
+            game_env.remove_unit_from_tile(self, self.coordinates)
+            self.coordinates = dest
+            self.movement_points -= movement_cost
+            game_env.add_unit_to_tile(self, self.coordinates)
+            self.fortification = 0
+            return True, self.coordinates
+
+        # Non-adjacent: use pathfinder
+        start_pos = np.array(self.coordinates)
+        dest_pos = np.array(new_coordinates)
+        path = game_env.path_finder(start_pos, dest_pos)
+
+        if not path:
+            return False, self.coordinates
 
         remaining_mp = self.movement_points
         current_pos = np.array(self.coordinates)
@@ -200,7 +246,7 @@ class Unit:
             if remaining_mp < movement_cost:
                 break
 
-            if game_env.is_occupied(next_pos_tuple) and next_pos_tuple != new_coordinates:
+            if game_env.is_occupied(next_pos_tuple) and next_pos_tuple != dest:
                 break
 
             remaining_mp -= movement_cost

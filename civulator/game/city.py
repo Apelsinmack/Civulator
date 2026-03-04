@@ -28,7 +28,7 @@ class City:
         self.population = 1
         self.food = 0
         self.production = 0
-        self.current_production = None
+        self.current_production = {"type": "unit", "unit_type": "Warrior"}
 
     def get_combat_strength(self, is_attacking=False, target=None):
         """Return the defensive combat strength of the city."""
@@ -68,7 +68,8 @@ class City:
                 if self.production >= unit_cost:
                     self.production -= unit_cost
                     self.complete_unit_production(unit_type, game_env)
-                    self.current_production = None
+                    # Auto-queue next warrior (rule-based placeholder)
+                    self.current_production = {"type": "unit", "unit_type": "Warrior"}
 
             elif self.current_production["type"] == "building":
                 building_type = self.current_production["building_type"]
@@ -96,20 +97,15 @@ class City:
         return self.BUILDING_COSTS.get(building_type, 100)
 
     def complete_unit_production(self, unit_type, game_env):
-        """Place a newly produced unit on an adjacent tile."""
-        # Use hex adjacency to find placement
-        adjacent_coords = game_env.map.get_adjacent_coords(self.coordinates)
+        """Place a newly produced unit on the city tile (Civ-style stacking).
 
-        for pos in adjacent_coords:
-            if game_env.is_valid_position(pos) and not game_env.is_occupied(pos):
-                unit = _create_unit(unit_type, self.player, pos)
-                self.player.units.append(unit)
-                game_env.add_unit_to_tile(unit, pos)
-                return True
-
-        # If no space, queue for later
-        self.player.queued_units.append({"type": unit_type, "city": self})
-        return False
+        New unit spawns on the city tile even if another unit is there.
+        The new unit must move before the existing one can.
+        """
+        unit = _create_unit(unit_type, self.player, self.coordinates)
+        self.player.units.append(unit)
+        game_env.add_unit_to_tile(unit, self.coordinates)
+        return True
 
     def set_owner(self, new_player):
         """Transfer city ownership to a new player."""

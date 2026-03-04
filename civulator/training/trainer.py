@@ -4,6 +4,8 @@ import os
 import time
 
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")  # Non-interactive backend — no GUI window
 import matplotlib.pyplot as plt
 import torch
 
@@ -199,5 +201,6 @@ def save_win_history(win_history, num_episodes):
         plt.legend()
         plt.grid(True)
         plt.savefig(f"stats/win_rate_plot_{timestamp}.png")
+        plt.close()
 
     print("Win history and analytics saved to stats/ directory")

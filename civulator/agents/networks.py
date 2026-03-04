@@ -62,7 +62,16 @@ class SelectAndMoveNetwork(nn.Module):
         kernel_size: Convolution kernel size (default 3)
     """
 
-    def __init__(self, n, m, d, kernel_size=3):
+    def __init__(self, n, m, d, kernel_size=3, conv_channels=(16, 32), fc_hidden=None):
+        """
+        Args:
+            n: Map height (rows)
+            m: Map width (columns)
+            d: State tensor depth (channels)
+            kernel_size: Convolution kernel size (default 3)
+            conv_channels: Tuple of (conv1_out, conv2_out) channel counts
+            fc_hidden: Optional hidden layer size between conv and output (None = direct)
+        """
         super().__init__()
 
         self.padding_size = kernel_size // 2
@@ -71,28 +80,37 @@ class SelectAndMoveNetwork(nn.Module):
         self.n = n
         self.m = m
 
+        c1, c2 = conv_channels
+
         # Select head convolutions
-        self.conv1_select = nn.Conv2d(d, 16, kernel_size=kernel_size, stride=1, padding=0)
-        self.bn1_select = nn.BatchNorm2d(16)
-        self.conv2_select = nn.Conv2d(16, 32, kernel_size=kernel_size, stride=1, padding=0)
-        self.bn2_select = nn.BatchNorm2d(32)
+        self.conv1_select = nn.Conv2d(d, c1, kernel_size=kernel_size, stride=1, padding=0)
+        self.bn1_select = nn.BatchNorm2d(c1)
+        self.conv2_select = nn.Conv2d(c1, c2, kernel_size=kernel_size, stride=1, padding=0)
+        self.bn2_select = nn.BatchNorm2d(c2)
 
         # Move head convolutions
-        self.conv1_move = nn.Conv2d(d, 16, kernel_size=kernel_size, stride=1, padding=0)
-        self.bn1_move = nn.BatchNorm2d(16)
-        self.conv2_move = nn.Conv2d(16, 32, kernel_size=kernel_size, stride=1, padding=0)
-        self.bn2_move = nn.BatchNorm2d(32)
+        self.conv1_move = nn.Conv2d(d, c1, kernel_size=kernel_size, stride=1, padding=0)
+        self.bn1_move = nn.BatchNorm2d(c1)
+        self.conv2_move = nn.Conv2d(c1, c2, kernel_size=kernel_size, stride=1, padding=0)
+        self.bn2_move = nn.BatchNorm2d(c2)
 
         # Calculate flattened size after two convolutions
         conv1_out_n = self.padded_n - kernel_size + 1
         conv1_out_m = self.padded_m - kernel_size + 1
         conv2_out_n = conv1_out_n - kernel_size + 1
         conv2_out_m = conv1_out_m - kernel_size + 1
-        self.flattened_size = 32 * conv2_out_n * conv2_out_m
+        self.flattened_size = c2 * conv2_out_n * conv2_out_m
 
-        # Fully connected layers
-        self.fc_select = nn.Linear(self.flattened_size, n * m + 1)  # +1 for end turn
-        self.fc_move = nn.Linear(self.flattened_size + 1, n * m)  # +1 for selected position
+        # Fully connected layers (with optional hidden layer)
+        self.fc_hidden = fc_hidden
+        if fc_hidden:
+            self.fc_select_hidden = nn.Linear(self.flattened_size, fc_hidden)
+            self.fc_select = nn.Linear(fc_hidden, n * m + 1)
+            self.fc_move_hidden = nn.Linear(self.flattened_size + 1, fc_hidden)
+            self.fc_move = nn.Linear(fc_hidden, n * m)
+        else:
+            self.fc_select = nn.Linear(self.flattened_size, n * m + 1)  # +1 for end turn
+            self.fc_move = nn.Linear(self.flattened_size + 1, n * m)  # +1 for selected position
 
     def forward(self, state, selected_pos=None):
         """Forward pass.
@@ -102,8 +120,8 @@ class SelectAndMoveNetwork(nn.Module):
             selected_pos: [batch, 1] tensor of selected tile indices (optional)
 
         Returns:
-            select_probs: [batch, n*m+1] softmax over tile selection + end turn
-            move_probs: [batch, n*m] softmax over move targets (None if selected_pos not given)
+            select_qvalues: [batch, n*m+1] raw Q-values for tile selection + end turn
+            move_qvalues: [batch, n*m] raw Q-values for move targets (None if selected_pos not given)
         """
         padded_state = horizontal_wrap_padding(state, self.padding_size)
 
@@ -111,7 +129,9 @@ class SelectAndMoveNetwork(nn.Module):
         x_select = F.relu(self.bn1_select(self.conv1_select(padded_state)))
         x_select = F.relu(self.bn2_select(self.conv2_select(x_select)))
         x_select = x_select.view(x_select.size(0), -1)
-        select_probs = F.softmax(self.fc_select(x_select), dim=1)
+        if self.fc_hidden:
+            x_select = F.relu(self.fc_select_hidden(x_select))
+        select_qvalues = self.fc_select(x_select)
 
         if selected_pos is not None:
             # Move head
@@ -121,10 +141,12 @@ class SelectAndMoveNetwork(nn.Module):
 
             selected_pos = selected_pos.float().view(-1, 1)
             x_move = torch.cat([x_move, selected_pos], dim=1)
-            move_probs = F.softmax(self.fc_move(x_move), dim=1)
-            return select_probs, move_probs
+            if self.fc_hidden:
+                x_move = F.relu(self.fc_move_hidden(x_move))
+            move_qvalues = self.fc_move(x_move)
+            return select_qvalues, move_qvalues
 
-        return select_probs, None
+        return select_qvalues, None
 
 
 def get_valid_select_mask(state):

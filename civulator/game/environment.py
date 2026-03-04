@@ -120,6 +120,12 @@ class GameEnvironment:
     def step(self, action_matrix):
         """Execute an action in the game environment.
 
+        Interprets select + order as a player would with two mouse clicks:
+        - Select own unit, order to empty tile → move
+        - Select own unit, order to same tile → fortify
+        - Select own unit, order to enemy unit → attack
+        - Select own unit, order to enemy city (no unit) → move and capture
+
         Args:
             action_matrix: [select_position, order_position] as numpy arrays
 
@@ -154,28 +160,89 @@ class GameEnvironment:
             success = selected_unit.fortify()
             return self, (0 if success else -1), self.done
 
-        # Movement
-        moved, final_pos = selected_unit.move(order_pos, self)
+        # Check if order targets an enemy unit → attack
+        enemy_unit = self._get_enemy_unit_at(order_pos)
+        if enemy_unit is not None:
+            reward = self._execute_attack(selected_unit, enemy_unit)
+            self._check_game_end()
+            return self, reward, self.done
 
-        if moved:
-            tile = self.map.get_tile(final_pos)
-            if tile and tile.city and tile.city.player != self.current_player:
-                tile.city.set_owner(self.current_player)
-                reward += 20
+        # Otherwise → movement
+        moved, final_pos = selected_unit.move(order_pos, self)
 
         if not moved:
             return self, -1, self.done
 
+        # Check if we captured a city
+        tile = self.map.get_tile(final_pos)
+        if tile and tile.city and tile.city.player != self.current_player:
+            tile.city.set_owner(self.current_player)
+            reward += 20
+
+        self._check_game_end()
+        return self, reward, self.done
+
+    def _get_enemy_unit_at(self, coordinates):
+        """Get an enemy unit at the given position, or None."""
+        units = self.get_units_at(coordinates)
+        for unit in units:
+            if unit.player != self.current_player:
+                return unit
+        return None
+
+    def _execute_attack(self, attacker, defender):
+        """Execute combat between attacker and defender. Returns reward."""
+        reward = 0
+
+        # Check adjacency — melee units must be adjacent to attack
+        adj_coords = self.map.get_adjacent_coords(attacker.coordinates)
+        if defender.coordinates not in adj_coords:
+            return -1  # Not adjacent, can't attack
+
+        damage_dealt, damage_received, target_killed, attacker_killed = \
+            attacker.attack(defender, self)
+
+        # Reward for damage dealt
+        reward += damage_dealt * 0.1
+
+        if target_killed:
+            reward += 10
+            self.delete_unit(defender)
+            # Melee: attacker moves into vacated tile
+            if not attacker_killed:
+                self.move_unit(attacker, defender.coordinates)
+                attacker.movement_points = 0
+                # Check city capture
+                tile = self.map.get_tile(attacker.coordinates)
+                if tile and tile.city and tile.city.player != self.current_player:
+                    tile.city.set_owner(self.current_player)
+                    reward += 20
+
+        if attacker_killed:
+            reward -= 10
+            self.delete_unit(attacker)
+
+        return reward
+
+    def _check_game_end(self):
+        """Check if the game should end (all units spent, player eliminated, turn limit)."""
         # Auto-advance if all units spent
-        all_units_moved = all(u.movement_points == 0 for u in self.current_player.units)
-        if all_units_moved:
+        if self.current_player.units:
+            all_units_moved = all(u.movement_points == 0 for u in self.current_player.units)
+            if all_units_moved:
+                self.current_player.end_turn()
+                self.next_turn()
+        else:
+            # Player has no units left, end their turn
             self.current_player.end_turn()
             self.next_turn()
 
-        if self.turn_counter > self.max_turns:
+        alive_players = [p for p in self.players if not p.is_dead]
+        if len(alive_players) <= 1:
             self.done = True
 
-        return self, reward, self.done
+        if self.turn_counter > self.max_turns:
+            self.done = True
 
     def next_turn(self):
         """Advance to the next player's turn."""
