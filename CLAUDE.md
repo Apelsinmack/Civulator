@@ -10,7 +10,7 @@ Every change should be accompanied by evidence: training curves, win rate plots,
 
 The game simulates hex-grid turn-based strategy with cities, units, combat, and terrain. RL agents learn to play via DQN with a Select-and-Move action architecture.
 
-**Origin**: Started as a collaboration between Erik (Python/RL) and Patrik (C# game engine). Patrik has left the project. The C# code is archived/legacy -- only the Python codebase is active.
+**Origin**: Started as a collaboration between Erik (Python/RL) and Patrik (C# game engine). The C# code is archived/legacy -- only the Python codebase is active (2026-03-05).
 
 ## Research Methodology
 
