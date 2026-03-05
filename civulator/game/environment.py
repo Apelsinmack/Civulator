@@ -155,8 +155,15 @@ class GameEnvironment:
         if selected_unit.movement_points <= 0:
             return self, -1, self.done
 
-        # Fortify if selecting own tile
+        # Select same tile: fortify, or found city if settler
         if select_pos == order_pos:
+            if selected_unit.unit_type == "Settler":
+                city = selected_unit.found_city(self)
+                if city:
+                    city.assign_tiles(self)
+                    return self, 15, self.done
+                else:
+                    return self, -1, self.done  # Invalid location
             success = selected_unit.fortify()
             return self, (0 if success else -1), self.done
 
@@ -191,16 +198,29 @@ class GameEnvironment:
         return None
 
     def _execute_attack(self, attacker, defender):
-        """Execute combat between attacker and defender. Returns reward."""
-        reward = 0
+        """Execute combat between attacker and defender. Returns reward.
 
-        # Check adjacency — melee units must be adjacent to attack
+        Ranged units (Archer, Catapult) can attack at range — their own
+        attack() method validates distance and line of sight.
+        Melee units must be adjacent.
+        """
+        reward = 0
+        is_ranged = attacker.get_base_ranged_strength() > 0
+
+        # Melee units must be adjacent; ranged units handle range in their attack()
         adj_coords = self.map.get_adjacent_coords(attacker.coordinates)
-        if defender.coordinates not in adj_coords:
-            return -1  # Not adjacent, can't attack
+        if not is_ranged and defender.coordinates not in adj_coords:
+            return -1
 
         damage_dealt, damage_received, target_killed, attacker_killed = \
             attacker.attack(defender, self)
+
+        # attack() returns (0,0,False,False) if out of range — treat as invalid
+        if damage_dealt == 0 and not target_killed:
+            return -1
+
+        # Attacking always consumes all movement points
+        attacker.movement_points = 0
 
         # Reward for damage dealt
         reward += damage_dealt * 0.1
@@ -208,10 +228,9 @@ class GameEnvironment:
         if target_killed:
             reward += 10
             self.delete_unit(defender)
-            # Melee: attacker moves into vacated tile
-            if not attacker_killed:
+            # Only melee attackers move into the vacated tile
+            if not is_ranged and not attacker_killed:
                 self.move_unit(attacker, defender.coordinates)
-                attacker.movement_points = 0
                 # Check city capture
                 tile = self.map.get_tile(attacker.coordinates)
                 if tile and tile.city and tile.city.player != self.current_player:
@@ -230,11 +249,9 @@ class GameEnvironment:
         if self.current_player.units:
             all_units_moved = all(u.movement_points == 0 for u in self.current_player.units)
             if all_units_moved:
-                self.current_player.end_turn()
                 self.next_turn()
         else:
             # Player has no units left, end their turn
-            self.current_player.end_turn()
             self.next_turn()
 
         alive_players = [p for p in self.players if not p.is_dead]
@@ -336,6 +353,7 @@ class GameEnvironment:
         tile = self.map.get_tile(coordinates)
         tile.set_city(city)
         player.cities.append(city)
+        city.assign_tiles(self)
         return city
 
     def add_city(self, city):

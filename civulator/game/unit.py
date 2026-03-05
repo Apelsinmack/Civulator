@@ -76,6 +76,7 @@ class Unit:
         self.movement_points = self.get_max_movement()
         self.terrain = terrain
         self.fortification = 0  # 0, 1, or 2
+        self.has_acted = False  # Did this unit act this turn?
 
     def __str__(self):
         return (
@@ -99,10 +100,20 @@ class Unit:
         return self.PRODUCTION_COST.get(self.unit_type, 40)
 
     def reset_movement(self):
-        """Reset movement points at the start of a new turn."""
+        """Reset movement points at the start of a new turn.
+
+        Fortification only builds up if the unit didn't act last turn.
+        Moving or attacking resets fortification to 0.
+        """
         self.movement_points = self.get_max_movement()
-        if self.fortification < 2:
-            self.fortification += 1
+        if not self.has_acted:
+            # Unit stayed still — fortify
+            if self.fortification < 2:
+                self.fortification += 1
+        else:
+            # Unit moved or attacked — lose fortification
+            self.fortification = 0
+        self.has_acted = False
 
     def heal(self):
         """Heal at start of turn. Fortified units heal more.
@@ -219,6 +230,7 @@ class Unit:
             self.movement_points -= movement_cost
             game_env.add_unit_to_tile(self, self.coordinates)
             self.fortification = 0
+            self.has_acted = True
             return True, self.coordinates
 
         # Non-adjacent: use pathfinder
@@ -264,6 +276,7 @@ class Unit:
         self.movement_points = remaining_mp
         game_env.add_unit_to_tile(self, self.coordinates)
         self.fortification = 0
+        self.has_acted = True
 
         return True, self.coordinates
 
@@ -272,6 +285,7 @@ class Unit:
         if self.movement_points > 0:
             self.fortification = 1
             self.movement_points = 0
+            self.has_acted = True
             return True
         return False
 
@@ -329,6 +343,7 @@ class Unit:
 
         self.movement_points = 0
         self.fortification = 0
+        self.has_acted = True
 
         return damage_dealt, damage_received, target_killed, attacker_killed
 

@@ -10,10 +10,12 @@ import matplotlib.pyplot as plt
 import torch
 
 from ..agents.networks import get_valid_select_mask
+from ..agents.build_agent import BUILD_OPTIONS
+from ..game.city import City
 
 
 def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
-                  save_checkpoints=True):
+                  save_checkpoints=True, build_agents=None):
     """Train multiple agents with proper state tracking and win counting.
 
     Args:
@@ -22,12 +24,14 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
         num_episodes: Number of training episodes
         batch_size: Batch size for optimization
         debug: Whether to display debug information
+        build_agents: Optional list of BuildAgent instances (one per player)
 
     Returns:
         tuple: (win_counts dict, win_history list)
     """
     win_counts = {i: 0 for i in range(len(agents))}
     win_history = []
+    use_build = build_agents is not None
 
     for episode in range(num_episodes):
         print(f"Starting episode {episode}")
@@ -41,6 +45,10 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
         last_state_by_agent = {i: next_state for i in range(len(agents))}
         last_action_by_agent = {i: None for i in range(len(agents))}
 
+        # Track turn boundaries and per-turn rewards for build agent
+        last_player_index = -1
+        turn_reward_accum = {i: 0.0 for i in range(len(agents))}
+
         step_counter = 0
 
         while not done:
@@ -51,6 +59,38 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
 
             current_player_index = env.current_player.player_index
             current_agent = agents[current_player_index]
+
+            # --- Build decisions at turn boundary ---
+            if use_build and current_player_index != last_player_index:
+                build_agent = build_agents[current_player_index]
+                combat_state = current_agent.build_state_tensor(env)
+
+                # Complete pending build transitions from last turn
+                if build_agent.pending:
+                    cities = env.current_player.cities
+                    first_city = cities[0] if cities else None
+                    build_agent.complete_pending(
+                        turn_reward_accum[current_player_index],
+                        combat_state, first_city, env, done
+                    )
+                    turn_reward_accum[current_player_index] = 0.0
+
+                # Make new build decisions for cities needing orders
+                for city in env.current_player.cities:
+                    if city.current_production is None:
+                        action_idx = build_agent.select_build(
+                            combat_state, city, env, epsilon=0.3
+                        )
+                        option = BUILD_OPTIONS[action_idx]
+                        if option in City.BUILDING_COSTS:
+                            city.produce_building(option)
+                        else:
+                            city.produce_unit(option)
+
+                # Optimize build agent
+                build_agent.optimize(batch_size)
+
+                last_player_index = current_player_index
 
             state = next_state
             last_state_by_agent[current_player_index] = state
@@ -79,6 +119,10 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
                     reward = 0
                     done = env.done
 
+            # Accumulate reward for build agent
+            if use_build:
+                turn_reward_accum[current_player_index] += reward
+
             # Get next state
             next_state = current_agent.build_state_tensor(env)
 
@@ -105,6 +149,17 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
         for agent in agents:
             while agent.pending_transitions:
                 agent.complete_pending_transition(agent.pending_transitions[0][0], True)
+
+        # Resolve remaining build transitions
+        if use_build:
+            for i, build_agent in enumerate(build_agents):
+                if build_agent.pending:
+                    dummy_state = agents[i].build_state_tensor(env)
+                    cities = env.players[i].cities
+                    first_city = cities[0] if cities else None
+                    build_agent.complete_pending(
+                        turn_reward_accum[i], dummy_state, first_city, env, True
+                    )
 
         # Determine winner
         winner = determine_winner(env)

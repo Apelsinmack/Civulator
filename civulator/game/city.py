@@ -1,5 +1,6 @@
 """City class with production, population, and buildings."""
 
+from .terrain import Terrain
 from .unit import (
     Unit, WarriorUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
     HorsemanUnit, CatapultUnit, SettlerUnit, WorkerUnit,
@@ -7,7 +8,17 @@ from .unit import (
 
 
 class City:
-    """Represents a city in the game."""
+    """Represents a city in the game.
+
+    Economy model:
+    - City center tile is always worked (free, no pop needed)
+    - Each population works one additional adjacent tile
+    - Tiles are assigned by priority: food desc, then production desc
+    - Food consumed per turn: 2 * population
+    - Surplus food accumulates toward growth threshold
+    - Growth threshold: 15 + 10 * (pop - 1)
+    - Starvation: if food output < consumption, lose accumulated surplus
+    """
 
     BUILDING_COSTS = {
         "Granary": 60,
@@ -26,9 +37,10 @@ class City:
         self.defense_strength = 20
         self.buildings = []
         self.population = 1
-        self.food = 0
+        self.food_surplus = 0  # Accumulated surplus toward growth
         self.production = 0
         self.current_production = {"type": "unit", "unit_type": "Warrior"}
+        self.worked_tiles = []  # List of (row, col) assigned to citizens
 
     def get_combat_strength(self, is_attacking=False, target=None):
         """Return the defensive combat strength of the city."""
@@ -50,15 +62,105 @@ class City:
         self.current_production = {"type": "building", "building_type": building_type}
         return True
 
+    def assign_tiles(self, game_env):
+        """Assign citizens to the best adjacent tiles.
+
+        Priority: sort by food descending, then production descending.
+        City center is always worked (free). Each pop works one extra tile.
+        Called on city founding and population change.
+        """
+        adj_coords = game_env.map.get_adjacent_coords(self.coordinates)
+
+        # Score each adjacent tile: (food, production, coords)
+        tile_scores = []
+        for pos in adj_coords:
+            tile = game_env.map.get_tile(pos)
+            if tile and tile.terrain_type != "Mountain":
+                yields = Terrain.PRODUCTION_VALUES.get(tile.terrain_type, [0, 0])
+                food, prod = int(yields[0]), int(yields[1])
+                tile_scores.append((food, prod, pos))
+
+        # Sort: food desc, then production desc
+        tile_scores.sort(key=lambda x: (x[0], x[1]), reverse=True)
+
+        # Assign: population workers (city center is free, doesn't consume a pop)
+        workers = self.population
+        self.worked_tiles = []
+        for food, prod, pos in tile_scores:
+            if workers <= 0:
+                break
+            self.worked_tiles.append(pos)
+            workers -= 1
+
+    def calculate_food(self, game_env):
+        """Calculate total food from city center + worked tiles."""
+        # City center (always worked, free)
+        center_tile = game_env.map.get_tile(self.coordinates)
+        center_yields = Terrain.PRODUCTION_VALUES.get(center_tile.terrain_type, [0, 0])
+        total_food = int(center_yields[0])
+
+        # Worked tiles
+        for pos in self.worked_tiles:
+            tile = game_env.map.get_tile(pos)
+            if tile:
+                yields = Terrain.PRODUCTION_VALUES.get(tile.terrain_type, [0, 0])
+                total_food += int(yields[0])
+
+        return total_food
+
+    def calculate_production(self, game_env):
+        """Calculate total production from city center + worked tiles."""
+        center_tile = game_env.map.get_tile(self.coordinates)
+        center_yields = Terrain.PRODUCTION_VALUES.get(center_tile.terrain_type, [0, 0])
+        total_prod = int(center_yields[1])
+
+        for pos in self.worked_tiles:
+            tile = game_env.map.get_tile(pos)
+            if tile:
+                yields = Terrain.PRODUCTION_VALUES.get(tile.terrain_type, [0, 0])
+                total_prod += int(yields[1])
+
+        # Minimum 1 production per turn (so cities can always build, just slowly)
+        return max(1, total_prod)
+
+    def get_growth_threshold(self):
+        """Food surplus needed to grow to next population level.
+
+        Approximation of Civ 6: 15 + 10 * (pop - 1).
+        Pop 1→2: 15, Pop 2→3: 25, Pop 3→4: 35, etc.
+        """
+        return 15 + 10 * (self.population - 1)
+
     def process_turn(self, game_env):
-        """Process a game turn for this city."""
-        self.food += self.calculate_food(game_env)
-        self.production += self.calculate_production(game_env)
+        """Process a game turn for this city.
+
+        Order: collect food → consume → growth/starvation → collect production → build.
+        """
+        # --- Food phase ---
+        food_produced = self.calculate_food(game_env)
+        food_consumed = 2 * self.population
+        food_net = food_produced - food_consumed
+
+        if food_net >= 0:
+            self.food_surplus += food_net
+        else:
+            # Starvation: lose accumulated surplus first
+            self.food_surplus += food_net  # food_net is negative
+            if self.food_surplus < 0:
+                self.food_surplus = 0
+                if self.population > 1:
+                    self.population -= 1
+                    self.assign_tiles(game_env)
 
         # Population growth
-        if self.food >= self.population * 20:
-            self.food -= self.population * 20
+        growth_threshold = self.get_growth_threshold()
+        if self.food_surplus >= growth_threshold:
+            self.food_surplus -= growth_threshold
             self.population += 1
+            self.assign_tiles(game_env)
+
+        # --- Production phase ---
+        self.production += self.calculate_production(game_env)
 
         # Process current production
         if self.current_production:
@@ -69,8 +171,8 @@ class City:
                     placed = self.complete_unit_production(unit_type, game_env)
                     if placed:
                         self.production -= unit_cost
-                        self.current_production = {"type": "unit", "unit_type": "Warrior"}
-                    # If not placed, keep production and retry next turn
+                        # Build agent decides next production
+                        self.current_production = None
 
             elif self.current_production["type"] == "building":
                 building_type = self.current_production["building_type"]
@@ -79,14 +181,6 @@ class City:
                     self.production -= building_cost
                     self.buildings.append(building_type)
                     self.current_production = None
-
-    def calculate_food(self, game_env):
-        """Calculate food production for this turn."""
-        return 2 * self.population
-
-    def calculate_production(self, game_env):
-        """Calculate production output for this turn."""
-        return 1 + self.population
 
     def get_unit_cost(self, unit_type):
         """Get the production cost for a unit type."""

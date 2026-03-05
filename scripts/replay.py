@@ -45,6 +45,23 @@ def load_agents(n, m, d, num_players, episode):
     return agents
 
 
+def load_tournament_agent(n, m, d, model_name):
+    """Load a trained agent from tournament weights."""
+    path = f"weights/tournament/{model_name}_agent_0.pth"
+    checkpoint = torch.load(path, weights_only=False)
+    cfg = checkpoint["config"]
+
+    memory = ReplayMemory(100)
+    agent = DQNAgent(n, m, d, memory, conv_channels=cfg["conv_channels"],
+                     fc_hidden=cfg["fc_hidden"])
+    agent.network.load_state_dict(checkpoint["model_state_dict"])
+    agent.network.eval()
+
+    total_params = sum(p.numel() for p in agent.network.parameters())
+    print(f"Loaded {model_name} ({total_params:,} params)")
+    return agent
+
+
 def play_game(env, agents, epsilon=0.05, pause=True):
     """Play a single game with ASCII display."""
     env.reset()
@@ -101,12 +118,9 @@ def main():
     parser.add_argument("--epsilon", type=float, default=0.05, help="Exploration rate (default: 0.05)")
     parser.add_argument("--seed", type=int, default=None, help="Random seed for map generation")
     parser.add_argument("--no-pause", action="store_true", help="Don't pause between turns")
+    parser.add_argument("--match", nargs=2, metavar="MODEL",
+                        help="Tournament match: --match Small XL")
     args = parser.parse_args()
-
-    episode = args.episode or find_latest_checkpoint()
-    if episode is None:
-        print("No checkpoints found in weights/")
-        return
 
     if args.seed is not None:
         random.seed(args.seed)
@@ -117,7 +131,20 @@ def main():
     num_players = 2
     d = 2 * num_players + 1
 
-    agents = load_agents(n, m, d, num_players, episode)
+    if args.match:
+        # Load two tournament models
+        agents = [
+            load_tournament_agent(n, m, d, args.match[0]),
+            load_tournament_agent(n, m, d, args.match[1]),
+        ]
+        print(f"\n{args.match[0]} (P1) vs {args.match[1]} (P2)\n")
+    else:
+        episode = args.episode or find_latest_checkpoint()
+        if episode is None:
+            print("No checkpoints found in weights/")
+            return
+        agents = load_agents(n, m, d, num_players, episode)
+
     env = GameEnvironment(n, m, num_players)
     env.max_turns = 250
 

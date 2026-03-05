@@ -13,7 +13,7 @@ import torch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from civulator.game import GameEnvironment
-from civulator.agents import DQNAgent
+from civulator.agents import DQNAgent, BuildAgent, BasicStateEncoder, EnhancedStateEncoder
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.training import train_agents
 
@@ -29,7 +29,8 @@ def set_random_seeds(seed=42):
 
 
 def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
-         batch_size=32, max_turns=250, debug=True):
+         batch_size=32, max_turns=250, debug=True, encoder="basic",
+         fully_conv=False):
     """Main training function.
 
     Args:
@@ -39,13 +40,19 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
         batch_size: Batch size for optimization
         max_turns: Maximum turns per game before forced end
         debug: Enable debug output (ASCII map display)
+        encoder: State encoder type ("basic" or "enhanced")
     """
     set_random_seeds()
 
     # Environment setup
     n, m = 4, 8
     number_of_players = 2
-    d = 2 * number_of_players + 1
+
+    # Get depth from encoder
+    if encoder == "enhanced":
+        d = EnhancedStateEncoder().get_depth(number_of_players)
+    else:
+        d = BasicStateEncoder().get_depth(number_of_players)
 
     env = GameEnvironment(n, m, number_of_players)
     env.max_turns = max_turns
@@ -53,13 +60,16 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
     # Create agents
     memories = [ReplayMemory(10000) for _ in range(number_of_players)]
     agents = [
-        DQNAgent(n, m, d, memories[0], learning_rate=0.001),
-        DQNAgent(n, m, d, memories[1], learning_rate=0.001),
+        DQNAgent(n, m, d, memories[i], learning_rate=0.001, encoder=encoder,
+                 fully_conv=fully_conv)
+        for i in range(number_of_players)
     ]
 
-    if number_of_players > 2:
-        memories.append(ReplayMemory(10000))
-        agents.append(DQNAgent(n, m, d, memories[2], learning_rate=0.001))
+    # Create build agents
+    build_agents = [
+        BuildAgent(n, m, d, learning_rate=0.001)
+        for _ in range(number_of_players)
+    ]
 
     # Load checkpoints if resuming
     if resume_training:
@@ -99,7 +109,8 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
 
     # Train
     win_counts, win_history = train_agents(
-        env, agents, num_episodes=num_episodes, batch_size=batch_size, debug=debug
+        env, agents, num_episodes=num_episodes, batch_size=batch_size, debug=debug,
+        build_agents=build_agents,
     )
 
     print("\nTraining complete!")
@@ -118,6 +129,10 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument("--max-turns", type=int, default=250, help="Max turns per game")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
+    parser.add_argument("--encoder", choices=["basic", "enhanced"], default="basic",
+                        help="State encoder type")
+    parser.add_argument("--fully-conv", action="store_true",
+                        help="Use fully convolutional network (map-size independent)")
     args = parser.parse_args()
 
     main(
@@ -127,4 +142,6 @@ if __name__ == "__main__":
         batch_size=args.batch_size,
         max_turns=args.max_turns,
         debug=args.debug,
+        encoder=args.encoder,
+        fully_conv=args.fully_conv,
     )

@@ -6,12 +6,14 @@ import torch
 
 from .networks import (
     SelectAndMoveNetwork,
+    SharedBackboneNetwork,
+    FullyConvNetwork,
     get_valid_select_mask,
     adjust_mask_for_end_turn,
     get_valid_moves_mask,
 )
 from .replay_memory import ReplayMemory, Transition
-from .state_encoders import BasicStateEncoder
+from .state_encoders import BasicStateEncoder, EnhancedStateEncoder
 
 
 class DQNAgent:
@@ -33,7 +35,8 @@ class DQNAgent:
     """
 
     def __init__(self, n, m, d, memory, gamma=0.9, learning_rate=0.001,
-                 conv_channels=(16, 32), fc_hidden=None):
+                 conv_channels=(16, 32), fc_hidden=None, shared_backbone=False,
+                 encoder="basic", fully_conv=False):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
         self.n = n
@@ -41,13 +44,25 @@ class DQNAgent:
         self.d = d
         self.gamma = gamma
         self.memory = memory
-        self.network = SelectAndMoveNetwork(
-            n, m, d, conv_channels=conv_channels, fc_hidden=fc_hidden
-        ).to(self.device)
+        if fully_conv:
+            self.network = FullyConvNetwork(
+                d, conv_channels=conv_channels
+            ).to(self.device)
+        elif shared_backbone:
+            self.network = SharedBackboneNetwork(
+                n, m, d, conv_channels=conv_channels, fc_hidden=fc_hidden
+            ).to(self.device)
+        else:
+            self.network = SelectAndMoveNetwork(
+                n, m, d, conv_channels=conv_channels, fc_hidden=fc_hidden
+            ).to(self.device)
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=learning_rate)
         self.criterion = torch.nn.MSELoss()
         self.pending_transitions = []
-        self.state_encoder = BasicStateEncoder()
+        if encoder == "enhanced":
+            self.state_encoder = EnhancedStateEncoder()
+        else:
+            self.state_encoder = BasicStateEncoder()
 
     def build_state_tensor(self, game_env):
         """Build a tensor representation using the agent's state encoder."""
