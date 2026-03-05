@@ -66,10 +66,11 @@ class City:
                 unit_type = self.current_production["unit_type"]
                 unit_cost = self.get_unit_cost(unit_type)
                 if self.production >= unit_cost:
-                    self.production -= unit_cost
-                    self.complete_unit_production(unit_type, game_env)
-                    # Auto-queue next warrior (rule-based placeholder)
-                    self.current_production = {"type": "unit", "unit_type": "Warrior"}
+                    placed = self.complete_unit_production(unit_type, game_env)
+                    if placed:
+                        self.production -= unit_cost
+                        self.current_production = {"type": "unit", "unit_type": "Warrior"}
+                    # If not placed, keep production and retry next turn
 
             elif self.current_production["type"] == "building":
                 building_type = self.current_production["building_type"]
@@ -97,15 +98,32 @@ class City:
         return self.BUILDING_COSTS.get(building_type, 100)
 
     def complete_unit_production(self, unit_type, game_env):
-        """Place a newly produced unit on the city tile (Civ-style stacking).
+        """Place a newly produced unit on the city tile or first empty adjacent tile.
 
-        New unit spawns on the city tile even if another unit is there.
-        The new unit must move before the existing one can.
+        Priority: city center > adjacent tiles.
+        If all are occupied, returns False (unit deferred to next turn).
         """
-        unit = _create_unit(unit_type, self.player, self.coordinates)
-        self.player.units.append(unit)
-        game_env.add_unit_to_tile(unit, self.coordinates)
-        return True
+        # Try city center first
+        friendly_on_center = any(
+            u.player == self.player for u in game_env.get_units_at(self.coordinates)
+        )
+        if not friendly_on_center:
+            unit = _create_unit(unit_type, self.player, self.coordinates)
+            self.player.units.append(unit)
+            game_env.add_unit_to_tile(unit, self.coordinates)
+            return True
+
+        # Try adjacent tiles
+        adj_coords = game_env.map.get_adjacent_coords(self.coordinates)
+        for pos in adj_coords:
+            if game_env.is_valid_position(pos) and not game_env.is_occupied(pos):
+                unit = _create_unit(unit_type, self.player, pos)
+                self.player.units.append(unit)
+                game_env.add_unit_to_tile(unit, pos)
+                return True
+
+        # All tiles occupied — defer to next turn
+        return False
 
     def set_owner(self, new_player):
         """Transfer city ownership to a new player."""

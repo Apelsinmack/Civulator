@@ -65,11 +65,83 @@ State → [Conv1_shared → Conv2_shared] → Shared features
 4. Compare win rate curves: shared vs separate backbone
 5. If shared is better, add to tournament script and re-run
 
-**Why test separately**: Halves the conv parameters. Could help (shared representation) or hurt (heads interfere). Need data.
+**Why test separately**: Halves the conv parameters. Could help (shared representation)
+or hurt (heads interfere). Need data.
+
+**Note on ordering**: We considered doing hierarchical Q (Step 3) before this, since the
+shared backbone might not help much if the select head is fundamentally blind to move quality.
+But shared backbone is simpler to implement (~30 min) and the result is informative either way:
+if it helps, great; if it doesn't, that's a signal that the bottleneck is in the Q decomposition,
+which motivates Step 3.
 
 ---
 
-## Step 3: Add Unit Types
+## Step 3: Hierarchical Q-Learning on Select/Move
+
+**Goal**: Make the select head aware of move quality — pick units that have good moves available.
+
+**The problem**: Currently we use branching DQN: `Q(s, a_select, a_move) = Q_select(s, a_select) + Q_move(s, a_select, a_move)`.
+The select head assigns value to each unit *independently of what moves are available*. It might
+select a unit that has no good moves, or ignore a unit that has a devastating attack available.
+
+**Proposed change**: Train the select head using the *best achievable Q-value for each selection*:
+```
+Q_select(s, a_select) should approximate max_{a_move} Q(s, a_select, a_move)
+```
+This means: for each possible unit selection, ask "what's the best thing I could do with this
+unit?" and use that as the target for the select head. The agent learns to pick the unit with
+the highest-value best move.
+
+**Implementation steps**:
+1. During `compute_loss()`, for each sample in the batch:
+   - Run the move head for each possible selection (or at least the top-K)
+   - The select target becomes `max(move_qvalues)` for each selection
+2. This is more expensive per training step (multiple forward passes through move head)
+3. Alternative: use the current summed Q-value but backprop through both heads jointly
+   (which we already do — but verify the gradient actually flows correctly)
+4. Train and compare
+
+**Open question**: Is the current branching decomposition already sufficient, or does the
+select head genuinely suffer from not seeing move quality? Measure first.
+
+---
+
+## Step 4: Temporal State Stacking
+
+**Goal**: Give agents memory of recent history so they can perceive motion, threats, and patterns.
+
+**Current input**: Single snapshot — the agent sees where everything is *right now*, but has
+zero information about where things *were*. It can't distinguish "unit moving toward me" from
+"unit sitting still." This makes flanking, pursuit, and retreat impossible to learn.
+
+**Proposed change**: Stack the last K state tensors along the channel dimension.
+- K=3: state goes from 5 channels to 15 channels (last 3 turns)
+- K=5: 25 channels
+- Start with K=3 (same as DeepMind's Atari DQN, which used 4 frames)
+
+**Implementation steps**:
+1. Add a `FrameStacker` wrapper that maintains a deque of the last K states per agent
+2. On each step, push current state, output the stacked tensor
+3. At episode start, fill the deque with K copies of the initial state
+4. Update `D` parameter: `D = original_D * K`
+5. No architecture changes needed — the CNN just sees more input channels
+6. Train and compare against non-stacked baseline
+
+**Why this could help**: Flanking requires coordinating two units over multiple turns.
+Retreat requires knowing the enemy is advancing. Healing strategy requires knowing how
+long you've been fortified. All of these need temporal context.
+
+**Cost**: Cheap. No extra computation at inference — just more input channels. Memory
+increases by factor K for the state tensors in replay memory.
+
+**Note on ordering**: This is orthogonal to the architecture changes in Steps 2-3 (shared
+backbone and hierarchical Q). It can be tested before or after them without interference.
+Placed here so the two architecture experiments run back-to-back first.
+
+---
+
+## Step 5: Add Unit Types
+(was Step 3)
 
 **Goal**: Introduce Spearman, Archer, and Horseman alongside Warriors.
 
@@ -88,7 +160,8 @@ State → [Conv1_shared → Conv2_shared] → Shared features
 
 ---
 
-## Step 4: State Space Redesign
+## Step 6: State Space Redesign
+(was Step 4)
 
 **Goal**: Richer state representation that encodes unit identity and terrain.
 
@@ -116,7 +189,8 @@ State → [Conv1_shared → Conv2_shared] → Shared features
 
 ---
 
-## Step 5: Settlers and City Founding
+## Step 7: Settlers and City Founding
+(was Step 5)
 
 **Goal**: Agents can expand by building settlers and founding new cities.
 
@@ -128,7 +202,8 @@ State → [Conv1_shared → Conv2_shared] → Shared features
 
 ---
 
-## Step 6: Training Improvements
+## Step 8: Training Improvements
+(was Step 6)
 
 **Goal**: Standard DQN enhancements for stability and sample efficiency.
 
@@ -138,6 +213,55 @@ State → [Conv1_shared → Conv2_shared] → Shared features
 3. **Prioritized experience replay**: Sample important transitions more often
 4. **Double DQN**: Use online network to select actions, target network to evaluate
 5. **Reward normalization**: Clip or normalize rewards for stable learning
+
+---
+
+---
+
+## Parked: Multi-Step Lookahead / Planning (Model-Based RL)
+
+**Status**: Parked for future exploration. Worth studying, not worth implementing yet.
+
+**The idea**: Instead of just evaluating the current state (model-free), simulate future
+game states and pick the action sequence with the best expected outcome. This is what
+AlphaGo/AlphaZero does with Monte Carlo Tree Search (MCTS) — play out many hypothetical
+futures and choose the move that leads to the best ones.
+
+**Model-free vs model-based RL — key distinction**:
+- **Model-free** (what we do now): The agent learns Q(s, a) directly from experience.
+  It doesn't know *how* the game works — it just learns "in this situation, this action
+  tends to give good rewards." DQN, policy gradient, A2C/A3C are all model-free.
+- **Model-based**: The agent has (or learns) a *model of the environment* — given state s
+  and action a, it can predict the next state s'. This lets it *plan ahead* by simulating
+  future trajectories without actually playing them. MCTS, Dyna-Q, MuZero, and World Models
+  are model-based approaches.
+
+**Why it's interesting for Civulator**:
+- Strategy games are inherently about planning multiple turns ahead
+- We *have* a perfect environment model (the game code itself) — no need to learn one
+- Could use the game simulator as a forward model for MCTS-style search
+- Even shallow lookahead (2-3 turns) could dramatically improve tactical play
+
+**Why we're parking it**:
+- Expensive: each lookahead step runs the full game simulation for each candidate action
+- With branching factor ~33 (n*m+1 selections × n*m moves), even 2-step lookahead is
+  33^2 ≈ 1000 simulations per decision. At 4 decisions per turn, that's 4000 simulations.
+- Multi-agent complication: opponent's moves are unknown, need to model or assume them
+- Our model-free DQN hasn't been fully optimized yet — get more from simpler improvements first
+- The architecture would fundamentally change (hybrid model-free + model-based, or pure MCTS)
+
+**When to revisit**:
+- After we've exhausted model-free improvements and hit a performance ceiling
+- If we want the agent to exhibit genuine strategic planning (sacrificing a unit now for
+  positional advantage 5 turns later)
+- If we implement AlphaZero-style self-play (MCTS + neural network policy/value)
+
+**Further reading topics**:
+- Monte Carlo Tree Search (MCTS) — the planning algorithm
+- AlphaGo / AlphaZero — MCTS + deep learning for perfect-information games
+- MuZero — learned environment model (doesn't need game rules, learns to predict)
+- Dyna-Q — hybrid: model-free Q-learning + model-based simulated experience
+- World Models (Ha & Schmidhuber) — learn a compressed environment model in latent space
 
 ---
 

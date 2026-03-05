@@ -12,7 +12,8 @@ import torch
 from ..agents.networks import get_valid_select_mask
 
 
-def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False):
+def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
+                  save_checkpoints=True):
     """Train multiple agents with proper state tracking and win counting.
 
     Args:
@@ -123,7 +124,8 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False):
         )
 
         # Save checkpoints
-        _save_checkpoints(agents, episode)
+        if save_checkpoints:
+            _save_checkpoints(agents, episode)
 
     save_win_history(win_history, num_episodes)
     return win_counts, win_history

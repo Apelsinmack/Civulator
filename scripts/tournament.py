@@ -71,7 +71,8 @@ def train_model(model_name, conv_channels, fc_hidden, num_episodes, batch_size=3
 
     t0 = time.perf_counter()
     win_counts, win_history = train_agents(
-        env, agents, num_episodes=num_episodes, batch_size=batch_size, debug=False
+        env, agents, num_episodes=num_episodes, batch_size=batch_size, debug=False,
+        save_checkpoints=False
     )
     elapsed = time.perf_counter() - t0
     print(f"\nTraining complete in {elapsed:.0f}s ({elapsed/num_episodes:.2f}s/ep)")
