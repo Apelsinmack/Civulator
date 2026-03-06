@@ -1,6 +1,7 @@
 """Compare shared backbone vs separate backbone architectures.
 
-Trains both, then plays head-to-head matches.
+Uses v0.4.0 features: enhanced encoder (25ch), build agents, city economy.
+Trains both variants, then plays head-to-head matches.
 
 Usage:
     python scripts/test_shared_backbone.py --episodes 500
@@ -23,13 +24,17 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from civulator.game import GameEnvironment
-from civulator.agents import DQNAgent
+from civulator.agents import DQNAgent, BuildAgent
 from civulator.agents.replay_memory import ReplayMemory
+from civulator.agents.state_encoders import EnhancedStateEncoder
+from civulator.agents.build_agent import BUILD_OPTIONS
+from civulator.game.city import City
 from civulator.training import train_agents
 
 N, M = 4, 8
 NUM_PLAYERS = 2
-D = 2 * NUM_PLAYERS + 1
+ENCODER = "enhanced"
+D = EnhancedStateEncoder().get_depth(NUM_PLAYERS)
 
 # Use Small config (tournament showed size doesn't matter much yet)
 CONV_CHANNELS = (16, 32)
@@ -53,14 +58,19 @@ def train_variant(name, shared_backbone, num_episodes, batch_size=32):
     set_seeds(42)
 
     env = GameEnvironment(N, M, NUM_PLAYERS)
-    env.max_turns = 250
+    env.max_turns = 200
 
     memories = [ReplayMemory(10000) for _ in range(NUM_PLAYERS)]
     agents = [
         DQNAgent(N, M, D, memories[i], learning_rate=0.001,
                  conv_channels=CONV_CHANNELS, fc_hidden=FC_HIDDEN,
-                 shared_backbone=shared_backbone)
+                 shared_backbone=shared_backbone, encoder=ENCODER)
         for i in range(NUM_PLAYERS)
+    ]
+
+    build_agents = [
+        BuildAgent(N, M, D, learning_rate=0.001)
+        for _ in range(NUM_PLAYERS)
     ]
 
     total_params = sum(p.numel() for p in agents[0].network.parameters())
@@ -70,7 +80,7 @@ def train_variant(name, shared_backbone, num_episodes, batch_size=32):
     t0 = time.perf_counter()
     win_counts, win_history = train_agents(
         env, agents, num_episodes=num_episodes, batch_size=batch_size,
-        debug=False, save_checkpoints=False
+        debug=False, save_checkpoints=False, build_agents=build_agents
     )
     elapsed = time.perf_counter() - t0
     print(f"\nTraining complete in {elapsed:.0f}s ({elapsed/num_episodes:.2f}s/ep)")
@@ -87,6 +97,7 @@ def train_variant(name, shared_backbone, num_episodes, batch_size=32):
                 "conv_channels": CONV_CHANNELS,
                 "fc_hidden": FC_HIDDEN,
                 "shared_backbone": shared_backbone,
+                "encoder": ENCODER,
             },
         }, path)
 
@@ -103,7 +114,7 @@ def play_match(agent_a, agent_b, num_games=100, epsilon=0.05):
         torch.manual_seed(game * 1000)
 
         env = GameEnvironment(N, M, NUM_PLAYERS)
-        env.max_turns = 250
+        env.max_turns = 200
         env.reset()
 
         agents_in_game = [agent_a, agent_b]
@@ -211,7 +222,7 @@ def main():
                 rolling.append(sum(1 for x in w if x == 0) / window)
             ax.plot(range(window - 1, len(history)), rolling, label=f"{label} P1 win rate")
 
-    ax.set_title("Training Win Rate: Shared vs Separate Backbone")
+    ax.set_title("Training Win Rate: Shared vs Separate Backbone (Enhanced Encoder)")
     ax.set_xlabel("Episode")
     ax.set_ylabel("P1 Win Rate (rolling 20)")
     ax.legend()
