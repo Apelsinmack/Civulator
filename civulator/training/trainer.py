@@ -33,10 +33,18 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
     win_history = []
     use_build = build_agents is not None
 
+    # Build order tracking: per-player list of build sequences per episode
+    # build_orders[player_idx] = list of lists, one per episode
+    build_orders = {i: [] for i in range(len(agents))} if use_build else None
+
     for episode in range(num_episodes):
         print(f"Starting episode {episode}")
         env.reset()
         done = False
+
+        # Track builds this episode
+        if use_build:
+            episode_builds = {i: [] for i in range(len(agents))}
 
         current_player_index = env.current_player.player_index
         current_agent = agents[current_player_index]
@@ -82,6 +90,7 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
                             combat_state, city, env, epsilon=0.3
                         )
                         option = BUILD_OPTIONS[action_idx]
+                        episode_builds[current_player_index].append(option)
                         if option in City.BUILDING_COSTS:
                             city.produce_building(option)
                         else:
@@ -178,11 +187,18 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
             + ", ".join(f"Player {i+1}: {c}" for i, c in win_counts.items())
         )
 
+        # Record build orders for this episode
+        if use_build:
+            for i in range(len(agents)):
+                build_orders[i].append(episode_builds[i])
+
         # Save checkpoints
         if save_checkpoints:
             _save_checkpoints(agents, episode)
 
     save_win_history(win_history, num_episodes)
+    if use_build:
+        save_build_stats(build_orders, num_episodes)
     return win_counts, win_history
 
 
@@ -261,3 +277,91 @@ def save_win_history(win_history, num_episodes):
         plt.close()
 
     print("Win history and analytics saved to stats/ directory")
+
+
+def save_build_stats(build_orders, num_episodes):
+    """Save build order statistics and generate summary plots.
+
+    Args:
+        build_orders: {player_idx: list of lists}, each inner list is
+                      the sequence of build choices for one episode.
+        num_episodes: Total number of episodes.
+    """
+    os.makedirs("stats", exist_ok=True)
+    timestamp = int(time.time())
+
+    num_players = len(build_orders)
+
+    # Aggregate: count how often each option appears as 1st, 2nd, 3rd build
+    max_slot = 5  # Track first 5 build slots
+    # slot_counts[slot][option] = count across all players and episodes
+    slot_counts = [{opt: 0 for opt in BUILD_OPTIONS} for _ in range(max_slot)]
+    # Total builds per option (all slots combined)
+    total_counts = {opt: 0 for opt in BUILD_OPTIONS}
+
+    for player_idx in range(num_players):
+        for ep_builds in build_orders[player_idx]:
+            for slot, option in enumerate(ep_builds):
+                total_counts[option] = total_counts.get(option, 0) + 1
+                if slot < max_slot:
+                    slot_counts[slot][option] += 1
+
+    total_decisions = sum(total_counts.values())
+
+    # Print summary
+    print("\n--- Build Order Summary ---")
+    print(f"Total build decisions: {total_decisions}")
+    print(f"\nOverall build frequency:")
+    for opt in BUILD_OPTIONS:
+        count = total_counts[opt]
+        pct = count / total_decisions * 100 if total_decisions > 0 else 0
+        print(f"  {opt:12s}: {count:5d} ({pct:5.1f}%)")
+
+    for slot in range(min(max_slot, 3)):
+        slot_total = sum(slot_counts[slot].values())
+        if slot_total == 0:
+            continue
+        print(f"\nBuild #{slot+1} popularity:")
+        sorted_opts = sorted(slot_counts[slot].items(), key=lambda x: x[1], reverse=True)
+        for opt, count in sorted_opts:
+            pct = count / slot_total * 100 if slot_total > 0 else 0
+            if count > 0:
+                print(f"  {opt:12s}: {count:5d} ({pct:5.1f}%)")
+
+    # Save raw data
+    np.save(f"stats/build_orders_{timestamp}.npy", build_orders, allow_pickle=True)
+
+    # Plot: overall build frequency
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+    # Left: overall frequency bar chart
+    options = list(BUILD_OPTIONS)
+    counts = [total_counts[opt] for opt in options]
+    colors = ['#2196F3', '#4CAF50', '#FF9800', '#9C27B0', '#F44336', '#795548', '#607D8B']
+    axes[0].bar(range(len(options)), counts, color=colors[:len(options)])
+    axes[0].set_xticks(range(len(options)))
+    axes[0].set_xticklabels(options, rotation=45, ha='right')
+    axes[0].set_ylabel("Times Built")
+    axes[0].set_title("Overall Build Frequency")
+
+    # Right: first 3 build slots stacked
+    slot_data = {}
+    for opt in options:
+        slot_data[opt] = [slot_counts[s][opt] for s in range(min(max_slot, 3))]
+
+    x = np.arange(min(max_slot, 3))
+    width = 0.12
+    for idx, opt in enumerate(options):
+        axes[1].bar(x + idx * width, slot_data[opt], width, label=opt,
+                    color=colors[idx % len(colors)])
+    axes[1].set_xticks(x + width * len(options) / 2)
+    axes[1].set_xticklabels([f"Build #{s+1}" for s in range(min(max_slot, 3))])
+    axes[1].set_ylabel("Count")
+    axes[1].set_title("Build Order by Slot")
+    axes[1].legend(fontsize=7, loc='upper right')
+
+    plt.tight_layout()
+    plt.savefig(f"stats/build_orders_{timestamp}.png")
+    plt.close()
+
+    print(f"Build order stats saved to stats/build_orders_{timestamp}.{{npy,png}}")

@@ -109,6 +109,8 @@ class EnhancedStateEncoder(StateEncoder):
     """
 
     # Unit class to one-hot index mapping
+    # Civilians (Settler, Worker) are not encoded in the class one-hot;
+    # they have zero combat stats, so the stats channels distinguish them.
     CLASS_INDEX = {
         "Warrior": 0,    # melee
         "Swordsman": 0,  # melee
@@ -116,6 +118,8 @@ class EnhancedStateEncoder(StateEncoder):
         "Archer": 2,     # ranged
         "Horseman": 3,   # cavalry
         "Catapult": 4,   # siege
+        "Settler": -1,   # civilian — no class one-hot
+        "Worker": -1,    # civilian — no class one-hot
     }
 
     # Normalization constants
@@ -141,9 +145,10 @@ class EnhancedStateEncoder(StateEncoder):
         # --- Own units (channels 0-10) ---
         for unit in current_player.units:
             i, j = unit.coordinates
-            # Class one-hot (channels 0-4)
-            cls_idx = self.CLASS_INDEX.get(unit.unit_type, 0)
-            state[cls_idx, i, j] = 1.0
+            # Class one-hot (channels 0-4), skip civilians
+            cls_idx = self.CLASS_INDEX.get(unit.unit_type, -1)
+            if cls_idx >= 0:
+                state[cls_idx, i, j] = 1.0
             # Stats (channels 5-10)
             state[5, i, j] = unit.health / 100.0
             state[6, i, j] = unit.get_base_combat_strength() / self.MAX_MELEE_STR
@@ -168,9 +173,10 @@ class EnhancedStateEncoder(StateEncoder):
                 continue
             for unit in player.units:
                 i, j = unit.coordinates
-                # Class one-hot (channels 11-15)
-                cls_idx = self.CLASS_INDEX.get(unit.unit_type, 0)
-                state[11 + cls_idx, i, j] = 1.0
+                # Class one-hot (channels 11-15), skip civilians
+                cls_idx = self.CLASS_INDEX.get(unit.unit_type, -1)
+                if cls_idx >= 0:
+                    state[11 + cls_idx, i, j] = 1.0
                 # Stats (channels 16-21)
                 state[16, i, j] = unit.health / 100.0
                 state[17, i, j] = unit.get_base_combat_strength() / self.MAX_MELEE_STR

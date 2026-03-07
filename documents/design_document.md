@@ -2,7 +2,8 @@
 
 > **Author**: Erik (with Claude)
 > **Created**: 2026-03-03
-> **Status**: Draft -- guiding the refactoring
+> **Last updated**: 2026-03-07
+> **Status**: Refactoring complete. Now a living reference for architecture decisions.
 
 ---
 
@@ -192,155 +193,82 @@ The multi-agent pending transition mechanism is correct in concept: when Player 
 
 ---
 
-## 5. Next Update Focus Areas
+## 5. Architecture Decisions (Historical + Current)
 
-These are the priority items for the next development push. They span game logic, agent architecture, and state representation.
+### 5.1 City Production — RESOLVED (v0.4.0)
 
-### 5.1 Settlers and City Building
+**Chosen**: Option A — Separate BuildAgent (DQN) with its own network, replay memory,
+and optimizer. Runs at turn boundaries. See `civulator/agents/build_agent.py`.
 
-The game environment already defines `SettlerUnit` with a `found_city()` method, and `City` has a `produce_unit()` / `produce_building()` system. But none of this is wired into training -- agents only control warriors, and cities are static after game start.
+### 5.2 Unit Encoding — RESOLVED (v0.3.1)
 
-**What needs to happen**:
-- Hook city production into the turn cycle (cities already have `process_turn()`, but `current_production` is never set)
-- Let agents choose what to build (see 5.2)
-- Let settler units found cities via an action
-- Add the "found city" action to the agent's action space (a third action type beyond move and end-turn)
-- Decide starting conditions: do players start with a settler, or with a city + warriors (current)?
+**Chosen**: Class-based hybrid (EnhancedStateEncoder, 25 channels).
+5 class one-hot + 6 stat channels per player side + cities + terrain.
+See `documents/state_spaces.md`.
 
-### 5.2 City Production Decisions (New Action Type)
+### 5.3 Multiple Units Per Tile — PARTIALLY RESOLVED
 
-The agent currently only makes unit-level decisions (select unit, move unit). City production requires a fundamentally different kind of decision: "what should this city build?"
+Unit spawn stacking bug fixed in v0.3.1 (try center → adjacent → defer).
+State tensor still overwrites if two units share a tile.
+Enforcing one-military-unit-per-tile (Civ 5/6 style) is the planned fix.
 
-**Design options**:
+### 5.4 FullyConvNetwork Architecture (v0.4.0)
 
-**Option A: Separate production head on the network**
-Add a third network head for city production. At the start of each turn (or when a city finishes production), the agent picks from a list of buildable items. The action space becomes:
-```
-Turn structure:
-  1. For each city needing orders → pick production (from valid build list)
-  2. For each unit with movement  → select + move (existing)
-  3. End turn
-```
+Map-size independent design using only conv layers (no FC).
+Shared backbone: one set of conv layers, separate 1x1 conv heads.
+Same weights work on any map size — critical for future scaling.
 
-**Option B: Unified action space**
-Treat city tiles as "selectable" just like unit tiles. When the agent selects a city tile, the "move" head instead outputs a production choice. This keeps the two-step architecture but overloads its meaning.
+### 5.5 Scaling Architecture (future ideas, 2026-03-07)
 
-**Option C: Separate policy for production**
-A simpler secondary policy (even rule-based initially) handles production. The main DQN only handles unit actions. This is the easiest to implement and lets us test settlers without redesigning the network.
+**Specialist networks as state channels**: Lightweight networks that pre-digest
+information on different timescales, feeding their output as extra channels to the
+main policy:
+- Settlement value heatmap (recomputed on city founding)
+- Threat map (updated per step)
+- Economic potential map (updated per turn)
 
-**Recommendation**: Start with **Option C** (rule-based production: always build warriors). Get settlers and city founding working in the game loop first. Then graduate to Option A once the game mechanics are solid.
+**Terrain caching**: Terrain is static. Compute conv features for terrain channels
+once at game start, cache and reuse every step.
 
-### 5.3 Unit Encoding in the State Tensor
-
-Currently, units are encoded as just health and movement points on the map grid. With multiple unit types (Warrior, Archer, Spearman, Horseman, Settler, etc.), the agent needs to know *what* is on each tile, not just *that something is there*.
-
-**Three encoding strategies**:
-
-**Pure one-hot**: Each unit type gets its own channel.
-```
-Layer layout per player:
-  cities | warrior_health | archer_health | spearman_health | horseman_health | settler_health | movement
-```
-- Pro: Preserves discrete identity. Network can learn spearman-beats-horseman from experience.
-- Con: Channels grow linearly with unit types. Doesn't generalize -- adding a new unit type means adding channels and retraining from scratch.
-- Con: Sparse -- most channels are zero on most tiles.
-
-**Pure ability encoding**: Encode unit stats directly.
-```
-Layer layout per player:
-  cities | unit_health | unit_attack | unit_defense | unit_movement | unit_range | is_ranged
-```
-- Pro: Compact, generalizes. A new unit type with known stats works immediately.
-- Pro: Network sees that 35-attack beats 20-attack without learning it from scratch.
-- Con: Loses discrete identity. Can't easily learn "spearman gets +10 vs horseman" because it doesn't know *what* the unit is, only its stats.
-- Con: Multiple units on one tile still problematic (stats overwrite).
-
-**Hybrid (recommended)**: Ability encoding + type ID.
-```
-Layer layout per player:
-  cities | unit_health | unit_attack | unit_defense | unit_movement | unit_range | unit_type_id
-```
-Where `unit_type_id` is a normalized integer (e.g., Warrior=0.2, Archer=0.4, Spearman=0.6, Horseman=0.8, Settler=1.0).
-
-- Pro: Network gets continuous stats for general reasoning AND discrete identity for learning special interactions.
-- Pro: Adding a unit type only requires assigning a new ID value, not adding channels.
-- Con: The type ID is ordinal, which implies a meaningless ordering. Could mitigate by using multiple binary channels (a compact one-hot within the ability encoding), but this adds channels back.
-
-**Alternative hybrid**: Ability encoding + a small one-hot block.
-```
-Layer layout per player:
-  cities | unit_health | unit_attack | unit_defense | unit_movement | unit_range | is_melee | is_ranged | is_cavalry | is_siege | is_civilian
-```
-This encodes the *class* (5 categories) rather than the specific type (8+ types). The class captures the rock-paper-scissors dynamics (melee beats anti-cav, anti-cav beats cavalry, ranged is fragile in melee). Within a class, the stats differentiate (Warrior vs Swordsman = same class, different attack power).
-
-**Recommendation**: Start with the **class-based hybrid**. It's compact (5 boolean channels + ~5 stat channels = ~10 channels per player), captures both stats and tactical identity, and doesn't explode when adding new units within existing classes.
-
-### 5.4 Multiple Units Per Tile
-
-All encoding schemes above still have the problem: if two friendly units stand on the same tile, they overwrite each other in the tensor. Options:
-- **Game rule**: enforce one unit per tile (like Civ 5/6). Simplest.
-- **Stacking channels**: e.g., unit_1 and unit_2 channels. Rigid.
-- **Sum/max aggregation**: sum health values on a tile. Loses count info but cheap.
-
-**Recommendation**: Enforce one military unit per tile (Civ 5/6 style). Civilians (settlers, workers) can share a tile with one military unit. This is the cleanest solution and matches the game's inspiration.
+**Sparse convolutions**: For large maps where units occupy <10% of tiles.
+Libraries like MinkowskiEngine compute only at non-zero positions.
 
 ---
 
-## 6. Refactoring Roadmap
+## 6. Refactoring Roadmap (Status as of v0.4.0)
 
-### Phase 0: CUDA Support
-- ~~Install PyTorch with CUDA 12.4~~ **DONE** (2026-03-03). PyTorch 2.6.0+cu124, RTX 3070 confirmed working.
+### Phase 0: CUDA Support — DONE
+PyTorch 2.6.0+cu124, RTX 3070 confirmed working.
 
-### Phase 1: Clean Foundation (do first)
+### Phase 1: Clean Foundation — DONE (v0.1.0)
+Package structure, module split, C# archived, bugs fixed.
 
-1. **Consolidate to one version**. Move `v2_debugging` contents to a clean `src/` or `civulator/` directory at the project root. Archive all old version folders.
-2. **Archive C# code**. Move to an `archive/csharp/` folder.
-3. **Clean pyCiv.py**:
-   - Remove all `import torch`, `import torch.nn`, etc.
-   - Remove all commented-out old code (hundreds of lines)
-   - Fix the `done` initialization bug
-   - Fix the `reset()` bug (`self.__class__.Player`)
-   - Initialize `self.done = False` in `__init__`
-4. **Split pyCiv.py into modules**:
-   - `game/terrain.py` -- Terrain class
-   - `game/tile.py` -- Tile class
-   - `game/map.py` -- Map class (hex grid, adjacency, pathfinding, wrapping)
-   - `game/unit.py` -- Unit base class + all unit subclasses
-   - `game/city.py` -- City class
-   - `game/player.py` -- Player class
-   - `game/environment.py` -- GameEnvironment class
-   - `game/__init__.py` -- public API
+### Phase 2: Agent Refactoring — MOSTLY DONE
+- StateEncoder abstraction — DONE
+- Hex adjacency in move masking — DONE
+- Q-value summation — kept as branching DQN (documented, works)
+- Target network — NOT DONE (Priority B4)
+- Agent code cleanup — DONE
 
-### Phase 2: Agent Refactoring
+### Phase 3: Training Improvements — PARTIAL
+- Reward shaping — basic combat rewards in place
+- GPU training — DONE (~0.12s/episode)
+- Evaluation framework — tournament script exists
+- Tensorboard logging — NOT DONE
 
-5. **Extract StateEncoder** as an abstract base class.
-6. **Fix the move masking** to use hex adjacency.
-7. **Fix Q-value computation** -- don't sum select + move Q-values.
-8. **Reintroduce target network** for training stability.
-9. ~~**CUDA support**~~ -- **DONE**. PyTorch 2.6.0+cu124 installed, RTX 3070 working.
-10. **Clean up agent code**: remove duplicate `main()` from `GlobalDQNetworkSelectingAndMovingMultipleAgents.py` (keep only `main_trainer.py` entry point).
-
-### Phase 3: Training Improvements
-
-11. **Reward shaping** -- document and systematize the reward function.
-12. **Longer training runs** with GPU acceleration.
-13. **Evaluation framework** -- run trained agents against random/heuristic baselines.
-14. **Tensorboard logging** for training curves.
-
-### Phase 4: Game Enrichment
-
-15. **Better pathfinding** (A* with terrain costs).
-16. **Fog of war** in the Python environment.
-17. **More map generation types** (currently all map types → basic random).
-18. **Unit production queue** (cities produce units over multiple turns).
+### Phase 4: Game Enrichment — MOSTLY DONE (v0.4.0)
+- City production queue — DONE (build agent)
+- All unit types — DONE
+- Pathfinding — still greedy (A* TODO)
+- Fog of war — NOT DONE
+- Map generation — still basic random
 
 ### Phase 5: Performance Scaling (when needed)
-
-Not a priority until the RL architecture is working and episode throughput becomes the bottleneck. Current speed (~6s/episode on 4x8 map) is fine for iterating on the learning algorithm.
-
-19. **Vectorized environments** -- run 8-16 games in parallel on CPU, batch GPU calls. This is how stable-baselines3 and similar frameworks get throughput. Likely the biggest win for least effort.
-20. **Cython for hot paths** -- hex adjacency, pathfinding, and combat resolution are called thousands of times per episode. Cythonizing just these functions could give 10-50x speedup on the game loop with minimal code changes.
-21. **C++ game engine with Python bindings** -- full rewrite of the headless game in C/C++ (like how Atari/MuJoCo gym environments work). Maximum performance but large engineering effort. Only justified if scaling to large maps (20x30+), self-play tournaments, or population-based training.
+- Vectorized environments (parallel games on CPU, batched GPU)
+- Cython for hot paths (hex adjacency, pathfinding, combat)
+- C++ game engine with Python bindings (only for large maps)
+- Sparse convolutions for large maps
+- Terrain feature caching
 
 ---
 

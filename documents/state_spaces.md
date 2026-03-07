@@ -1,6 +1,6 @@
 # Civulator — State Space Reference
 
-> **Last updated**: 2026-03-05
+> **Last updated**: 2026-03-07
 > **Purpose**: Complete specification of all tensor representations used by neural networks.
 > Intended as the definitive reference for both implementation and paper write-up.
 
@@ -76,25 +76,26 @@ Used for initial experiments. No unit type distinction, no terrain, no normaliza
 
 ---
 
-## 2. Build State Space (planned)
+## 2. Build State Space (implemented in v0.4.0)
 
-**Shape**: `[25 + 8, n, m]` = `[33, n, m]`
+**Shape**: `[d_combat + 9, n, m]` where d_combat is 5 (basic) or 25 (enhanced)
 
-Extends the combat state tensor with 8 additional channels encoding city production
-information. Non-zero only at own city tiles.
+Extends the combat state tensor with 9 additional channels encoding city production
+information. Non-zero only at own city tiles. See `civulator/agents/build_agent.py`.
 
 ### Additional Channels (at own city tiles only)
 
 | Ch | Name | Value | Description |
 |----|------|-------|-------------|
-| 25 | turns_to_warrior | cost / prod / max_turns | Normalized build time |
-| 26 | turns_to_spearman | cost / prod / max_turns | |
-| 27 | turns_to_archer | cost / prod / max_turns | |
-| 28 | turns_to_horseman | cost / prod / max_turns | |
-| 29 | turns_to_settler | cost / prod / max_turns | |
-| 30 | turns_to_granary | cost / prod / max_turns | |
-| 31 | current_production | index / num_options | What's being built (normalized) |
-| 32 | production_progress | accumulated / cost | 0→1 as build completes |
+| +0 | turns_to_warrior | cost / prod / max_turns | Normalized build time |
+| +1 | turns_to_spearman | cost / prod / max_turns | |
+| +2 | turns_to_archer | cost / prod / max_turns | |
+| +3 | turns_to_horseman | cost / prod / max_turns | |
+| +4 | turns_to_catapult | cost / prod / max_turns | |
+| +5 | turns_to_settler | cost / prod / max_turns | |
+| +6 | turns_to_granary | cost / prod / max_turns | |
+| +7 | production_progress | accumulated / cost | 0→1 as build completes |
+| +8 | city_marker | 1.0 | Identifies this city tile |
 
 ### Design Decisions
 
@@ -153,10 +154,10 @@ information. Non-zero only at own city tiles.
 - Enemy-occupied tiles valid (attack)
 - Auto-detects encoder by channel count
 
-### Build Mask (planned)
-- **Shape**: `[num_build_options]` per city
-- Valid if: building not already built, unit type unlocked, settler requires pop ≥ 3
-- Applied at city tile positions in the build head output
+### Build Mask (implemented)
+- **Shape**: `[7]` per city (NUM_BUILD_OPTIONS)
+- Units 0-4: always valid. Settler: requires pop >= 3. Granary: not already built.
+- See `build_agent.get_valid_build_mask()`
 
 ---
 

@@ -325,6 +325,101 @@ class FullyConvNetwork(nn.Module):
         return select_qvalues, None
 
 
+class FullyConvSeparateNetwork(nn.Module):
+    """Fully convolutional DQN with SEPARATE backbones for select and move.
+
+    Unlike FullyConvNetwork (shared backbone), this has independent conv layers
+    for each head. Used for A/B testing shared vs separate feature extraction.
+
+    Same interface as FullyConvNetwork (drop-in replacement).
+
+    Args:
+        d: State tensor depth (channels)
+        kernel_size: Convolution kernel size (default 3)
+        conv_channels: Tuple of (conv1_out, conv2_out) channel counts
+    """
+
+    def __init__(self, d, kernel_size=3, conv_channels=(16, 32), **kwargs):
+        super().__init__()
+
+        self.padding_size = kernel_size // 2
+        c1, c2 = conv_channels
+
+        # Select backbone
+        self.select_conv1 = nn.Conv2d(d, c1, kernel_size=kernel_size, padding=0)
+        self.select_bn1 = nn.BatchNorm2d(c1)
+        self.select_conv2 = nn.Conv2d(c1, c2, kernel_size=kernel_size, padding=0)
+        self.select_bn2 = nn.BatchNorm2d(c2)
+
+        # Select head: 1x1 conv → per-tile Q-value + learnable end-turn Q
+        self.select_conv = nn.Conv2d(c2, 1, kernel_size=1)
+        self.end_turn_q = nn.Parameter(torch.zeros(1))
+
+        # Move backbone
+        self.move_conv1 = nn.Conv2d(d, c1, kernel_size=kernel_size, padding=0)
+        self.move_bn1 = nn.BatchNorm2d(c1)
+        self.move_conv2 = nn.Conv2d(c1, c2, kernel_size=kernel_size, padding=0)
+        self.move_bn2 = nn.BatchNorm2d(c2)
+
+        # Move head: features + selected-position marker → 3x3 conv → 1x1 conv
+        self.move_spread = nn.Conv2d(c2 + 1, c2, kernel_size=kernel_size, padding=0)
+        self.move_bn = nn.BatchNorm2d(c2)
+        self.move_conv = nn.Conv2d(c2, 1, kernel_size=1)
+
+    def forward(self, state, selected_pos=None):
+        """Forward pass.
+
+        Args:
+            state: [batch, d, n, m] tensor
+            selected_pos: [batch, 1] tensor of selected tile indices (optional)
+
+        Returns:
+            select_qvalues: [batch, n*m+1] Q-values for tile selection + end turn
+            move_qvalues: [batch, n*m] Q-values for move targets (None if no selected_pos)
+        """
+        # Select backbone
+        x_s = horizontal_wrap_padding(state, self.padding_size)
+        x_s = F.relu(self.select_bn1(self.select_conv1(x_s)))
+        x_s = horizontal_wrap_padding(x_s, self.padding_size)
+        select_features = F.relu(self.select_bn2(self.select_conv2(x_s)))
+
+        # Select head
+        select_map = self.select_conv(select_features)  # [batch, 1, n, m]
+        select_flat = select_map.view(select_map.size(0), -1)  # [batch, n*m]
+        end_turn = self.end_turn_q.expand(select_flat.size(0), 1)
+        select_qvalues = torch.cat([select_flat, end_turn], dim=1)  # [batch, n*m+1]
+
+        if selected_pos is not None:
+            # Move backbone (separate conv layers)
+            x_m = horizontal_wrap_padding(state, self.padding_size)
+            x_m = F.relu(self.move_bn1(self.move_conv1(x_m)))
+            x_m = horizontal_wrap_padding(x_m, self.padding_size)
+            move_features = F.relu(self.move_bn2(self.move_conv2(x_m)))
+
+            batch_size = move_features.size(0)
+            n, m = move_features.size(2), move_features.size(3)
+
+            # Create marker channel: 1.0 at selected position
+            marker = torch.zeros(batch_size, 1, n, m, device=move_features.device)
+            selected_pos_int = selected_pos.long().view(-1)
+            for i in range(batch_size):
+                pos = selected_pos_int[i].item()
+                r, c = pos // m, pos % m
+                if 0 <= r < n and 0 <= c < m:
+                    marker[i, 0, r, c] = 1.0
+
+            # Move head
+            move_input = torch.cat([move_features, marker], dim=1)
+            move_input = horizontal_wrap_padding(move_input, self.padding_size)
+            move_x = F.relu(self.move_bn(self.move_spread(move_input)))
+            move_map = self.move_conv(move_x)
+            move_qvalues = move_map.view(move_map.size(0), -1)
+
+            return select_qvalues, move_qvalues
+
+        return select_qvalues, None
+
+
 def get_valid_select_mask(state, hp_channel=None, move_channel=None):
     """Generate a mask for valid unit selections.
 

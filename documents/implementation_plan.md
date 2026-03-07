@@ -1,20 +1,20 @@
 # Civulator — Implementation Plan
 
 > **Created**: 2026-03-04
-> **Last updated**: 2026-03-05
+> **Last updated**: 2026-03-07
 > **Status**: Active
 
 ---
 
-## Current State (v0.3.1)
+## Current State (v0.4.0)
 
-- DQN with Select-and-Move working
-- Warriors only, cities auto-produce warriors
-- Healing/fortification fixed (per-turn, requires inaction via `has_acted` flag)
-- Attack always consumes all movement points
-- EnhancedStateEncoder (25 channels) implemented and wired up
-- Configurable network sizes, shared backbone option
-- Tournament complete: model size doesn't matter much yet (game too simple)
+- FullyConvNetwork: shared CNN backbone, map-size independent, ~15k params
+- All unit types active via build agent (Warrior, Spearman, Archer, Horseman, Catapult, Settler)
+- City economy: food, production, population growth, tile working
+- Granary building available
+- Settlers can found cities (select settler → order to same tile)
+- Training: 500 episodes in ~1 hour on RTX 3070 GPU
+- Results: zero draws, P2 learns to overtake P1 (59%→61% in later episodes)
 
 ---
 
@@ -29,229 +29,118 @@ optimizing the model is worthwhile:
 - **War vs peace** — when to fight, when to build
 - **Short-term vs long-term** — rush an enemy now or invest in economy?
 
-These choices are what make the game interesting for both humans and AI. Get the game
-there first, then refine the models.
-
-**Why not refine the NN first?** The tournament (4 model sizes, 500 episodes each)
-already showed that model size and architecture don't matter when the game is warriors-only.
-More architecture tweaks on a simple game would just confirm the same thing. The model
-becomes the bottleneck only when the game presents decisions complex enough to require
-a better model.
-
 ---
 
-## Priority A: Game Complexity (next)
+## Priority A: Game Complexity
 
-### A1: Build Queue — Agent Chooses What to Produce
+### A1: Build Queue — DONE (v0.4.0)
 
-**Goal**: Let the agent decide what each city builds, instead of auto-producing warriors.
+Separate BuildAgent (DQN) decides city production. 7 build options: 5 unit types +
+Settler + Granary. Runs at turn boundaries in trainer.py.
 
-**The problem**: The current Select-and-Move network selects tiles on the map. It can't
-distinguish "I'm selecting a unit to move" from "I'm selecting a city to give orders."
-Even if we overloaded the select action, there's no natural way to express "build a
-Spearman in this city" through the move head.
+### A2: Unit Types — DONE (v0.4.0)
 
-**Proposed solution: Separate Build Network**
+All combat units active: Warrior, Spearman, Archer, Horseman, Catapult.
+Ranged combat works (Archer, Catapult). Class advantages active.
 
-A dedicated network that runs once per city per turn, choosing what to produce.
+### A3: Buildings / Granary — DONE (v0.4.0)
 
-```
-Build state → [Conv/FC] → Q-values over build options
-```
+City economy: food/production from worked tiles, population growth, starvation.
+Granary available as build option. Full Civ-like economic loop.
 
-**Chosen design: Build info embedded in the map tensor**
+### A4: Settlers and City Founding — IMPLEMENTED, NEEDS VERIFICATION
 
-The "table" of build options lives *inside* the spatial state tensor as extra channels,
-non-zero only at city tiles. This is elegant because:
-- The CNN sees both "what can I build?" and "are enemies nearby?" in one pass
-- City position is implicit (spatial embedding — no explicit coordinates needed)
-- Variable city count handled naturally (more cities = more non-zero tiles)
-- Shares the same spatial representation as the combat network
+**Code is wired up**: Settler in BUILD_OPTIONS (index 5, requires pop >= 3).
+Selecting a settler and ordering to same tile triggers `found_city()` (+15 reward).
+Minimum 3 tiles from other cities.
 
-**Extra channels at city tiles** (added to state tensor):
+**Unknown**: Whether agents actually learn to build and use settlers.
+Need build order tracking (see TODO) to verify.
 
-| Channel | Value | Purpose |
-|---------|-------|---------|
-| turns_to_warrior | warrior_cost / city_production | Build speed per option |
-| turns_to_spearman | spearman_cost / city_production | |
-| turns_to_archer | archer_cost / city_production | |
-| turns_to_horseman | horseman_cost / city_production | |
-| turns_to_settler | settler_cost / city_production | |
-| turns_to_granary | granary_cost / city_production | |
-| current_production | one-hot or index | What's being built now |
-| production_progress | progress / total_cost (0→1) | How close to finishing |
+### A5: Alliances and Diplomacy — NEXT MAJOR FEATURE
 
-Non-city tiles are 0 in these channels. Normalized so the network sees
-"5 turns" as 5/max rather than raw cost.
+**Goal**: N-player games with war/peace mechanics.
 
-**Build head**: Separate FC layers that read conv features and output Q-values
-per build option at each tile. At turn start, for each own city, take argmax
-at that city's (row, col) in the output.
-
-**Build actions** (per city):
-- Warrior, Spearman, Archer, Horseman, Catapult
-- Settler (if pop >= 3?)
-- Granary (first building — see A3)
-- "Continue current" / do nothing
-
-**When it runs**: At the start of each turn, for each city that has no active
-production. Or: every turn, allowing the agent to change mid-build (like in Civ).
-
-**Architecture notes for future**:
-- Shared backbone option: the combat CNN already extracts spatial features.
-  The build head could branch from the same conv features (different FC head).
-  Start separate, test shared later — coupling could cause training interference.
-- Receptive field: on a 4×8 map, two conv3 layers give a 5×5 receptive field,
-  covering most of the board. This is sufficient for now.
-- On larger maps (16×32+), build decisions need broader spatial awareness.
-  Options: larger kernel sizes, stride > 1 (e.g. stride 3 to cover 3x the area
-  per layer), or pooling layers. Stride reduces spatial resolution but build
-  decisions only need Q-values at city locations, not every tile — so the
-  resolution loss is acceptable.
-- Cylindrical wrapping: `horizontal_wrap_padding` already handles this
-  (wraps left/right, zero-pads top/bottom). A city at column 0 correctly
-  "sees" tiles at column m-1. Build network reuses the same padding.
-
-**Implementation plan**:
-1. Add build-info channels to `EnhancedStateEncoder` (or new `BuildStateEncoder`)
-2. Design `BuildHead` — FC layers outputting [n*m × num_build_options]
-3. Add build Q-learning: separate replay memory, separate loss, separate optimizer
-4. Integrate into training loop: build decisions at turn start, combat during turn
-5. Reward signal for build decisions: delayed — city production payoff comes
-   turns later. May need longer gamma or shaped rewards.
-
----
-
-### A2: Unit Types
-
-**Goal**: Activate Spearman, Archer, and Horseman alongside Warriors.
-
-**Implementation steps**:
-1. City produces units based on build queue (A1) — no more auto-warrior
-2. Activate ranged combat: Archers attack at range 2 with ranged strength (no counter-damage)
-   - Verify `ArcherUnit.attack()` override works correctly
-3. Activate class advantages: Spearman +10 vs Horseman, etc.
-4. EnhancedStateEncoder already supports all unit types (one-hot class encoding)
-
-**Dependencies**: A1 (build queue) — agents need to choose what to build.
-Without A1, fall back to rule-based ratios (2 Warriors : 1 Archer : 1 Spearman).
-
----
-
-### A3: Buildings — Granary (First Building)
-
-**Goal**: Introduce buildings as an alternative to unit production. First building:
-Granary (increases food → population → production).
-
-**Why granary first**: It creates the core economic trade-off: spend production now
-on a building that pays off later (more pop → more production), or spend it on a
-unit for immediate military power. This is the essence of Civ's "guns vs butter" dilemma.
-
-**Economy model (first version — keep it simple)**:
-- Each city has population (starts at 1)
-- Production per turn = base + population bonus (scale tile yields by pop)
-- Granary: +2 food per turn → faster population growth
-- Don't implement tile-working or citizen assignment yet — not interesting for NN
-
-**Later buildings** (future, not now):
-- Walls: +3 city defense, affects combat
-- Barracks: units start with +15 XP (could be a stat bonus)
-- Library: +science (when we add tech tree)
-
-**Implementation steps**:
-1. Add population and food tracking to `City`
-2. Add Granary as a buildable option (production cost ~60)
-3. Population growth: food accumulates, pop increases at threshold
-4. Production scales with population
-5. Add building info to state encoder (new channel or extend city channels)
-
----
-
-### A4: Settlers and City Founding
-
-**Goal**: Agents can expand by building settlers and founding new cities.
-
-**Implementation steps**:
-1. Settler available in build queue (A1) — costs 120 production, requires pop >= 3?
-2. Founding: settler on valid tile + "fortify" action (move to same tile) = found city
-   - Or: special action when settler is selected
-3. Settler consumed on city founding
-4. New city starts with pop 1, no buildings
-
-**Why this matters**: Expansion is the third strategic lane alongside military and
-economy. "Should I build a settler or an army?" is one of the deepest decisions in Civ.
-
----
-
-### A5: Alliances and Diplomacy
-
-**Goal**: N-player games with war/peace mechanics. Relationship-based state encoding.
-
-**Core mechanics**:
+**Game mechanics** (designed, not implemented):
 - N*(N-1)/2 pairwise relationships, default state = peace
-- **Declare war**: Unilateral. Immediate effect. Enables combat between the two players.
-- **Propose peace**: Requires mutual agreement (both players must select it).
-  10-turn minimum war duration before peace is possible.
-- War = can attack each other's units and capture cities
-- Peace = units pass through each other, no combat
+- **Declare war**: Unilateral. Immediate. Enables combat between the two players.
+- **Propose peace**: Requires mutual agreement. 10-turn minimum war.
+- War = can attack. Peace = units pass through, no combat.
 
-**State encoding** (relationship-based, scales to N players):
-- Instead of "own" and "enemy" channels, use: own / ally / neutral / enemy
-- Diplomacy status encoded as a small vector per player pair
-- The agent sees *relationships*, not player IDs — Team 1 vs Team 2 is meaningless,
-  but "at war with" vs "at peace with" is meaningful
+**State encoding** (designed):
+- Relationship-based: own / ally / neutral / enemy (instead of own/enemy)
+- Aggression tracking: windowed attack history per pair
+- Threat scoring: army size near borders, attacks, captures
 
-**Action space for diplomacy**:
-- Extend select head: beyond `n*m + 1` (end turn), add 2*(N-1) diplomacy slots
+**Action space** (designed):
+- Extend select head: beyond n*m + 1 (end turn), add 2*(N-1) diplomacy slots
   - For each other player: "declare war" and "propose peace"
   - These are select-only actions (no move phase needed)
-- Or: dedicated diplomacy phase at turn start (like build phase)
+- Alternative: dedicated diplomacy phase at turn start (like build phase)
 
-**Inspiration**: Meta's CICERO (Diplomacy AI) — relationship-based encoding,
-learned when to cooperate and when to betray. Our version is simpler (binary
-war/peace, no negotiation text) but the core idea is the same.
-
-**Threat / aggression scoring**:
-- Track attacks per player pair: how many times player A attacked player B
-- Aggression score = recent attacks (windowed, e.g. last 20 turns)
-- Feed this into the state encoder — the agent can learn "this player is aggressive,
-  they're a threat" vs "this player is peaceful, safe to ignore"
-- Could also factor in: army size near my borders, cities captured, units killed
-- This creates emergent diplomacy: if player A attacks player B a lot, player C
-  might learn to ally with B against the common threat — or exploit B's weakness
+**Open question**: Which network approach for diplomacy decisions?
+- Option 1: Extra slots in select head (simple, but mixes tactical and strategic decisions)
+- Option 2: Dedicated diplomacy network at turn start (clean separation, like build agent)
+- Option 3: Diplomacy as part of build phase (build agent already runs at turn start)
 
 **Implementation steps**:
 1. Add `DiplomacyState` tracking war/peace between all player pairs
-2. Add aggression tracking: attacks per pair, windowed history
-3. Add diplomacy actions to the select head (or separate diplomacy network)
+2. Guard combat with war check (can only attack enemies at war)
+3. Add diplomacy actions (declare war / propose peace)
 4. Update state encoder with relationship channels + threat scores
-5. Reward signals: captured city of ally = penalty? Breaking peace = cost?
-6. Start with 3-player games (N=3) — the minimum for interesting diplomacy
+5. Start with 3-player games (N=3) — minimum for interesting diplomacy
 
 ---
 
-## Priority B: Model Refinement (after game complexity)
+## Priority B: Model Refinement
 
-These are worth doing eventually, but the game needs more strategic depth first.
-Results from Priority A will inform which of these matter.
+### B1: Shared Backbone — DONE (inherent in FullyConvNetwork)
 
-### B1: Shared Backbone
-**Status**: Implemented, testing in progress (2026-03-05).
-Single CNN shared between select and move heads. 15% fewer params.
-Result will inform whether to keep it as default.
+FullyConvNetwork already uses shared conv layers for select and move heads.
+FullyConvSeparateNetwork created for A/B comparison (separate conv per head).
+Test in progress (2026-03-07): training separate variant, tournament to follow.
 
 ### B2: Hierarchical Q-Learning on Select/Move
-Make the select head aware of move quality. Currently the select head picks units
-independently of what moves are available. Proposed: train select targets using
-`max_{a_move} Q(s, a_select, a_move)`.
+
+Make the select head aware of move quality. Currently select picks units
+independently of what moves are available.
+
+**Proposed**: Train select targets using `max_{a_move} Q(s, a_select, a_move)`.
+
+**When**: After A4 verification and A5.
 
 ### B3: Temporal State Stacking
+
 Stack last K state tensors as extra channels (like Atari DQN's 4 frames).
 Cheap, gives agents memory of recent history. Helps with flanking, retreat, pursuit.
 
+**When**: After A5. Could combine with B2 for a bigger experiment.
+
 ### B4: Training Improvements
-Standard DQN enhancements: target network, epsilon decay, prioritized replay,
-Double DQN, reward normalization. Implement one at a time, measure each.
+
+Standard DQN enhancements. Implement one at a time, measure each:
+- Target network (training stability)
+- Epsilon decay schedule
+- Prioritized replay
+- Double DQN
+- Reward normalization
+
+### B5: Unified Training CLI
+
+Consolidate all training scripts into a single parameterized `train.py`:
+```
+python train.py --network fully-conv --backbone shared --encoder enhanced \
+    --episodes 500 --resume weights/checkpoint.pth --output weights/experiment_name/
+```
+
+All experiment settings as CLI args: network type, backbone mode, encoder, episodes,
+resume path, output dir, learning rate, etc. Benefits:
+- **Parallel training**: run multiple sessions concurrently (GPU/CPU not saturated by
+  one small network). Just open multiple terminals with different args.
+- **Reproducibility**: the command line IS the experiment config. Copy-paste to rerun.
+- **No more one-off scripts**: `train_separate_backbone.py`, `overnight_backbone_test.py`
+  etc. become just different arg combinations to one script.
+- **Easy automation**: loop over configs, grid search, overnight batch runs.
 
 ---
 
@@ -259,95 +148,84 @@ Double DQN, reward normalization. Implement one at a time, measure each.
 
 ### C1: Reward Function Profiles (Agent Personality)
 
-Extract reward calculations into a `RewardFunction` class. Different profiles produce
-different playstyles:
+Different profiles produce different playstyles:
 - **Aggressive**: High attack rewards, low death penalty
 - **Defensive**: Rewards fortification, penalizes leaving territory
-- **Barbarian**: Always attack, trained in rigged games where they're stronger
+- **Barbarian**: Always attack, rigged games where they're stronger
 - **Balanced**: Current default
 
-Use cases: barbarian AI, city-state AI, difficulty levels, curriculum learning.
+### C2: Scaling Architecture Ideas (2026-03-07)
 
-**When**: After A1-A4, when there are meaningful tactical choices to differentiate.
+Ideas for making the architecture scale to large maps (16x32+):
 
-### C2: Larger Maps and Scaling
+**Sparse convolutions**: Most state channels are very sparse (units on ~10 of 512 tiles
+on a 16x32 map). Libraries like MinkowskiEngine or spconv compute only where there's
+data. Could be a huge win for large maps.
 
-Current: 4×8. Future: 8×16, 16×32. Requires testing whether CNN architecture
-scales or needs adaptation (deeper networks, pooling layers, attention).
+**Terrain feature caching**: Terrain is static for the entire game. Conv features
+from terrain channels could be computed once at game start and cached. Split state into
+static (terrain) and dynamic (units, cities) channels, combine cached terrain features
+with per-step dynamic features. Saves ~half the backbone computation.
+
+**Specialist networks as state channels**: Separate lightweight networks that
+pre-digest information on different timescales:
+- **Settlement value network**: scores tiles for settling quality → extra channel
+  for select-and-move. Only recomputed when map changes (city founded).
+- **Threat map network**: scores tiles by military danger → channel for combat.
+  Updated every step.
+- **Economic value network**: evaluates production potential → channel for build.
+  Updated per turn.
+
+Each specialist's output becomes an input channel to the main policy.
+The main network doesn't need to learn these heuristics from scratch — it
+just reads pre-digested assessments. This is essentially learned feature engineering.
+
+**Key insight**: On large maps, the interesting information is sparse and multi-scale.
+Specialist networks handle different spatial scales and timescales, keeping the
+main policy network focused on decision-making rather than feature extraction.
 
 ### C3: Tech Tree
 
-Research unlocks new units and buildings. Adds another strategic dimension:
-invest in science → better units later vs build army now.
+Research unlocks new units and buildings. Another strategic dimension.
 
 ---
 
 ## Parked: Multi-Step Lookahead / Planning (Model-Based RL)
 
-**Status**: Parked for future exploration. Worth studying, not worth implementing yet.
+**Status**: Parked. See previous version of this doc for full analysis.
 
-**The idea**: Instead of just evaluating the current state (model-free), simulate future
-game states and pick the action sequence with the best expected outcome. This is what
-AlphaGo/AlphaZero does with Monte Carlo Tree Search (MCTS) — play out many hypothetical
-futures and choose the move that leads to the best ones.
-
-**Model-free vs model-based RL — key distinction**:
-- **Model-free** (what we do now): The agent learns Q(s, a) directly from experience.
-  It doesn't know *how* the game works — it just learns "in this situation, this action
-  tends to give good rewards." DQN, policy gradient, A2C/A3C are all model-free.
-- **Model-based**: The agent has (or learns) a *model of the environment* — given state s
-  and action a, it can predict the next state s'. This lets it *plan ahead* by simulating
-  future trajectories without actually playing them. MCTS, Dyna-Q, MuZero, and World Models
-  are model-based approaches.
-
-**Why it's interesting for Civulator**:
-- Strategy games are inherently about planning multiple turns ahead
-- We *have* a perfect environment model (the game code itself) — no need to learn one
-- Could use the game simulator as a forward model for MCTS-style search
-- Even shallow lookahead (2-3 turns) could dramatically improve tactical play
-
-**Why we're parking it**:
-- Expensive: each lookahead step runs the full game simulation for each candidate action
-- With branching factor ~33 (n*m+1 selections × n*m moves), even 2-step lookahead is
-  33^2 ≈ 1000 simulations per decision. At 4 decisions per turn, that's 4000 simulations.
-- Multi-agent complication: opponent's moves are unknown, need to model or assume them
-- Our model-free DQN hasn't been fully optimized yet — get more from simpler improvements first
-- The architecture would fundamentally change (hybrid model-free + model-based, or pure MCTS)
-
-**When to revisit**:
-- After we've exhausted model-free improvements and hit a performance ceiling
-- If we want the agent to exhibit genuine strategic planning (sacrificing a unit now for
-  positional advantage 5 turns later)
-- If we implement AlphaZero-style self-play (MCTS + neural network policy/value)
-
-**Further reading topics**:
-- Monte Carlo Tree Search (MCTS) — the planning algorithm
-- AlphaGo / AlphaZero — MCTS + deep learning for perfect-information games
-- MuZero — learned environment model (doesn't need game rules, learns to predict)
-- Dyna-Q — hybrid: model-free Q-learning + model-based simulated experience
-- World Models (Ha & Schmidhuber) — learn a compressed environment model in latent space
+Key points:
+- We have a perfect environment model (the game code itself)
+- Even 2-step lookahead is ~1000 simulations per decision (branching factor ~33)
+- Revisit after model-free improvements plateau
+- Relevant approaches: MCTS, AlphaZero, MuZero, Dyna-Q
 
 ---
 
 ## Completed
 
-### Tournament (v0.3.0)
-- 4 model sizes × 500 episodes, round-robin
-- Result: Large (958k) 31% > XL 29% > Small 28% > Medium 22%
-- Conclusion: model size doesn't matter much yet — game too simple
-- Recommendation: use Small for rapid iteration
+### v0.4.0 (2026-03-05)
+- City economy (food, production, population, tile working)
+- Build agent (separate DQN for city production decisions)
+- FullyConvNetwork (map-size independent, shared backbone)
+- All unit types active via build agent
+- Ranged combat (Archer, Catapult)
+- Settlers and Granary in build options
 
-### State Space Redesign (v0.3.1)
-- EnhancedStateEncoder: 25 channels with unit class one-hot, stats, terrain, cities
-- Relationship-based team encoding (own/enemy, extensible to own/ally/neutral/enemy)
-- Auto-detection in mask functions (d==25 → enhanced, else basic)
-- `--encoder enhanced` flag in train.py
+### v0.3.0-v0.3.1
+- Tournament: 4 model sizes, Large won. Model size doesn't matter on simple game.
+- EnhancedStateEncoder: 25 channels with unit class one-hot, stats, terrain
+- Bug fixes: attack consumes all MP, fortification/healing per-turn, unit spawn stacking
 
-### Bug Fixes (v0.3.1)
-- Attack consumes all movement points (was only on kill)
-- Fortification/healing per-turn via `has_acted` flag (was per-step)
-- Removed double `end_turn()` in `_check_game_end()`
-- Unit spawning: try center → adjacent → defer (was stacking on city tile)
+### v0.2.0
+- DQN fix (removed softmax, proper Bellman targets)
+- Pathfinder fix (adjacent move bypass)
+- 72% invalid actions → working agent
+
+### v0.1.0
+- Package refactoring from monolithic code
+- StateEncoder abstraction
+- CUDA support
 
 ---
 
@@ -359,3 +237,12 @@ For every change:
 3. Run head-to-head tournament (changed vs unchanged)
 4. Document results in CHANGELOG.md
 5. Keep the change only if it improves performance (or is neutral but simplifies)
+
+---
+
+## TODO (Immediate)
+
+1. **Add build order tracking** to trainer.py — track 1st/2nd/nth build per episode, aggregate, plot
+2. **Run shared vs separate backbone tournament** — compare FullyConvNetwork vs FullyConvSeparateNetwork
+3. **Verify settlers** — check if agents actually build and use settlers (needs build tracking)
+4. **Update CHANGELOG.md** with v0.4.0 entry

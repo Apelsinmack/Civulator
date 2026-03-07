@@ -8,6 +8,7 @@ from .networks import (
     SelectAndMoveNetwork,
     SharedBackboneNetwork,
     FullyConvNetwork,
+    FullyConvSeparateNetwork,
     get_valid_select_mask,
     adjust_mask_for_end_turn,
     get_valid_moves_mask,
@@ -36,7 +37,7 @@ class DQNAgent:
 
     def __init__(self, n, m, d, memory, gamma=0.9, learning_rate=0.001,
                  conv_channels=(16, 32), fc_hidden=None, shared_backbone=False,
-                 encoder="basic", fully_conv=False):
+                 encoder="basic", fully_conv=False, separate_backbone=False):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print(f"Using device: {self.device}")
         self.n = n
@@ -44,7 +45,11 @@ class DQNAgent:
         self.d = d
         self.gamma = gamma
         self.memory = memory
-        if fully_conv:
+        if fully_conv and separate_backbone:
+            self.network = FullyConvSeparateNetwork(
+                d, conv_channels=conv_channels
+            ).to(self.device)
+        elif fully_conv:
             self.network = FullyConvNetwork(
                 d, conv_channels=conv_channels
             ).to(self.device)

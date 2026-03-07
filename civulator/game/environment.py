@@ -227,7 +227,14 @@ class GameEnvironment:
 
         if target_killed:
             reward += 10
-            self.delete_unit(defender)
+            # Capture civilian units (Settler, Worker) instead of killing them
+            if defender.unit_type in ("Settler", "Worker") and not attacker_killed:
+                defender.player.remove_unit(defender)
+                defender.player = self.current_player
+                self.current_player.units.append(defender)
+                reward += 15  # Bonus for capturing a civilian
+            else:
+                self.delete_unit(defender)
             # Only melee attackers move into the vacated tile
             if not is_ranged and not attacker_killed:
                 self.move_unit(attacker, defender.coordinates)
