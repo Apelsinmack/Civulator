@@ -407,3 +407,6 @@ python/version3\ multiple\ agents/weights/
 # Training artifacts
 weights/
 stats/
+
+# Claude Code local settings
+.claude/

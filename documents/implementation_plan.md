@@ -1,3 +1,5 @@
+Comment added by erik: I wonder if builders and settlers can share tile with military units, they are supposed to, perhaps we need to increase complexity of the state space or the way we give orders to solve this, and perhaps there is a way to circumvent it, we'll see. 
+
 # Civulator — Implementation Plan
 
 > **Created**: 2026-03-04

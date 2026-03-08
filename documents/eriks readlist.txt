@@ -1,0 +1,116 @@
+ PPO — Let me explain it
+
+  I think explaining it now is the right call, because PPO is conceptually quite different from DQN and
+  understanding why it's different will teach you a lot about RL more broadly. Then you can read papers with the
+  right mental model.
+
+  The fundamental split in RL:
+
+  There are two families of algorithms, and DQN and PPO sit on opposite sides:
+
+  ┌─────────────────────┬─────────────────────────────────────┬──────────────────────────────────────────────┐
+  │                     │          Value-based (DQN)          │              Policy-based (PPO)              │
+  ├─────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ What the network    │ Q-values ("how good is each         │ Probabilities ("how likely should I pick     │
+  │ outputs             │ action")                            │ each action")                                │
+  ├─────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ How it picks        │ Take the action with highest        │ Sample from the probability distribution     │
+  │ actions             │ Q-value                             │                                              │
+  ├─────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ How it learns       │ Minimize TD error (predicted Q vs   │ Directly adjust probabilities to make good   │
+  │                     │ actual return)                      │ actions more likely                          │
+  ├─────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ Exploration         │ Epsilon-greedy (random with         │ Built-in — the probability distribution      │
+  │                     │ probability epsilon)                │ naturally explores                           │
+  ├─────────────────────┼─────────────────────────────────────┼──────────────────────────────────────────────┤
+  │ Replay buffer       │ Yes (off-policy — learns from old   │ No (on-policy — only learns from fresh       │
+  │                     │ experience)                         │ experience)                                  │
+  └─────────────────────┴─────────────────────────────────────┴──────────────────────────────────────────────┘
+
+  DQN asks: "What is each action worth?" and then picks the best one.
+  PPO asks: "What should I do?" directly.
+
+  The policy gradient idea (PPO's foundation)
+
+  The core insight: if you take an action and it leads to a good outcome (high return), increase the probability
+  of that action. If it leads to a bad outcome, decrease it.
+
+  Mathematically, the simplest version (REINFORCE) is:
+
+  loss = -log(pi(a|s)) * R
+
+  Where pi(a|s) is the probability your network assigned to the action you took, and R is the return you got. This
+   pushes probabilities toward actions that got good returns.
+
+  Problem: this is very noisy. One lucky outcome and the network overreacts.
+
+  What PPO adds
+
+  PPO has two key improvements over vanilla policy gradient:
+
+  1. Advantage instead of raw return
+
+  Instead of "did I get a high return?", ask "did I get a higher return than expected?"
+
+  A(s, a) = actual_return - V(s)    # the advantage
+
+  This is where the critic comes in — a separate network (or head) that estimates V(s), the expected return from
+  this state. Sound familiar? It's the same V(s) from the dueling architecture discussion. PPO is an actor-critic
+  method:
+  - Actor: the policy network (outputs action probabilities)
+  - Critic: the value network (outputs V(s))
+
+  If A > 0: this action was better than expected → increase its probability.
+  If A < 0: this action was worse than expected → decrease its probability.
+
+  2. Clipping (the "Proximal" part)
+
+  The other problem: if you update the policy too aggressively, it can collapse — suddenly putting 99% probability
+   on one action and never recovering. PPO clips the update:
+
+  ratio = pi_new(a|s) / pi_old(a|s)    # how much did the policy change?
+  clipped_ratio = clip(ratio, 1-eps, 1+eps)   # typically eps=0.2
+  loss = -min(ratio * A, clipped_ratio * A)
+
+  This says: "update the policy, but don't let it change by more than 20% in one step." It's a trust region — stay
+   close to what worked before.
+
+  Why PPO matters for Civulator
+
+  1. Self-play is more natural — PPO always trains on fresh games against the current opponent. DQN's replay
+  buffer contains old games against old versions of the opponent, which can be stale and misleading.
+  2. No replay buffer complexity — no PER, no n-step buffer management, no pending transitions for multi-agent
+  turns. You play a batch of games, learn from them, throw them away.
+  3. Stable out of the box — the clipping mechanism means you don't need to carefully tune learning rates and
+  target network update frequencies.
+  4. Industry standard — OpenAI Five (Dota 2), most robotics RL, most game AI uses PPO. If you're aiming to become
+   one of the best AI producers, PPO fluency is essential.
+
+  What I'd recommend for learning
+
+  Read in this order:
+
+  1. Spinning Up in Deep RL (OpenAI) — spinningup.openai.com. Free, excellent, covers the conceptual progression
+  from REINFORCE → Actor-Critic → PPO. Written for exactly your level. Start with "Part 1: Key Concepts" and work
+  through to the PPO page.
+  2. The PPO paper itself — Schulman et al., arXiv:1707.06347. It's only 12 pages and unusually readable for an RL
+   paper. Read it after Spinning Up so you have the context.
+  3. "The 37 Implementation Details of PPO" — blog post by Costa Huang (2022). When you're ready to implement,
+  this covers every practical detail that the paper glosses over.
+  4. Stable-Baselines3 source code — the PPO implementation is clean and well-commented. Reading it after the
+  above will solidify everything.
+
+  Regarding league training and PBT
+
+  You're right that you can do it at small scale to learn the mechanics. Even running 3-4 agents on your RTX 3070
+  would teach you the concepts. I'd suggest this progression:
+
+  1. First get basic self-play working with DQN (opponent pool, as described in the doc)
+  2. Then implement PPO (major learning milestone)
+  3. Then try PPO + self-play
+  4. Then try a small population (4-6 agents) with different reward profiles (your
+  aggressive/defensive/expansionist personalities)
+  5. Then add PBT mechanics (hyperparameter mutation between agents)
+
+  Each step builds on the previous and teaches you a new concept. The goal isn't to match DeepMind's compute —
+  it's to understand every piece of the machinery.
