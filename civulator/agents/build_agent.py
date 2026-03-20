@@ -192,24 +192,28 @@ class BuildAgent:
                 q[mask == 0] = float('-inf')
                 action = q.argmax().item()
 
-        # Store pending transition
-        self.pending.append((build_state, action))
+        # Store pending transition with the city that made the decision
+        self.pending.append((build_state, action, city))
         return action
 
-    def complete_pending(self, reward, next_combat_state, next_city, game_env, done):
-        """Complete pending transitions with the reward from this turn."""
+    def complete_pending(self, reward, next_combat_state, game_env, done):
+        """Complete pending transitions with the reward from this turn.
+
+        Each pending transition remembers which city made the decision,
+        so multi-city states are handled correctly.
+        """
         if not self.pending:
             return
 
-        if next_city is not None and not done:
-            next_build_state = encode_build_state(
-                next_combat_state, next_city, game_env
-            )
-        else:
-            # Terminal or city lost — use zero state
-            next_build_state = self.pending[0][0].clone().zero_()
+        for build_state, action, city in self.pending:
+            # Check if this city still exists
+            if not done and city in game_env.current_player.cities:
+                next_build_state = encode_build_state(
+                    next_combat_state, city, game_env
+                )
+            else:
+                next_build_state = build_state.clone().zero_()
 
-        for build_state, action in self.pending:
             self.memory.push(build_state, action, reward, next_build_state, done)
 
         self.pending = []

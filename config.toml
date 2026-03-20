@@ -88,7 +88,8 @@ learning_rate = 0.001
 gamma = 0.9
 epsilon_start = 1.0
 epsilon_end = 0.05
-epsilon_decay_episodes = 50000
+epsilon_decay_episodes = 5000
+target_update_freq = 100 # Sync target network every N optimization steps
 encoder = "enhanced"     # "basic" (5ch) or "enhanced" (25ch)
 fully_conv = false
 

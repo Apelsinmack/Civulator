@@ -1,9 +1,11 @@
 """DQN Agent with Select-and-Move action architecture."""
 
+import copy
 import random
 
 import torch
 
+from ..config import CFG
 from .networks import (
     SelectAndMoveNetwork,
     SharedBackboneNetwork,
@@ -69,6 +71,28 @@ class DQNAgent:
             self.state_encoder = EnhancedStateEncoder()
         else:
             self.state_encoder = BasicStateEncoder()
+
+        # Target network — frozen copy updated every target_update_freq optimizations
+        self.target_network = copy.deepcopy(self.network).to(self.device)
+        self.target_network.eval()
+        _tcfg = CFG.get("training", {})
+        self.target_update_freq = _tcfg.get("target_update_freq", 100)
+        self.optimize_count = 0
+
+        # Epsilon decay
+        self.epsilon_start = _tcfg.get("epsilon_start", 1.0)
+        self.epsilon_end = _tcfg.get("epsilon_end", 0.05)
+        self.epsilon_decay_episodes = _tcfg.get("epsilon_decay_episodes", 5000)
+        self.episode_count = 0
+
+    def get_epsilon(self):
+        """Current epsilon based on episode count (linear decay)."""
+        progress = min(1.0, self.episode_count / max(1, self.epsilon_decay_episodes))
+        return self.epsilon_start + (self.epsilon_end - self.epsilon_start) * progress
+
+    def on_episode_end(self):
+        """Call at the end of each episode to update epsilon decay counter."""
+        self.episode_count += 1
 
     def build_state_tensor(self, game_env):
         """Build a tensor representation using the agent's state encoder."""
@@ -204,13 +228,12 @@ class DQNAgent:
             + move_qvalues.gather(1, move_actions.unsqueeze(1))
         )
 
-        # Next state max Q-values (no gradient needed)
+        # Next state max Q-values from TARGET network (stable targets)
         with torch.no_grad():
-            next_select_qvalues, _ = self.network(next_state_batch)
-            # Best select action per sample
+            next_select_qvalues, _ = self.target_network(next_state_batch)
             best_select = next_select_qvalues.argmax(dim=1, keepdim=True)
 
-            _, next_move_qvalues = self.network(next_state_batch, best_select)
+            _, next_move_qvalues = self.target_network(next_state_batch, best_select)
             if next_move_qvalues is None:
                 next_move_qvalues = next_select_qvalues
 
@@ -221,8 +244,12 @@ class DQNAgent:
         return loss
 
     def optimize(self, batch_size):
-        """Run one optimization step."""
+        """Run one optimization step. Periodically syncs target network."""
         loss = self.compute_loss(batch_size)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+
+        self.optimize_count += 1
+        if self.optimize_count % self.target_update_freq == 0:
+            self.target_network.load_state_dict(self.network.state_dict())

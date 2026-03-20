@@ -76,11 +76,9 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
 
                 # Complete pending build transitions from last turn
                 if build_agent.pending:
-                    cities = env.current_player.cities
-                    first_city = cities[0] if cities else None
                     build_agent.complete_pending(
                         turn_reward_accum[current_player_index],
-                        combat_state, first_city, env, done
+                        combat_state, env, done
                     )
                     turn_reward_accum[current_player_index] = 0.0
 
@@ -105,7 +103,8 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
             state = next_state
             last_state_by_agent[current_player_index] = state
 
-            action = current_agent.select_action(state, epsilon=0.3, game_env=env)
+            epsilon = current_agent.get_epsilon()
+            action = current_agent.select_action(state, epsilon=epsilon, game_env=env)
             last_action_by_agent[current_player_index] = action
 
             # Decode slot-aware action to coordinates
@@ -175,11 +174,13 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
             for i, build_agent in enumerate(build_agents):
                 if build_agent.pending:
                     dummy_state = agents[i].build_state_tensor(env)
-                    cities = env.players[i].cities
-                    first_city = cities[0] if cities else None
                     build_agent.complete_pending(
-                        turn_reward_accum[i], dummy_state, first_city, env, True
+                        turn_reward_accum[i], dummy_state, env, True
                     )
+
+        # Update epsilon decay counters
+        for agent in agents:
+            agent.on_episode_end()
 
         # Determine winner
         winner = determine_winner(env)
