@@ -36,22 +36,35 @@ class Map:
         self.rivers = set()
 
     def generate_map(self, map_type="basic"):
-        """Generate a map with random terrain."""
-        terrain_types = [
-            "Plains", "Grassland", "Desert", "Tundra",
-            "Hills", "Woods", "Mountain",
-        ]
-        weights = [0.3, 0.3, 0.1, 0.1, 0.1, 0.05, 0.05]
+        """Generate a map with random terrain. Weights from config.toml."""
+        from ..config import CFG
+
+        cfg_weights = CFG.get("map", {}).get("terrain_weights", {})
+        cfg_features = CFG.get("map", {}).get("features", {})
+
+        if cfg_weights:
+            terrain_types = list(cfg_weights.keys())
+            raw_weights = [cfg_weights[t] for t in terrain_types]
+            total = sum(raw_weights)
+            weights = [w / total for w in raw_weights]
+        else:
+            terrain_types = [
+                "Plains", "Grassland", "Desert", "Tundra",
+                "Hills", "Woods", "Mountain",
+            ]
+            weights = [0.3, 0.3, 0.1, 0.1, 0.1, 0.05, 0.05]
+
+        woods_chance = cfg_features.get("woods_chance", 0.2)
+        rainforest_chance = cfg_features.get("rainforest_chance", 0.1)
 
         for i in range(self.n):
             for j in range(self.m):
                 terrain = np.random.choice(terrain_types, p=weights)
                 self.tiles[i, j] = Tile(i, j, terrain)
 
-                # Randomly add features
-                if terrain in ["Plains", "Grassland", "Tundra"] and random.random() < 0.2:
+                if terrain in ["Plains", "Grassland", "Tundra"] and random.random() < woods_chance:
                     self.tiles[i, j].add_feature("Woods")
-                elif terrain in ["Plains", "Grassland"] and random.random() < 0.1:
+                elif terrain in ["Plains", "Grassland"] and random.random() < rainforest_chance:
                     self.tiles[i, j].add_feature("Rainforest")
 
     def add_river(self, tile1_coords, tile2_coords):
@@ -214,12 +227,26 @@ class Map:
 
         return []  # No path found
 
+    def get_vision_range(self, coordinates):
+        """Get how far a unit at these coordinates can see.
+
+        Base range is 2 tiles. Vantage level adds extra range.
+        Configured via terrain.los in config.toml.
+        """
+        tile = self.get_tile(coordinates)
+        if tile is None:
+            return 0
+        los = Terrain.LOS.get(tile.terrain_type, [0, 0])
+        vantage = los[1]
+        return 2 + vantage  # Base sight range + vantage bonus
+
     def check_line_of_sight(self, from_coords, to_coords):
         """Check if there's a clear line of sight between two coordinates.
 
-        Currently simple: mountains block, everything else is transparent.
-        TODO: Implement elevation-based LoS (hills see over plains, etc.)
-        using config-driven obstacle/vantage levels.
+        Uses obstacle_level and vantage_level from Terrain.LOS (config.toml).
+        - Adjacent tiles are always visible.
+        - Standing on high ground (vantage > 0) lets you see over low obstacles.
+        - An obstacle blocks if its obstacle_level > observer's vantage_level.
         """
         from_tile = self.get_tile(from_coords)
         to_tile = self.get_tile(to_coords)
@@ -227,20 +254,81 @@ class Map:
         if not from_tile or not to_tile:
             return False
 
-        # Can't see from or to a mountain
-        if from_tile.terrain_type == "Mountain" or to_tile.terrain_type == "Mountain":
+        # Can't see from impassable terrain (mountains)
+        from_los = Terrain.LOS.get(from_tile.terrain_type, [0, 0])
+        if Terrain.MOVEMENT_COSTS.get(from_tile.terrain_type, 1) >= 999:
             return False
 
-        # For adjacent tiles, always visible
-        if self.distance_function(from_coords, to_coords) <= 1:
+        # Adjacent tiles: always visible
+        dist = self.distance_function(from_coords, to_coords)
+        if dist <= 1:
             return True
 
-        # Check intermediate tiles along a straight line
-        # Use the A* path as approximation for now
-        path = self.path_finder(np.array(from_coords), np.array(to_coords))
-        for coord in path[:-1]:  # Don't check the destination itself
-            tile = self.get_tile(tuple(coord))
-            if tile and tile.terrain_type == "Mountain":
+        # Beyond vision range?
+        vision_range = self.get_vision_range(from_coords)
+        if dist > vision_range:
+            return False
+
+        observer_vantage = from_los[1]
+
+        # Check intermediate tiles — use hex line drawing
+        path = self._hex_line(from_coords, to_coords)
+        for coord in path[1:-1]:  # Skip start and end
+            tile = self.get_tile(coord)
+            if tile is None:
+                return False
+            obstacle = Terrain.LOS.get(tile.terrain_type, [0, 0])[0]
+            if obstacle > observer_vantage:
                 return False
 
         return True
+
+    def _hex_line(self, p1, p2):
+        """Draw an approximate line between two hex tiles.
+
+        Returns list of (row, col) coordinates from p1 to p2 inclusive.
+        Uses linear interpolation in axial coordinates.
+        """
+        dist = self.distance_function(p1, p2)
+        if dist == 0:
+            return [p1]
+
+        # Handle cylindrical wrapping for interpolation
+        dq = p2[1] - p1[1]
+        dq_wrapped = dq - self.m if dq > 0 else dq + self.m
+        if abs(dq_wrapped) < abs(dq):
+            dq = dq_wrapped
+
+        dr = p2[0] - p1[0]
+
+        points = []
+        for i in range(dist + 1):
+            t = i / dist
+            q = p1[1] + dq * t
+            r = p1[0] + dr * t
+            # Round to nearest hex
+            rq = round(q)
+            rr = round(r)
+            points.append((rr, int(rq) % self.m))
+
+        return points
+
+    def get_visible_tiles(self, coordinates):
+        """Get all tiles visible from a position. Returns list of (row, col)."""
+        vision_range = self.get_vision_range(coordinates)
+        visible = []
+        row, col = coordinates
+
+        # Check all tiles within vision range
+        for dr in range(-vision_range, vision_range + 1):
+            for dq in range(-vision_range, vision_range + 1):
+                r = row + dr
+                q = (col + dq) % self.m
+                if r < 0 or r >= self.n:
+                    continue
+                target = (r, q)
+                if self.distance_function(coordinates, target) <= vision_range:
+                    if self.check_line_of_sight(coordinates, target):
+                        visible.append(target)
+
+        return visible

@@ -1,4 +1,7 @@
-"""Entry point for training Civulator agents."""
+"""Entry point for training Civulator agents.
+
+Training parameters default to config.toml values, overridden by CLI args.
+"""
 
 import os
 import re
@@ -12,10 +15,16 @@ import torch
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from civulator.config import CFG
 from civulator.game import GameEnvironment
 from civulator.agents import DQNAgent, BuildAgent, BasicStateEncoder, EnhancedStateEncoder
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.training import train_agents
+
+# Defaults from config.toml
+_tcfg = CFG.get("training", {})
+_mcfg = CFG.get("map", {})
+_gcfg = CFG.get("game", {})
 
 
 def set_random_seeds(seed=42):
@@ -44,9 +53,10 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
     """
     set_random_seeds()
 
-    # Environment setup
-    n, m = 4, 8
-    number_of_players = 2
+    # Environment setup — from config.toml
+    n = _mcfg.get("rows", 4)
+    m = _mcfg.get("columns", 8)
+    number_of_players = _gcfg.get("num_players", 2)
 
     # Get depth from encoder
     if encoder == "enhanced":
@@ -125,11 +135,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train Civulator DQN agents")
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     parser.add_argument("--episode", type=int, help="Specific checkpoint episode to load")
-    parser.add_argument("--episodes", type=int, default=64, help="Number of episodes")
-    parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
-    parser.add_argument("--max-turns", type=int, default=250, help="Max turns per game")
+    parser.add_argument("--episodes", type=int, default=_tcfg.get("episodes", 64),
+                        help="Number of episodes")
+    parser.add_argument("--batch-size", type=int, default=_tcfg.get("batch_size", 32),
+                        help="Batch size")
+    parser.add_argument("--max-turns", type=int, default=_tcfg.get("max_turns", 250),
+                        help="Max turns per game")
     parser.add_argument("--debug", action="store_true", help="Enable debug output")
-    parser.add_argument("--encoder", choices=["basic", "enhanced"], default="basic",
+    parser.add_argument("--encoder", choices=["basic", "enhanced"],
+                        default=_tcfg.get("encoder", "enhanced"),
                         help="State encoder type")
     parser.add_argument("--fully-conv", action="store_true",
                         help="Use fully convolutional network (map-size independent)")

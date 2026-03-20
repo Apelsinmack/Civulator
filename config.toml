@@ -89,7 +89,7 @@ gamma = 0.9
 epsilon_start = 1.0
 epsilon_end = 0.05
 epsilon_decay_episodes = 50000
-encoder = "basic"        # "basic" (5ch) or "enhanced" (25ch)
+encoder = "enhanced"     # "basic" (5ch) or "enhanced" (25ch)
 fully_conv = false
 
 [training.rewards]
