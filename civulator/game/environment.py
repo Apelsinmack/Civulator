@@ -72,8 +72,9 @@ class GameEnvironment:
                 player.technologies = []
                 player.policies = []
 
-        # Calculate starting locations
+        # Calculate starting locations and randomize assignment
         starting_locations = self._calculate_starting_locations()
+        random.shuffle(starting_locations)
 
         # Place starting units and cities
         for i, player in enumerate(self.players):
