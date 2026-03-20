@@ -8,28 +8,56 @@ _Created: 2026-03-18_
 
 ---
 
-## 1. C++ Performance Module (via pybind11 or ctypes)
+## 1. C++ Performance Module (pybind11) — LOCKED IN
 
-The game simulation is the training bottleneck. Key candidates for C++ extraction:
+_Decisions locked: 2026-03-20_
 
-### High Priority
-- **A* Pathfinding** — currently greedy and terrain-unaware. Needs rewrite anyway (known issue).
-  Writing it in C++ from scratch makes sense: hex grid A* with terrain costs, obstacle avoidance,
-  cylindrical wrap. This is the single biggest win — pathfinding runs every unit every turn.
-- **State Encoding** — `EnhancedStateEncoder` builds 25-channel tensors from game state every step.
-  A C++ encoder writing directly into a NumPy buffer would eliminate Python overhead in the
-  innermost training loop.
+### Coordinate System: Axial (q, r) — DECIDED
 
-### Medium Priority
-- **Combat Resolution** — damage formula + health updates. Small function but called frequently.
-- **Hex Adjacency / Map Queries** — `get_neighbors()`, `get_tiles_in_range()`, distance calculations.
-  These are called constantly by pathfinding, combat, and state encoding.
+We use **axial hex coordinates** as the canonical representation everywhere (Python + C++).
+This replaces the current offset (even/odd row) system.
 
-### Approach
-- Use **pybind11** to expose C++ functions as a Python module (e.g., `civulator_core`)
-- Keep the game logic authoritative in Python; C++ module accelerates hot paths
-- Benchmark before/after — target: 10x+ speedup on episodes/second
-- This enables training on larger maps (16x32, 32x64) which is currently impractical
+**Why axial wins:**
+- Distance = `max(|dq|, |dr|, |dq + dr|)` — one subtraction, no branching
+- Adjacency = same 6 direction vectors for ALL tiles, no even/odd logic
+- Fully numpy-vectorizable: all neighbors of N hexes in one broadcast
+- Cleaner C++ implementation
+
+**Tradeoff accepted:** The 2D array is "skewed" — convolution filters see a parallelogram,
+not a rectangle. We accept this for now (corner weights are low-importance anyway).
+Hex-native convolutions are a separate future investigation.
+
+**Cylindrical wrapping:** Only horizontal (q-axis). For A*, compare direct distance vs.
+wrapped distance `|b - (a - map_width)|` and use the shorter one. A* sees the wrapped
+neighbor as just another edge.
+
+### Implementation Plan (mirrors Breach's architecture)
+
+**Step 0: Profile** — run one training session with cProfile. Confirm pathfinding is the
+bottleneck. Measure episodes/sec baseline.
+
+**Step 1: Create `civulator/cpp/` module**
+```
+civulator/cpp/
+├── CMakeLists.txt          # pybind11, C++17, same flags as Breach
+└── src/
+    ├── hex_grid.h          # Axial coords, distance, adjacency, wrapping
+    ├── hex_astar.cpp       # A* with terrain costs + cylindrical wrap
+    └── bindings.cpp        # Python interface
+```
+- Zero-copy numpy arrays (same `Grid2D<T>` pattern as Breach)
+- Graceful fallback: `try: import civulator_core` → pure Python fallback
+
+**Step 2: A* pathfinding in C++**
+- Axial coordinates internally
+- Terrain cost table passed from Python
+- Cylindrical wrapping in neighbor generation
+- Returns path as list of (q, r) tuples
+
+### Further C++ candidates (after A* works)
+- **State Encoding** — build 25-channel tensor in C++, write directly into numpy buffer
+- **Combat Resolution** — damage formula + health updates
+- **Hex Adjacency / Map Queries** — `get_neighbors()`, `get_tiles_in_range()`
 
 ---
 
@@ -99,3 +127,53 @@ Both projects benefit from a shared C++ skills base and eventually shared AI arc
 
 _This doc complements the existing plans in `documents/`. The ML roadmap there is comprehensive —
 this file focuses on the C++ integration angle and prioritizes what to do next._
+
+---
+
+## 5. Egregore Integration — Concept Nodes for Cross-Project Transfer
+
+_Added: 2026-03-20_
+
+### The Idea
+
+As we implement ML/RL techniques in Civulator, we capture each solved problem as an
+**egregore concept node** — not a project-level link, but a *technique-level* knowledge
+unit that lives between projects and is reusable in new contexts.
+
+### Why
+
+Civulator and Breach share fundamental challenges (hex/grid state encoding, action spaces,
+reward shaping, neural network AI) but in different domains. The lessons from solving these
+in Civulator should be directly transferable to Breach — but only if we capture the
+*principle*, not just the code.
+
+This is the core use case egregore was built for: building a lifetime of transferable
+experience across projects.
+
+### Workflow
+
+1. **Implement a technique in Civulator** (e.g., target network, hex state encoding)
+2. **Validate it works** — training curves, before/after comparison
+3. **Create an egregore concept node** capturing:
+   - The problem it solves (domain-agnostic description)
+   - The approach and why it works
+   - Reference to the specific Civulator code (file + function)
+   - Notes on how to adapt it to other domains (e.g., Breach's tactical grid)
+4. **When returning to Breach**, egregore surfaces relevant concept nodes
+
+### Planned Concept Nodes (created as each technique is implemented)
+
+| Concept | Created after | Transferable to |
+|---------|--------------|-----------------|
+| `hex_grid_state_encoding` | State encoder refactor | Breach grid AI |
+| `action_masking_variable_spaces` | Select-and-move fix | Breach unit actions |
+| `reward_shaping_sparse_games` | Reward experiments | Breach mission AI |
+| `target_network_stabilization` | Target network impl | Any RL project |
+| `self_play_opponent_pool` | Self-play impl | Breach adversarial AI |
+| `cpp_pybind11_game_acceleration` | C++ module | Breach (already C++) |
+
+### What This Tests in Egregore
+
+This is the first real test of egregore's value: can concept nodes surface the right
+knowledge at the right time when switching between projects? Usage will be logged and
+reviewed to guide egregore's own development (representation, retrieval, usefulness).
