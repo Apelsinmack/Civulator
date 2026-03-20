@@ -133,6 +133,25 @@ def run_viewer():
         agents.append(agent)
         build_agents_list.append(BuildAgent(MAP_ROWS, MAP_COLS, d))
 
+    # Load trained weights if available
+    import glob
+    for i, agent in enumerate(agents):
+        pattern = f"weights/agent_{i}_episode_*.pth"
+        files = glob.glob(os.path.join(os.path.dirname(os.path.dirname(__file__)), pattern))
+        if files:
+            # Find highest episode
+            best = max(files, key=lambda f: int(f.split("episode_")[1].split(".")[0]))
+            try:
+                checkpoint = torch.load(best, map_location=agent.device, weights_only=True)
+                agent.network.load_state_dict(checkpoint["model_state_dict"])
+                agent.target_network.load_state_dict(checkpoint["model_state_dict"])
+                ep = best.split("episode_")[1].split(".")[0]
+                print(f"Agent {i}: loaded weights from episode {ep}")
+            except Exception as e:
+                print(f"Agent {i}: could not load weights ({e})")
+        else:
+            print(f"Agent {i}: no weights found, using random")
+
     done = False
     turn = 0
     last_player = -1
@@ -175,7 +194,7 @@ def run_viewer():
                     cs = agent.build_state_tensor(env)
                     for city in env.current_player.cities:
                         if city.current_production is None:
-                            idx = ba.select_build(cs, city, env, epsilon=0.5)
+                            idx = ba.select_build(cs, city, env, epsilon=0.1)
                             opt = BUILD_OPTIONS[idx]
                             if opt in City.BUILDING_COSTS:
                                 city.produce_building(opt)
@@ -184,7 +203,7 @@ def run_viewer():
                     last_player = pi
 
                 state = agent.build_state_tensor(env)
-                action = agent.select_action(state, epsilon=0.5, game_env=env)
+                action = agent.select_action(state, epsilon=0.1, game_env=env)
 
                 end_turn_idx = env.n * env.m * NUM_UNIT_SLOTS
                 if action[0] == end_turn_idx:

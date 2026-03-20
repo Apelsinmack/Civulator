@@ -6,6 +6,7 @@ Training parameters default to config.toml values, overridden by CLI args.
 import os
 import re
 import sys
+import time
 import argparse
 import random
 
@@ -67,18 +68,42 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
     env = GameEnvironment(n, m, number_of_players)
     env.max_turns = max_turns
 
-    # Create agents
-    memories = [ReplayMemory(10000) for _ in range(number_of_players)]
-    agents = [
-        DQNAgent(n, m, d, memories[i], learning_rate=0.001, encoder=encoder,
-                 fully_conv=fully_conv)
-        for i in range(number_of_players)
+    # --- Agent configurations (tournament mode for 8 players) ---
+    # Each agent has: name, conv_channels, learning_rate, epsilon schedule
+    AGENT_CONFIGS = [
+        {"name": "Small-Aggr",   "conv": (8, 16),  "lr": 0.001, "eps_end": 0.01, "eps_decay": 2000},
+        {"name": "Small-Patient","conv": (8, 16),  "lr": 0.001, "eps_end": 0.05, "eps_decay": 8000},
+        {"name": "Med-Aggr",     "conv": (16, 32), "lr": 0.001, "eps_end": 0.01, "eps_decay": 2000},
+        {"name": "Med-Patient",  "conv": (16, 32), "lr": 0.001, "eps_end": 0.05, "eps_decay": 8000},
+        {"name": "Large-Aggr",   "conv": (32, 64), "lr": 0.001, "eps_end": 0.01, "eps_decay": 2000},
+        {"name": "Large-Patient","conv": (32, 64), "lr": 0.001, "eps_end": 0.05, "eps_decay": 8000},
+        {"name": "Med-FastLR",   "conv": (16, 32), "lr": 0.003, "eps_end": 0.01, "eps_decay": 2000},
+        {"name": "Med-FastLR-P", "conv": (16, 32), "lr": 0.003, "eps_end": 0.05, "eps_decay": 8000},
     ]
 
-    # Create build agents
+    # Trim to actual number of players
+    configs = AGENT_CONFIGS[:number_of_players]
+
+    print("\n=== Tournament Configuration ===")
+    for i, cfg in enumerate(configs):
+        print(f"  P{i+1}: {cfg['name']} — conv={cfg['conv']}, lr={cfg['lr']}, "
+              f"eps={cfg['eps_end']} over {cfg['eps_decay']} episodes")
+    print()
+
+    # Create agents with per-player configs
+    agents = []
+    for i, cfg in enumerate(configs):
+        mem = ReplayMemory(10000)
+        agent = DQNAgent(n, m, d, mem, learning_rate=cfg["lr"], encoder=encoder,
+                         fully_conv=fully_conv, conv_channels=cfg["conv"])
+        agent.set_epsilon_schedule(1.0, cfg["eps_end"], cfg["eps_decay"])
+        agent.config_name = cfg["name"]  # Tag for reporting
+        agents.append(agent)
+
+    # Create build agents (same LR as combat agent)
     build_agents = [
-        BuildAgent(n, m, d, learning_rate=0.001)
-        for _ in range(number_of_players)
+        BuildAgent(n, m, d, learning_rate=configs[i]["lr"])
+        for i in range(number_of_players)
     ]
 
     # Load checkpoints if resuming
@@ -124,9 +149,34 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
     )
 
     print("\nTraining complete!")
-    print("Final win counts:")
-    for i, count in win_counts.items():
-        print(f"  Player {i+1}: {count} wins")
+    print("\n=== Tournament Results ===")
+    print(f"{'Player':<8} {'Config':<16} {'Wins':>5} {'Win%':>7}")
+    print("-" * 40)
+    total_games = sum(win_counts.values())
+    results = []
+    for i in range(number_of_players):
+        name = configs[i]["name"] if i < len(configs) else f"Agent {i}"
+        wins = win_counts.get(i, 0)
+        pct = 100 * wins / max(1, total_games)
+        print(f"  P{i+1:<5} {name:<16} {wins:>5} {pct:>6.1f}%")
+        results.append({"player": i+1, "config": name, "wins": wins, "pct": pct})
+
+    # Save tournament report
+    import json
+    report = {
+        "episodes": num_episodes,
+        "map_size": f"{n}x{m}",
+        "num_players": number_of_players,
+        "max_turns": max_turns,
+        "configs": configs,
+        "results": results,
+        "win_history": [int(w) for w in win_history],
+    }
+    report_path = os.path.join("stats", f"tournament_{int(time.time())}.json")
+    os.makedirs("stats", exist_ok=True)
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+    print(f"\nTournament report saved to {report_path}")
 
     return win_counts, win_history
 

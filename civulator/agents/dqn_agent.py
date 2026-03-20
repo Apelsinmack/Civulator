@@ -79,11 +79,17 @@ class DQNAgent:
         self.target_update_freq = _tcfg.get("target_update_freq", 100)
         self.optimize_count = 0
 
-        # Epsilon decay
+        # Epsilon decay — can be overridden per agent via set_epsilon_schedule()
         self.epsilon_start = _tcfg.get("epsilon_start", 1.0)
         self.epsilon_end = _tcfg.get("epsilon_end", 0.05)
         self.epsilon_decay_episodes = _tcfg.get("epsilon_decay_episodes", 5000)
         self.episode_count = 0
+
+    def set_epsilon_schedule(self, start, end, decay_episodes):
+        """Override the default epsilon schedule for this agent."""
+        self.epsilon_start = start
+        self.epsilon_end = end
+        self.epsilon_decay_episodes = decay_episodes
 
     def get_epsilon(self):
         """Current epsilon based on episode count (linear decay)."""
