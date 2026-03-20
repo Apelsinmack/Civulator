@@ -130,6 +130,45 @@ this file focuses on the C++ integration angle and prioritizes what to do next._
 
 ---
 
+## 6. Scaling & Gameplay Roadmap (2026-03-20)
+
+### Phase A — Today: 8-player combat on big map
+- [x] All training stability fixes (target network, epsilon decay, slot stacking)
+- [ ] Set up 24x48 map with 8 players, all at war (no diplomacy yet)
+- [ ] Launch training run — observe if agents learn meaningful behavior
+- [ ] Raylib replay viewer — minimal hex grid + colored dots for units
+  - Load game state snapshots, scrub through turns
+  - Reuse Breach raylib experience
+
+### Phase B — Next session: Buildings + War/Peace
+- [ ] Add Walls to build agent (BUILD_OPTIONS 7→8, +30 city defense)
+- [ ] War/Peace system — pairwise relationship matrix
+  - Default = peace, declare war = unilateral, peace = mutual (10-turn minimum)
+  - Units can only attack enemies at war
+  - New diplomacy network or extend build agent
+- [ ] Staged training: freeze combat weights → train build + diplomacy on top
+
+### Phase C — Science & Culture trees
+- [ ] Science tree (unlocks units/buildings):
+  - Archery → Archer
+  - Bronze Working → Spearman
+  - Horseback Riding → Horseman
+  - Siege → Battering Ram, Catapult
+  - Masonry → Walls
+- [ ] Districts: Encampment (military), Campus (science), Commercial Hub
+- [ ] Culture tree: policies, government types (autocracy/democracy)
+  - Adjacency combat bonus as early policy
+  - Traders unlocked via culture/commerce
+- [ ] Rivers as tactical features (movement cost + defense bonus)
+
+### Phase D — Full game
+- [ ] Great people (slot 3)
+- [ ] Full tech/civic trees
+- [ ] Trade routes between cities
+- [ ] Fog of war as state encoding channel (LoS system already implemented)
+
+---
+
 ## 5. Egregore Integration — Concept Nodes for Cross-Project Transfer
 
 _Added: 2026-03-20_

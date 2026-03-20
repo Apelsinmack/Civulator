@@ -1,0 +1,271 @@
+"""Live game viewer — watch agents play with raylib hex grid rendering."""
+
+import os
+import sys
+import math
+import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pyray as rl
+import numpy as np
+
+from civulator.config import CFG
+from civulator.game import GameEnvironment
+from civulator.game.terrain import Terrain
+from civulator.agents import DQNAgent, BuildAgent, BasicStateEncoder, EnhancedStateEncoder
+from civulator.agents.replay_memory import ReplayMemory
+from civulator.agents.build_agent import BUILD_OPTIONS
+from civulator.game.city import City
+from civulator.game.unit import NUM_UNIT_SLOTS
+
+# --- Config ---
+_mcfg = CFG.get("map", {})
+_gcfg = CFG.get("game", {})
+_tcfg = CFG.get("training", {})
+
+MAP_ROWS = _mcfg.get("rows", 24)
+MAP_COLS = _mcfg.get("columns", 48)
+NUM_PLAYERS = _gcfg.get("num_players", 8)
+MAX_TURNS = _gcfg.get("max_turns", 200)
+
+# Hex rendering
+HEX_SIZE = 12  # Outer radius of each hex
+SCREEN_W = 1600
+SCREEN_H = 900
+
+# Player colors (up to 8)
+PLAYER_COLORS = [
+    rl.Color(220, 50, 50, 255),    # Red
+    rl.Color(50, 100, 220, 255),   # Blue
+    rl.Color(50, 200, 50, 255),    # Green
+    rl.Color(220, 200, 50, 255),   # Yellow
+    rl.Color(200, 50, 200, 255),   # Purple
+    rl.Color(50, 200, 200, 255),   # Cyan
+    rl.Color(220, 130, 50, 255),   # Orange
+    rl.Color(180, 180, 180, 255),  # Gray
+]
+
+TERRAIN_COLORS = {
+    "Plains":      rl.Color(180, 200, 100, 255),
+    "Grassland":   rl.Color(100, 180, 80, 255),
+    "Desert":      rl.Color(220, 200, 140, 255),
+    "Tundra":      rl.Color(180, 200, 210, 255),
+    "Snow":        rl.Color(240, 240, 250, 255),
+    "Hills":       rl.Color(140, 160, 90, 255),
+    "Woods":       rl.Color(60, 120, 50, 255),
+    "Rainforest":  rl.Color(30, 100, 40, 255),
+    "Marsh":       rl.Color(100, 130, 100, 255),
+    "Floodplains": rl.Color(160, 190, 100, 255),
+    "Mountain":    rl.Color(120, 110, 100, 255),
+    "Ocean":       rl.Color(40, 80, 160, 255),
+    "Coast":       rl.Color(80, 140, 200, 255),
+    "Lake":        rl.Color(60, 120, 190, 255),
+}
+
+
+def hex_to_pixel(row, col, size):
+    """Convert axial hex (row, col) to pixel center, with offset for skewed grid."""
+    w = size * 2
+    h = size * math.sqrt(3)
+    x = col * w * 0.75 + size
+    y = row * h + (col % 2) * h * 0.5 + size
+    return x, y
+
+
+def draw_hex(cx, cy, size, color):
+    """Draw a filled hexagon at pixel center."""
+    points = []
+    for i in range(6):
+        angle = math.radians(60 * i)
+        px = cx + size * math.cos(angle)
+        py = cy + size * math.sin(angle)
+        points.append((px, py))
+
+    # Draw as triangles (fan from center)
+    for i in range(6):
+        j = (i + 1) % 6
+        rl.draw_triangle(
+            rl.Vector2(cx, cy),
+            rl.Vector2(points[i][0], points[i][1]),
+            rl.Vector2(points[j][0], points[j][1]),
+            color,
+        )
+
+
+def draw_hex_outline(cx, cy, size, color):
+    """Draw hex border."""
+    for i in range(6):
+        a1 = math.radians(60 * i)
+        a2 = math.radians(60 * (i + 1))
+        rl.draw_line(
+            int(cx + size * math.cos(a1)), int(cy + size * math.sin(a1)),
+            int(cx + size * math.cos(a2)), int(cy + size * math.sin(a2)),
+            color,
+        )
+
+
+def run_viewer():
+    """Run one game with live rendering."""
+    rl.init_window(SCREEN_W, SCREEN_H, b"Civulator - Live Viewer")
+    rl.set_target_fps(30)
+
+    # Camera for panning/zooming
+    camera = rl.Camera2D()
+    camera.target = rl.Vector2(MAP_COLS * HEX_SIZE * 0.75, MAP_ROWS * HEX_SIZE * 0.87)
+    camera.offset = rl.Vector2(SCREEN_W / 2, SCREEN_H / 2)
+    camera.rotation = 0.0
+    camera.zoom = 0.5
+
+    # Set up game
+    env = GameEnvironment(MAP_ROWS, MAP_COLS, NUM_PLAYERS)
+    env.max_turns = MAX_TURNS
+    env.reset()
+
+    encoder = _tcfg.get("encoder", "enhanced")
+    d = EnhancedStateEncoder().get_depth(NUM_PLAYERS) if encoder == "enhanced" else BasicStateEncoder().get_depth(NUM_PLAYERS)
+
+    agents = []
+    build_agents_list = []
+    for i in range(NUM_PLAYERS):
+        mem = ReplayMemory(1000)
+        agent = DQNAgent(MAP_ROWS, MAP_COLS, d, mem, encoder=encoder, fully_conv=True)
+        agents.append(agent)
+        build_agents_list.append(BuildAgent(MAP_ROWS, MAP_COLS, d))
+
+    done = False
+    turn = 0
+    last_player = -1
+    paused = False
+    speed = 1  # Actions per frame
+
+    while not rl.window_should_close():
+        # --- Input ---
+        if rl.is_key_pressed(rl.KEY_SPACE):
+            paused = not paused
+        if rl.is_key_pressed(rl.KEY_UP):
+            speed = min(speed * 2, 64)
+        if rl.is_key_pressed(rl.KEY_DOWN):
+            speed = max(speed // 2, 1)
+
+        # Zoom with scroll
+        wheel = rl.get_mouse_wheel_move()
+        if wheel != 0:
+            camera.zoom += wheel * 0.05
+            camera.zoom = max(0.1, min(camera.zoom, 3.0))
+
+        # Pan with right mouse
+        if rl.is_mouse_button_down(rl.MOUSE_BUTTON_RIGHT):
+            delta = rl.get_mouse_delta()
+            camera.target.x -= delta.x / camera.zoom
+            camera.target.y -= delta.y / camera.zoom
+
+        # --- Game step ---
+        if not done and not paused:
+            for _ in range(speed):
+                if done:
+                    break
+
+                pi = env.current_player.player_index
+                agent = agents[pi]
+
+                # Build decisions at turn boundary
+                if pi != last_player:
+                    ba = build_agents_list[pi]
+                    cs = agent.build_state_tensor(env)
+                    for city in env.current_player.cities:
+                        if city.current_production is None:
+                            idx = ba.select_build(cs, city, env, epsilon=0.5)
+                            opt = BUILD_OPTIONS[idx]
+                            if opt in City.BUILDING_COSTS:
+                                city.produce_building(opt)
+                            else:
+                                city.produce_unit(opt)
+                    last_player = pi
+
+                state = agent.build_state_tensor(env)
+                action = agent.select_action(state, epsilon=0.5, game_env=env)
+
+                end_turn_idx = env.n * env.m * NUM_UNIT_SLOTS
+                if action[0] == end_turn_idx:
+                    env.current_player.end_turn()
+                    env.next_turn()
+                    turn = env.turn_counter
+                else:
+                    tile_idx = action[0] // NUM_UNIT_SLOTS
+                    slot = action[0] % NUM_UNIT_SLOTS
+                    r, c = tile_idx // env.m, tile_idx % env.m
+                    mr, mc = action[1] // env.m, action[1] % env.m
+                    action_matrix = [np.array([r, c, slot]), np.array([mr, mc])]
+                    _, reward, done = env.step(action_matrix)
+
+        # --- Draw ---
+        rl.begin_drawing()
+        rl.clear_background(rl.Color(30, 30, 35, 255))
+        rl.begin_mode_2d(camera)
+
+        # Draw terrain
+        for row in range(MAP_ROWS):
+            for col in range(MAP_COLS):
+                tile = env.map.tiles[row, col]
+                if tile is None:
+                    continue
+                cx, cy = hex_to_pixel(row, col, HEX_SIZE)
+                color = TERRAIN_COLORS.get(tile.terrain_type, rl.GRAY)
+                draw_hex(cx, cy, HEX_SIZE - 1, color)
+                draw_hex_outline(cx, cy, HEX_SIZE, rl.Color(60, 60, 60, 100))
+
+        # Draw cities
+        for player in env.players:
+            if player.is_dead:
+                continue
+            pcolor = PLAYER_COLORS[player.player_index % len(PLAYER_COLORS)]
+            for city in player.cities:
+                cx, cy = hex_to_pixel(*city.coordinates, HEX_SIZE)
+                rl.draw_circle(int(cx), int(cy), HEX_SIZE * 0.7, pcolor)
+                rl.draw_circle_lines(int(cx), int(cy), HEX_SIZE * 0.7, rl.WHITE)
+
+        # Draw units
+        for player in env.players:
+            if player.is_dead:
+                continue
+            pcolor = PLAYER_COLORS[player.player_index % len(PLAYER_COLORS)]
+            for unit in player.units:
+                cx, cy = hex_to_pixel(*unit.coordinates, HEX_SIZE)
+                # Offset by slot to avoid overlap
+                offset_x = (unit.slot - 1.5) * 4
+                rl.draw_circle(int(cx + offset_x), int(cy), 3, pcolor)
+                # Health bar
+                hp_frac = unit.health / 100.0
+                bar_w = HEX_SIZE * 0.8
+                rl.draw_rectangle(int(cx - bar_w/2), int(cy - HEX_SIZE * 0.6),
+                                  int(bar_w * hp_frac), 2,
+                                  rl.Color(50, 220, 50, 200))
+
+        rl.end_mode_2d()
+
+        # HUD
+        rl.draw_text(f"Turn: {turn}".encode(), 10, 10, 20, rl.WHITE)
+        rl.draw_text(f"Speed: {speed}x".encode(), 10, 35, 16, rl.LIGHTGRAY)
+        status = b"PAUSED" if paused else (b"GAME OVER" if done else b"RUNNING")
+        rl.draw_text(status, 10, 55, 16, rl.YELLOW if paused else rl.WHITE)
+
+        # Player scoreboard
+        alive = [p for p in env.players if not p.is_dead]
+        for i, p in enumerate(env.players):
+            pcolor = PLAYER_COLORS[p.player_index % len(PLAYER_COLORS)]
+            y = 80 + i * 18
+            label = f"P{p.player_index+1}: {len(p.units)}u {len(p.cities)}c"
+            if p.is_dead:
+                label += " DEAD"
+            rl.draw_text(label.encode(), 10, y, 14, pcolor)
+
+        rl.draw_text(b"SPACE=pause  UP/DOWN=speed  SCROLL=zoom  RMOUSE=pan", 10, SCREEN_H - 25, 14, rl.DARKGRAY)
+
+        rl.end_drawing()
+
+    rl.close_window()
+
+
+if __name__ == "__main__":
+    run_viewer()

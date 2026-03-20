@@ -2,8 +2,8 @@
 # Hot-reloadable settings. Modify and restart training to apply.
 
 [map]
-rows = 4
-columns = 8
+rows = 24
+columns = 48
 type = "basic"           # "basic" = random terrain
 
 [map.terrain_weights]
@@ -75,7 +75,7 @@ Coast =      [0, 0]
 Lake =       [0, 0]
 
 [game]
-num_players = 2
+num_players = 8
 max_turns = 1000
 starting_warriors = 3
 min_city_distance = 3    # Minimum hex distance between cities
@@ -91,7 +91,7 @@ epsilon_end = 0.05
 epsilon_decay_episodes = 5000
 target_update_freq = 100 # Sync target network every N optimization steps
 encoder = "enhanced"     # "basic" (5ch) or "enhanced" (25ch)
-fully_conv = false
+fully_conv = true        # Must be true for large maps (no FC layers)
 
 [training.rewards]
 invalid_action = -1
