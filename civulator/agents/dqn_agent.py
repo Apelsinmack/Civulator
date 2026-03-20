@@ -15,6 +15,7 @@ from .networks import (
 )
 from .replay_memory import ReplayMemory, Transition
 from .state_encoders import BasicStateEncoder, EnhancedStateEncoder
+from ..game.unit import NUM_UNIT_SLOTS
 
 
 class DQNAgent:
@@ -85,39 +86,53 @@ class DQNAgent:
         state, action, reward = self.pending_transitions.pop(0)
         self.store_transition(state, action, reward, next_state, done)
 
-    def select_action(self, state, epsilon=0.1):
+    def select_action(self, state, epsilon=0.1, game_env=None):
         """Select an action using epsilon-greedy policy.
+
+        Args:
+            state: State tensor
+            epsilon: Exploration rate
+            game_env: GameEnvironment for precise masking (recommended)
 
         Returns:
             tuple: (selected_pos, move_pos) as integer indices
+                selected_pos: tile_index * NUM_SLOTS + slot, or n*m*NUM_SLOTS for end turn
+                move_pos: flat tile index
         """
         if random.random() < epsilon:
-            return self._random_action(state)
+            return self._random_action(state, game_env)
         else:
-            return self._greedy_action(state)
+            return self._greedy_action(state, game_env)
 
-    def _random_action(self, state):
+    def _end_turn_index(self):
+        return self.n * self.m * NUM_UNIT_SLOTS
+
+    def _random_action(self, state, game_env=None):
         """Select a random valid action."""
-        original_mask = get_valid_select_mask(state)
+        original_mask = get_valid_select_mask(state, game_env)
         adjusted_mask = adjust_mask_for_end_turn(original_mask)
         valid_positions = torch.where(adjusted_mask > 0)[0].tolist()
 
+        end_turn_idx = self._end_turn_index()
+
         if not valid_positions:
-            return (self.n * self.m, random.randint(0, self.n * self.m - 1))
+            return (end_turn_idx, random.randint(0, self.n * self.m - 1))
 
         selected_pos = random.choice(valid_positions)
 
-        if selected_pos == self.n * self.m:
+        if selected_pos == end_turn_idx:
             move_pos = random.randint(0, self.n * self.m - 1)
         else:
-            valid_moves_mask = get_valid_moves_mask(state, selected_pos)
+            valid_moves_mask = get_valid_moves_mask(state, selected_pos, game_env)
             valid_moves = torch.where(valid_moves_mask > 0)[0].tolist()
             move_pos = random.choice(valid_moves) if valid_moves else random.randint(0, self.n * self.m - 1)
 
         return (selected_pos, move_pos)
 
-    def _greedy_action(self, state):
+    def _greedy_action(self, state, game_env=None):
         """Select the best action according to the network (argmax over Q-values)."""
+        end_turn_idx = self._end_turn_index()
+
         with torch.no_grad():
             state_tensor = state.unsqueeze(0)
 
@@ -125,17 +140,17 @@ class DQNAgent:
             select_qvalues = select_qvalues.squeeze(0)
 
             # Mask invalid selections with -inf so argmax ignores them
-            original_mask = get_valid_select_mask(state)
+            original_mask = get_valid_select_mask(state, game_env)
             select_mask = adjust_mask_for_end_turn(original_mask)
             select_qvalues_masked = select_qvalues.clone()
             select_qvalues_masked[select_mask == 0] = float('-inf')
 
             if (select_qvalues_masked == float('-inf')).all():
-                return (self.n * self.m, random.randint(0, self.n * self.m - 1))
+                return (end_turn_idx, random.randint(0, self.n * self.m - 1))
 
             selected_pos = torch.argmax(select_qvalues_masked).item()
 
-            if selected_pos == self.n * self.m:
+            if selected_pos == end_turn_idx:
                 move_pos = random.randint(0, self.n * self.m - 1)
             else:
                 _, move_qvalues = self.network(
@@ -144,14 +159,13 @@ class DQNAgent:
                 )
                 move_qvalues = move_qvalues.squeeze(0)
 
-                # Mask invalid moves with -inf
-                valid_moves_mask = get_valid_moves_mask(state, selected_pos)
+                valid_moves_mask = get_valid_moves_mask(state, selected_pos, game_env)
                 move_qvalues_masked = move_qvalues.clone()
                 move_qvalues_masked[valid_moves_mask == 0] = float('-inf')
 
                 if (move_qvalues_masked == float('-inf')).all():
                     valid_moves = torch.where(valid_moves_mask > 0)[0].tolist()
-                    move_pos = random.choice(valid_moves) if valid_moves else selected_pos
+                    move_pos = random.choice(valid_moves) if valid_moves else selected_pos // NUM_UNIT_SLOTS
                 else:
                     move_pos = torch.argmax(move_qvalues_masked).item()
 

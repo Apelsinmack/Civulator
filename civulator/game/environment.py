@@ -128,6 +128,7 @@ class GameEnvironment:
 
         Args:
             action_matrix: [select_position, order_position] as numpy arrays
+                select_position can be (row, col) or (row, col, slot)
 
         Returns:
             tuple: (self, reward, done)
@@ -137,17 +138,22 @@ class GameEnvironment:
         order_pos = tuple(action_matrix[1])
 
         # End turn action
-        if select_pos == (self.n, 0):
+        if select_pos[0] == self.n:
             self.current_player.end_turn()
             self.next_turn()
             return self, 0, self.done
 
-        # Find the selected unit
-        selected_unit = None
-        for unit in self.current_player.units:
-            if unit.coordinates == select_pos:
-                selected_unit = unit
-                break
+        # Find the selected unit — slot-aware if provided
+        if len(select_pos) == 3:
+            row, col, slot = select_pos
+            selected_unit = self.get_unit_in_slot((row, col), slot, self.current_player)
+        else:
+            # Legacy 2-tuple: find first own unit at position
+            selected_unit = None
+            for unit in self.current_player.units:
+                if unit.coordinates == select_pos:
+                    selected_unit = unit
+                    break
 
         if not selected_unit:
             return self, -1, self.done
@@ -309,6 +315,30 @@ class GameEnvironment:
     def is_occupied(self, coordinates):
         tile = self.map.get_tile(coordinates)
         return tile is not None and len(tile.units) > 0
+
+    def is_slot_occupied(self, coordinates, slot, player=None):
+        """Check if a specific unit slot is occupied at coordinates.
+
+        Args:
+            coordinates: Tile position
+            slot: Unit slot index (0=military, 1=civilian, 2=siege support, 3=great person)
+            player: If given, only check units belonging to this player
+        """
+        units = self.get_units_at(coordinates)
+        for u in units:
+            if u.slot == slot:
+                if player is None or u.player == player:
+                    return True
+        return False
+
+    def get_unit_in_slot(self, coordinates, slot, player=None):
+        """Get the unit in a specific slot at coordinates, or None."""
+        units = self.get_units_at(coordinates)
+        for u in units:
+            if u.slot == slot:
+                if player is None or u.player == player:
+                    return u
+        return None
 
     def get_units_at(self, coordinates):
         tile = self.map.get_tile(coordinates)

@@ -12,6 +12,7 @@ import torch
 from ..agents.networks import get_valid_select_mask
 from ..agents.build_agent import BUILD_OPTIONS
 from ..game.city import City
+from ..game.unit import NUM_UNIT_SLOTS
 
 
 def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
@@ -104,17 +105,27 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
             state = next_state
             last_state_by_agent[current_player_index] = state
 
-            action = current_agent.select_action(state, epsilon=0.3)
+            action = current_agent.select_action(state, epsilon=0.3, game_env=env)
             last_action_by_agent[current_player_index] = action
 
-            # Convert action indices to coordinates
-            action_matrix = [
-                np.array([action[0] // env.m, action[0] % env.m]),
-                np.array([action[1] // env.m, action[1] % env.m]),
-            ]
+            # Decode slot-aware action to coordinates
+            end_turn_idx = env.n * env.m * NUM_UNIT_SLOTS
+            selected_pos = action[0]
+            move_pos = action[1]
+
+            if selected_pos != end_turn_idx:
+                tile_idx = selected_pos // NUM_UNIT_SLOTS
+                slot = selected_pos % NUM_UNIT_SLOTS
+                sel_row, sel_col = tile_idx // env.m, tile_idx % env.m
+                action_matrix = [
+                    np.array([sel_row, sel_col, slot]),
+                    np.array([move_pos // env.m, move_pos % env.m]),
+                ]
+            else:
+                action_matrix = None
 
             # Execute action
-            if action[0] == env.n * env.m:
+            if selected_pos == end_turn_idx:
                 # End turn
                 env.current_player.end_turn()
                 env.next_turn()

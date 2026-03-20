@@ -8,6 +8,26 @@ import numpy as np
 from .terrain import Terrain
 
 
+NUM_UNIT_SLOTS = 4  # Military, Civilian, Siege Support, Great Person
+
+# Which slot each unit type occupies
+# Each slot can hold at most one unit per tile.
+# Units in different slots can stack freely on the same tile.
+UNIT_SLOT = {
+    "Warrior": 0,      # military
+    "Archer": 0,
+    "Swordsman": 0,
+    "Spearman": 0,
+    "Horseman": 0,
+    "Settler": 1,      # civilian
+    "Worker": 1,
+    "Catapult": 0,     # military (siege weapon, not siege support)
+    "BatteringRam": 2, # siege support (stacks with military)
+    "SiegeTower": 2,   # siege support
+    # Great people (slot 3) — future
+}
+
+
 class Unit:
     """Base class for all units in the game."""
 
@@ -83,6 +103,11 @@ class Unit:
             f"Type: {self.unit_type}, Health: {self.health}, "
             f"Team: {self.player.name}, Location: {self.coordinates}"
         )
+
+    @property
+    def slot(self):
+        """Unit slot index for tile stacking rules."""
+        return UNIT_SLOT.get(self.unit_type, 0)
 
     def get_max_movement(self):
         return self.MAX_MOVEMENT.get(self.unit_type, 2)
@@ -218,12 +243,14 @@ class Unit:
             if self.movement_points < movement_cost:
                 return False, self.coordinates
 
-            # Check occupancy: can move if empty or destination is the target (for attack)
-            if game_env.is_occupied(dest):
-                # Allow moving onto enemy units (attack handled by caller)
-                units_at_dest = game_env.get_units_at(dest)
-                if any(u.player == self.player for u in units_at_dest):
-                    return False, self.coordinates  # Friendly unit blocking
+            # Check slot-based occupancy: can move if our slot is free (friendly)
+            units_at_dest = game_env.get_units_at(dest)
+            friendly_in_slot = any(
+                u.player == self.player and u.slot == self.slot
+                for u in units_at_dest
+            )
+            if friendly_in_slot:
+                return False, self.coordinates  # Same slot occupied by friendly
 
             game_env.remove_unit_from_tile(self, self.coordinates)
             self.coordinates = dest
@@ -258,8 +285,11 @@ class Unit:
             if remaining_mp < movement_cost:
                 break
 
-            if game_env.is_occupied(next_pos_tuple) and next_pos_tuple != dest:
-                break
+            # Check if our slot is blocked by a friendly unit (except at destination)
+            if next_pos_tuple != dest:
+                units_there = game_env.get_units_at(next_pos_tuple)
+                if any(u.player == self.player and u.slot == self.slot for u in units_there):
+                    break
 
             remaining_mp -= movement_cost
             current_pos = next_pos

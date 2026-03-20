@@ -1,8 +1,18 @@
-"""Neural network architectures for the Select-and-Move DQN agent."""
+"""Neural network architectures for the Select-and-Move DQN agent.
+
+Select action space: n*m*NUM_SLOTS + 1
+    Each tile has NUM_SLOTS selection options (military, civilian, siege support, great person).
+    The last action is end-turn.
+    Masking ensures only slots with valid units are selectable.
+
+Move action space: n*m (unchanged — destination is a tile, not a slot)
+"""
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from ..game.unit import NUM_UNIT_SLOTS
 
 
 def horizontal_wrap_padding(state, padding_size=1):
@@ -101,26 +111,27 @@ class SelectAndMoveNetwork(nn.Module):
         conv2_out_m = conv1_out_m - kernel_size + 1
         self.flattened_size = c2 * conv2_out_n * conv2_out_m
 
-        # Fully connected layers (with optional hidden layer)
+        # Select output: n*m*NUM_SLOTS + 1 (one Q-value per tile-slot + end turn)
+        select_out = n * m * NUM_UNIT_SLOTS + 1
         self.fc_hidden = fc_hidden
         if fc_hidden:
             self.fc_select_hidden = nn.Linear(self.flattened_size, fc_hidden)
-            self.fc_select = nn.Linear(fc_hidden, n * m + 1)
+            self.fc_select = nn.Linear(fc_hidden, select_out)
             self.fc_move_hidden = nn.Linear(self.flattened_size + 1, fc_hidden)
             self.fc_move = nn.Linear(fc_hidden, n * m)
         else:
-            self.fc_select = nn.Linear(self.flattened_size, n * m + 1)  # +1 for end turn
-            self.fc_move = nn.Linear(self.flattened_size + 1, n * m)  # +1 for selected position
+            self.fc_select = nn.Linear(self.flattened_size, select_out)
+            self.fc_move = nn.Linear(self.flattened_size + 1, n * m)
 
     def forward(self, state, selected_pos=None):
         """Forward pass.
 
         Args:
             state: [batch, d, n, m] tensor
-            selected_pos: [batch, 1] tensor of selected tile indices (optional)
+            selected_pos: [batch, 1] tensor of selected tile-slot index (optional)
 
         Returns:
-            select_qvalues: [batch, n*m+1] raw Q-values for tile selection + end turn
+            select_qvalues: [batch, n*m*NUM_SLOTS+1] Q-values for tile-slot selection + end turn
             move_qvalues: [batch, n*m] raw Q-values for move targets (None if selected_pos not given)
         """
         padded_state = horizontal_wrap_padding(state, self.padding_size)
@@ -189,15 +200,16 @@ class SharedBackboneNetwork(nn.Module):
         conv2_out_m = conv1_out_m - kernel_size + 1
         self.flattened_size = c2 * conv2_out_n * conv2_out_m
 
-        # Separate FC heads
+        # Separate FC heads — select output: n*m*NUM_SLOTS + 1
+        select_out = n * m * NUM_UNIT_SLOTS + 1
         self.fc_hidden = fc_hidden
         if fc_hidden:
             self.fc_select_hidden = nn.Linear(self.flattened_size, fc_hidden)
-            self.fc_select = nn.Linear(fc_hidden, n * m + 1)
+            self.fc_select = nn.Linear(fc_hidden, select_out)
             self.fc_move_hidden = nn.Linear(self.flattened_size + 1, fc_hidden)
             self.fc_move = nn.Linear(fc_hidden, n * m)
         else:
-            self.fc_select = nn.Linear(self.flattened_size, n * m + 1)
+            self.fc_select = nn.Linear(self.flattened_size, select_out)
             self.fc_move = nn.Linear(self.flattened_size + 1, n * m)
 
     def forward(self, state, selected_pos=None):
@@ -205,10 +217,10 @@ class SharedBackboneNetwork(nn.Module):
 
         Args:
             state: [batch, d, n, m] tensor
-            selected_pos: [batch, 1] tensor of selected tile indices (optional)
+            selected_pos: [batch, 1] tensor of selected tile-slot index (optional)
 
         Returns:
-            select_qvalues: [batch, n*m+1] raw Q-values for tile selection + end turn
+            select_qvalues: [batch, n*m*NUM_SLOTS+1] Q-values for tile-slot selection + end turn
             move_qvalues: [batch, n*m] raw Q-values for move targets (None if no selected_pos)
         """
         padded_state = horizontal_wrap_padding(state, self.padding_size)
@@ -266,8 +278,8 @@ class FullyConvNetwork(nn.Module):
         self.conv2 = nn.Conv2d(c1, c2, kernel_size=kernel_size, padding=0)
         self.bn2 = nn.BatchNorm2d(c2)
 
-        # Select head: 1x1 conv → per-tile Q-value + learnable end-turn Q
-        self.select_conv = nn.Conv2d(c2, 1, kernel_size=1)
+        # Select head: 1x1 conv → NUM_SLOTS Q-values per tile + learnable end-turn Q
+        self.select_conv = nn.Conv2d(c2, NUM_UNIT_SLOTS, kernel_size=1)
         self.end_turn_q = nn.Parameter(torch.zeros(1))
 
         # Move head: features + selected-position marker → 3x3 conv (spread marker)
@@ -281,10 +293,10 @@ class FullyConvNetwork(nn.Module):
 
         Args:
             state: [batch, d, n, m] tensor
-            selected_pos: [batch, 1] tensor of selected tile indices (optional)
+            selected_pos: [batch, 1] tensor of selected tile-slot index (optional)
 
         Returns:
-            select_qvalues: [batch, n*m+1] Q-values for tile selection + end turn
+            select_qvalues: [batch, n*m*NUM_SLOTS+1] Q-values for tile-slot selection + end turn
             move_qvalues: [batch, n*m] Q-values for move targets (None if no selected_pos)
         """
         # Backbone: pad → conv → pad → conv (preserves spatial dims)
@@ -294,22 +306,23 @@ class FullyConvNetwork(nn.Module):
         features = F.relu(self.bn2(self.conv2(x)))
         # features: [batch, c2, n, m] — same spatial size as input
 
-        # Select head: spatial Q-values + end-turn
-        select_map = self.select_conv(features)  # [batch, 1, n, m]
-        select_flat = select_map.view(select_map.size(0), -1)  # [batch, n*m]
+        # Select head: spatial Q-values per slot + end-turn
+        select_map = self.select_conv(features)  # [batch, NUM_SLOTS, n, m]
+        select_flat = select_map.view(select_map.size(0), -1)  # [batch, NUM_SLOTS*n*m]
         end_turn = self.end_turn_q.expand(select_flat.size(0), 1)
-        select_qvalues = torch.cat([select_flat, end_turn], dim=1)  # [batch, n*m+1]
+        select_qvalues = torch.cat([select_flat, end_turn], dim=1)  # [batch, n*m*NUM_SLOTS+1]
 
         if selected_pos is not None:
             batch_size = features.size(0)
             n, m = features.size(2), features.size(3)
 
-            # Create marker channel: 1.0 at selected position
+            # Create marker channel: 1.0 at selected tile position
+            # selected_pos encodes tile*NUM_SLOTS+slot, extract tile position
             marker = torch.zeros(batch_size, 1, n, m, device=features.device)
             selected_pos_int = selected_pos.long().view(-1)
             for i in range(batch_size):
-                pos = selected_pos_int[i].item()
-                r, c = pos // m, pos % m
+                tile_pos = selected_pos_int[i].item() // NUM_UNIT_SLOTS
+                r, c = tile_pos // m, tile_pos % m
                 if 0 <= r < n and 0 <= c < m:
                     marker[i, 0, r, c] = 1.0
 
@@ -351,8 +364,8 @@ class FullyConvSeparateNetwork(nn.Module):
         self.select_conv2 = nn.Conv2d(c1, c2, kernel_size=kernel_size, padding=0)
         self.select_bn2 = nn.BatchNorm2d(c2)
 
-        # Select head: 1x1 conv → per-tile Q-value + learnable end-turn Q
-        self.select_conv = nn.Conv2d(c2, 1, kernel_size=1)
+        # Select head: 1x1 conv → NUM_SLOTS Q-values per tile + learnable end-turn Q
+        self.select_conv = nn.Conv2d(c2, NUM_UNIT_SLOTS, kernel_size=1)
         self.end_turn_q = nn.Parameter(torch.zeros(1))
 
         # Move backbone
@@ -383,11 +396,11 @@ class FullyConvSeparateNetwork(nn.Module):
         x_s = horizontal_wrap_padding(x_s, self.padding_size)
         select_features = F.relu(self.select_bn2(self.select_conv2(x_s)))
 
-        # Select head
-        select_map = self.select_conv(select_features)  # [batch, 1, n, m]
-        select_flat = select_map.view(select_map.size(0), -1)  # [batch, n*m]
+        # Select head — NUM_SLOTS Q-values per tile
+        select_map = self.select_conv(select_features)  # [batch, NUM_SLOTS, n, m]
+        select_flat = select_map.view(select_map.size(0), -1)  # [batch, NUM_SLOTS*n*m]
         end_turn = self.end_turn_q.expand(select_flat.size(0), 1)
-        select_qvalues = torch.cat([select_flat, end_turn], dim=1)  # [batch, n*m+1]
+        select_qvalues = torch.cat([select_flat, end_turn], dim=1)
 
         if selected_pos is not None:
             # Move backbone (separate conv layers)
@@ -399,12 +412,13 @@ class FullyConvSeparateNetwork(nn.Module):
             batch_size = move_features.size(0)
             n, m = move_features.size(2), move_features.size(3)
 
-            # Create marker channel: 1.0 at selected position
+            # Create marker channel: 1.0 at selected tile position
+            # selected_pos encodes tile*NUM_SLOTS+slot, extract tile position
             marker = torch.zeros(batch_size, 1, n, m, device=move_features.device)
             selected_pos_int = selected_pos.long().view(-1)
             for i in range(batch_size):
-                pos = selected_pos_int[i].item()
-                r, c = pos // m, pos % m
+                tile_pos = selected_pos_int[i].item() // NUM_UNIT_SLOTS
+                r, c = tile_pos // m, tile_pos % m
                 if 0 <= r < n and 0 <= c < m:
                     marker[i, 0, r, c] = 1.0
 
@@ -420,24 +434,47 @@ class FullyConvSeparateNetwork(nn.Module):
         return select_qvalues, None
 
 
-def get_valid_select_mask(state, hp_channel=None, move_channel=None):
-    """Generate a mask for valid unit selections.
+def get_valid_select_mask(state, game_env=None):
+    """Generate a mask for valid unit selections with slot support.
 
-    Valid = tile has a unit (health > 0) with movement points remaining.
-    Channel indices default to BasicStateEncoder layout (1=HP, 2=movement).
-    For EnhancedStateEncoder use hp_channel=5, move_channel=9.
+    Output shape: [n*m*NUM_SLOTS] — one entry per tile-slot combination.
+    Index encoding: tile_index * NUM_SLOTS + slot
+
+    If game_env is provided, uses actual unit data for precise per-slot masking.
+    Otherwise falls back to state tensor heuristic (own HP + movement channels).
     """
     d = state.shape[0]
-    if hp_channel is None:
-        hp_channel = 5 if d == 25 else 1
-    if move_channel is None:
-        move_channel = 9 if d == 25 else 2
+    n, m = state.shape[1], state.shape[2]
+    device = state.device
 
-    unit_health_layer = state[hp_channel, :, :]
-    movement_layer = state[move_channel, :, :]
+    if game_env is not None:
+        # Precise masking from game state
+        mask = torch.zeros(n * m * NUM_UNIT_SLOTS, device=device)
+        current_player = game_env.current_player
+        for unit in current_player.units:
+            if unit.health > 0 and unit.movement_points > 0:
+                r, c = unit.coordinates
+                tile_idx = r * m + c
+                mask[tile_idx * NUM_UNIT_SLOTS + unit.slot] = 1.0
+        return mask
+    else:
+        # Fallback: use state tensor channels (can't distinguish slots)
+        if d == 25:
+            hp_ch, move_ch = 5, 9
+        else:
+            hp_ch, move_ch = 1, 2
 
-    valid = (movement_layer > 0.01).float() * (unit_health_layer > 0.01).float()
-    return valid.flatten()
+        unit_health = state[hp_ch, :, :]
+        movement = state[move_ch, :, :]
+        has_unit = ((movement > 0.01) * (unit_health > 0.01)).float()
+
+        # Repeat for all slots (fallback can't distinguish — mark slot 0 only)
+        mask = torch.zeros(n * m * NUM_UNIT_SLOTS, device=device)
+        flat = has_unit.flatten()
+        for i in range(n * m):
+            if flat[i] > 0:
+                mask[i * NUM_UNIT_SLOTS] = 1.0  # Slot 0 (military) as default
+        return mask
 
 
 def adjust_mask_for_end_turn(original_mask):
@@ -446,70 +483,80 @@ def adjust_mask_for_end_turn(original_mask):
     return torch.cat([original_mask, torch.tensor([1.0], device=device)])
 
 
-def get_valid_moves_mask(state, selected_pos):
+def get_valid_moves_mask(state, selected_pos, game_env=None):
     """Generate a mask for valid move destinations from the selected unit.
 
-    Valid = adjacent tile (hex adjacency) that is not occupied by a friendly unit,
-    plus the current tile (for fortify).
+    selected_pos: tile_index * NUM_SLOTS + slot (slot-aware encoding)
 
-    Auto-detects BasicStateEncoder (d=5) vs EnhancedStateEncoder (d=25).
+    Valid = adjacent tile (hex adjacency) where the unit's slot is not
+    occupied by a friendly unit, plus the current tile (for fortify/found city).
     """
     d, n, m = state.shape
     device = state.device
 
-    if selected_pos >= n * m:
+    # Decode tile-slot from selected_pos
+    tile_pos = selected_pos // NUM_UNIT_SLOTS
+    selected_slot = selected_pos % NUM_UNIT_SLOTS
+
+    if tile_pos >= n * m:
         return torch.zeros(n * m, device=device)
 
-    # Auto-detect encoder channels
-    if d == 25:
-        hp_ch = 5        # Own HP (normalized)
-        move_ch = 9       # Own movement points (normalized)
-        enemy_hp_ch = 16  # Enemy HP (normalized)
-        hp_thresh = 0.01
-        enemy_thresh = 0.01
-        enemy_sign = 1    # Enhanced uses positive values for enemy
-    else:
-        hp_ch = 1         # Own HP (raw)
-        move_ch = 2       # Own movement points (raw)
-        enemy_hp_ch = 4   # Enemy HP (negative raw)
-        hp_thresh = 0.01
-        enemy_thresh = 0.01
-        enemy_sign = -1   # Basic uses negative values for enemy
-
-    row = selected_pos // m
-    col = selected_pos % m
+    row = tile_pos // m
+    col = tile_pos % m
 
     valid_move_mask = torch.zeros(n, m, device=device)
 
-    unit_health = state[hp_ch, row, col].item()
-    movement_points = state[move_ch, row, col].item()
+    if game_env is not None:
+        # Precise masking from game state
+        selected_unit = game_env.get_unit_in_slot(
+            (row, col), selected_slot, game_env.current_player
+        )
+        if selected_unit is None or selected_unit.movement_points <= 0:
+            return valid_move_mask.flatten()
 
-    if unit_health <= hp_thresh or movement_points <= hp_thresh:
-        return valid_move_mask.flatten()
+        from ..game.map import HEX_DIRECTIONS
+        for dr, dc in HEX_DIRECTIONS:
+            new_row = row + dr
+            new_col = (col + dc) % m
+            if new_row < 0 or new_row >= n:
+                continue
 
-    enemy_units_layer = state[enemy_hp_ch, :, :]
-
-    # Use hex adjacency with even/odd row offsets
-    if row % 2 == 0:
-        directions = [(-1, -1), (-1, 0), (0, -1), (0, 1), (1, -1), (1, 0)]
+            # Check if our slot is occupied by a friendly unit
+            friendly_in_slot = game_env.is_slot_occupied(
+                (new_row, new_col), selected_unit.slot, game_env.current_player
+            )
+            if not friendly_in_slot:
+                valid_move_mask[new_row, new_col] = 1
+            else:
+                # Allow if enemy present (attack)
+                enemy_there = any(
+                    u.player != game_env.current_player
+                    for u in game_env.get_units_at((new_row, new_col))
+                )
+                if enemy_there:
+                    valid_move_mask[new_row, new_col] = 1
     else:
-        directions = [(-1, 0), (-1, 1), (0, -1), (0, 1), (1, 0), (1, 1)]
+        # Fallback: state tensor heuristic
+        if d == 25:
+            hp_ch, enemy_hp_ch = 5, 16
+            enemy_sign = 1
+        else:
+            hp_ch, enemy_hp_ch = 1, 4
+            enemy_sign = -1
 
-    for dr, dc in directions:
-        new_row = (row + dr) % n
-        new_col = (col + dc) % m
+        from ..game.map import HEX_DIRECTIONS
+        for dr, dc in HEX_DIRECTIONS:
+            new_row = row + dr
+            new_col = (col + dc) % m
+            if new_row < 0 or new_row >= n:
+                continue
 
-        # Check bounds (vertical -- no wrapping)
-        if row + dr < 0 or row + dr >= n:
-            continue
+            friendly = state[hp_ch, new_row, new_col].item() > 0.01
+            enemy = state[enemy_hp_ch, new_row, new_col].item() * enemy_sign > 0.01
+            if not friendly or enemy:
+                valid_move_mask[new_row, new_col] = 1
 
-        friendly_unit = state[hp_ch, new_row, new_col].item() > hp_thresh
-        has_enemy = enemy_units_layer[new_row, new_col].item() * enemy_sign > enemy_thresh
-
-        if not friendly_unit or has_enemy:
-            valid_move_mask[new_row, new_col] = 1
-
-    # Current tile is valid (fortify)
+    # Current tile is always valid (fortify / found city)
     valid_move_mask[row, col] = 1
 
     return valid_move_mask.flatten()
