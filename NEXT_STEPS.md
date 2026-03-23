@@ -140,6 +140,22 @@ this file focuses on the C++ integration angle and prioritizes what to do next._
   - Load game state snapshots, scrub through turns
   - Reuse Breach raylib experience
 
+### Bugs
+- [ ] **City disappearing bug** — observed a city vanishing near the start of a game (not captured, just gone). Investigate city destruction/capture logic.
+
+### Observations from 35-episode tournament (2026-03-23)
+- Agents don't play aggressively enough — after 500 turns, only 1 captured city
+- Need to train combat behavior more deliberately (see "guided combat training" below)
+
+### Next priorities
+- [ ] **Shared weights (self-play)** — switch from 8 separate agents to one shared network. Fixes OOM crash and gives 8x more training data per step. Tournament mode becomes a separate evaluation tool.
+- [ ] **Memory management** — cap replay buffer size, add `gc.collect()` + `torch.cuda.empty_cache()` periodically
+- [ ] **Guided combat training** — design hand-crafted engagement scenarios (surround a city, 2v1 unit fights, etc.) and feed those states directly to the optimizer. Produce many examples of combat situations that occur in real games. This should teach aggressive play much faster than waiting for random encounters on a big map.
+- [ ] **Unit sprites** — replace colored dots with one sprite per unit type for more readable replays
+- [ ] **Map generation fix** — current noise generates in axial space, making the skew visible in terrain. Fix: generate terrain in Cartesian (x, y) space with right angles, then sample hex tiles from that. Alternative (more elegant): multiply the noise distribution by sin(30°) or sin(60°) to correct for the axial axis angle.
+- [ ] **Replay system** — save game state each turn to file, allow rewind/scrub in viewer
+- [ ] **Save winning weights** — checkpoint at episodes where an agent won. Useful for beginner-level bot opponents.
+
 ### Phase B — Next session: Buildings + War/Peace
 - [ ] Add Walls to build agent (BUILD_OPTIONS 7→8, +30 city defense)
 - [ ] War/Peace system — pairwise relationship matrix
