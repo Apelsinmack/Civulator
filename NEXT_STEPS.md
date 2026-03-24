@@ -140,6 +140,33 @@ this file focuses on the C++ integration angle and prioritizes what to do next._
   - Load game state snapshots, scrub through turns
   - Reuse Breach raylib experience
 
+### Shared-Weight Training — DONE (2026-03-24)
+- [x] `train_shared.py` — one network, one replay buffer, all 8 players update same weights
+- [x] 1000 episodes completed overnight, no OOM crash (~2.3 GB vs ~18 GB)
+- [x] Weights saved: `weights/trained/medium_16x32_1000ep.pth`
+- [x] Build orders diversified (Warriors 18%, Catapults 17%, Archers 16%, etc.)
+
+### Tournament Plan (2026-03-24)
+
+**Phase 1: Train all architectures** (1000 episodes each, shared weights, save at 250/500/750/1000):
+- [ ] Small (8, 16) — `small_8x16_{250,500,750,1000}ep.pth`
+- [x] Medium (16, 32) — done (1000ep)
+- [ ] Large (32, 64) — `large_32x64_{250,500,750,1000}ep.pth`
+
+**Phase 2: 12-player FFA tournament** (1000 episodes):
+All 12 checkpoints play together:
+  small_250, small_500, small_750, small_1000,
+  medium_250, medium_500, medium_750, medium_1000,
+  large_250, large_500, large_750, large_1000
+
+**Phase 3: Top-6 bracket** (1000 episodes):
+Top 6 from Phase 2 play another 1000 rounds.
+
+**Open questions**:
+- Does training against different AI opponents help? (mixed-level self-play vs same-level)
+- Could train one AI against pretrained opponents — check literature on opponent diversity in self-play
+- Is there value in 2-opponent diversity vs 8-opponent? Probably diminishing returns.
+
 ### Bugs
 - [ ] **City disappearing bug** — observed a city vanishing near the start of a game (not captured, just gone). Investigate city destruction/capture logic.
 
@@ -148,8 +175,8 @@ this file focuses on the C++ integration angle and prioritizes what to do next._
 - Need to train combat behavior more deliberately (see "guided combat training" below)
 
 ### Next priorities
-- [ ] **Shared weights (self-play)** — switch from 8 separate agents to one shared network. Fixes OOM crash and gives 8x more training data per step. Tournament mode becomes a separate evaluation tool.
-- [ ] **Memory management** — cap replay buffer size, add `gc.collect()` + `torch.cuda.empty_cache()` periodically
+- [x] **Shared weights (self-play)** — `train_shared.py`, fixed OOM, 8x more training data per step
+- [x] **Memory management** — single shared replay buffer solves OOM. `gc.collect()` added.
 - [ ] **Guided combat training** — design hand-crafted engagement scenarios (surround a city, 2v1 unit fights, etc.) and feed those states directly to the optimizer. Produce many examples of combat situations that occur in real games. This should teach aggressive play much faster than waiting for random encounters on a big map.
 - [ ] **Unit sprites** — replace colored dots with one sprite per unit type for more readable replays
 - [ ] **Map generation fix** — current noise generates in axial space, making the skew visible in terrain. Fix: generate terrain in Cartesian (x, y) space with right angles, then sample hex tiles from that. Alternative (more elegant): multiply the noise distribution by sin(30°) or sin(60°) to correct for the axial axis angle.
