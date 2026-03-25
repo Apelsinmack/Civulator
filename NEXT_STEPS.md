@@ -184,7 +184,14 @@ Top 6 from Phase 2 play another 1000 rounds.
 ### Next priorities
 - [x] **Shared weights (self-play)** — `train_shared.py`, fixed OOM, 8x more training data per step
 - [x] **Memory management** — single shared replay buffer solves OOM. `gc.collect()` added.
-- [ ] **Guided combat training** — design hand-crafted engagement scenarios (surround a city, 2v1 unit fights, etc.) and feed those states directly to the optimizer. Produce many examples of combat situations that occur in real games. This should teach aggressive play much faster than waiting for random encounters on a big map.
+- [ ] **Combat training tool** — interactive tool where a human plays optimal moves in combat scenarios. The game engine presents a situation (e.g. 3 warriors vs 1 city), the human gives orders, and the (state, action) pairs are recorded as training data (imitation learning). Features:
+  - Scenario editor: place units, cities, terrain manually
+  - Human plays one or both sides
+  - Record all (state, action) transitions
+  - Rotate each scenario 6 ways (hex symmetry) for data augmentation
+  - Train the combat network on these demonstrations
+  - Could invite friends to help generate training data
+  - Important scenarios: city capture with mixed units, battering ram + military coordination, catapult sieges, flanking maneuvers
 - [ ] **Unit sprites** — replace colored dots with one sprite per unit type for more readable replays
 - [ ] **Map generation fix** — current noise generates in axial space, making the skew visible in terrain. Fix: generate terrain in Cartesian (x, y) space with right angles, then sample hex tiles from that. Alternative (more elegant): multiply the noise distribution by sin(30°) or sin(60°) to correct for the axial axis angle.
 - [ ] **Replay system** — save game state each turn to file, allow rewind/scrub in viewer
