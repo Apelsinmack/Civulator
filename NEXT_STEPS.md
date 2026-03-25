@@ -24,7 +24,7 @@ This replaces the current offset (even/odd row) system.
 - Cleaner C++ implementation
 
 **Tradeoff accepted:** The 2D array is "skewed" — convolution filters see a parallelogram,
-not a rectangle. We accept this for now (corner weights are low-importance anyway).
+not a hexagon. We accept this for now (corner weights are low-importance anyway).
 Hex-native convolutions are a separate future investigation.
 
 **Cylindrical wrapping:** Only horizontal (q-axis). For A*, compare direct distance vs.
@@ -33,10 +33,10 @@ neighbor as just another edge.
 
 ### Implementation Plan (mirrors Breach's architecture)
 
-**Step 0: Profile** — run one training session with cProfile. Confirm pathfinding is the
-bottleneck. Measure episodes/sec baseline.
+**Step 0: Profile** — DONE. State encoding was the bottleneck (not pathfinding).
+11x speedup via numpy + cached terrain layer.
 
-**Step 1: Create `civulator/cpp/` module**
+**Step 1: Create `civulator/cpp/` module** — DONE.
 ```
 civulator/cpp/
 ├── CMakeLists.txt          # pybind11, C++17, same flags as Breach
@@ -48,7 +48,7 @@ civulator/cpp/
 - Zero-copy numpy arrays (same `Grid2D<T>` pattern as Breach)
 - Graceful fallback: `try: import civulator_core` → pure Python fallback
 
-**Step 2: A* pathfinding in C++**
+**Step 2: A* pathfinding in C++** — DONE.
 - Axial coordinates internally
 - Terrain cost table passed from Python
 - Cylindrical wrapping in neighbor generation
@@ -132,13 +132,12 @@ this file focuses on the C++ integration angle and prioritizes what to do next._
 
 ## 6. Scaling & Gameplay Roadmap (2026-03-20)
 
-### Phase A — Today: 8-player combat on big map
+### Phase A — 8-player combat on big map — DONE (2026-03-20 to 2026-03-24)
 - [x] All training stability fixes (target network, epsilon decay, slot stacking)
-- [ ] Set up 24x48 map with 8 players, all at war (no diplomacy yet)
-- [ ] Launch training run — observe if agents learn meaningful behavior
-- [ ] Raylib replay viewer — minimal hex grid + colored dots for units
-  - Load game state snapshots, scrub through turns
-  - Reuse Breach raylib experience
+- [x] Set up 24x48 map with 8 players, all at war
+- [x] Shared-weight training: Medium 1000ep + Large 1000ep completed
+- [x] Raylib live viewer (watch.py)
+- [x] Build diversity confirmed (no longer spamming one unit type)
 
 ### Shared-Weight Training — DONE (2026-03-24)
 - [x] `train_shared.py` — one network, one replay buffer, all 8 players update same weights
@@ -151,7 +150,7 @@ this file focuses on the C++ integration angle and prioritizes what to do next._
 **Phase 1: Train all architectures** (1000 episodes each, shared weights, save at 250/500/750/1000):
 - [ ] Small (8, 16) — `small_8x16_{250,500,750,1000}ep.pth`
 - [x] Medium (16, 32) — done (1000ep)
-- [ ] Large (32, 64) — `large_32x64_{250,500,750,1000}ep.pth`
+- [x] Large (32, 64) — done (1000ep), `weights/trained/large_32x64_1000ep.pth`
 
 **Phase 2: 12-player FFA tournament** (1000 episodes):
 All 12 checkpoints play together:
@@ -182,6 +181,13 @@ Top 6 from Phase 2 play another 1000 rounds.
 - [ ] **Map generation fix** — current noise generates in axial space, making the skew visible in terrain. Fix: generate terrain in Cartesian (x, y) space with right angles, then sample hex tiles from that. Alternative (more elegant): multiply the noise distribution by sin(30°) or sin(60°) to correct for the axial axis angle.
 - [ ] **Replay system** — save game state each turn to file, allow rewind/scrub in viewer
 - [ ] **Save winning weights** — checkpoint at episodes where an agent won. Useful for beginner-level bot opponents.
+- [ ] **Settler mask** — show which tiles are allowed for settling. Cache and update only when things change (rare). Helps the AI learn where to settle.
+- [ ] **Starting locations overhaul** — current random placement causes adjacent spawns (city disappearing bug). Civ6 generates starting locations first, then builds the map around them. We should:
+  - Define standardized map sizes (like Civ6: Tiny/Small/Standard/Large/Huge)
+  - Enforce minimum distance between starting locations
+  - Possibly generate map features around start positions (resources, terrain variety)
+  - Be aware that only a certain number of players fit on each map size
+- [ ] **Build agent shared across training** — currently retrains from scratch each run. Since it's the same architecture regardless of combat network size, we should keep training the same build agent and only retrain the combat network.
 
 ### Phase B — Next session: Buildings + War/Peace
 - [ ] Add Walls to build agent (BUILD_OPTIONS 7→8, +30 city defense)
