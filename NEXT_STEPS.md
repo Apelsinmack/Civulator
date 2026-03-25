@@ -1,5 +1,13 @@
 # Civulator — Next Steps
 
+ERIKs THOUGTS:
+NEXT BIG GOALS:
+A. Get combat working - civs have to be able to wage effective war- if they can capture they should capture etc. They should play effective!
+
+B. Get growing civs effective during peace time- optimize wide vs tall builds etc. improve empire.
+
+C. Get diplomacy wokring - i dont think it's even worth training diplomacy if A and B is not working to a reasonable amount. We need A to be effective if we should get a reward for doing it - same with B.
+
 _Created: 2026-03-18_
 
 > Context: Erik has been building Breach (C++ physics engine + raylib) and gained strong C++ fluency.
