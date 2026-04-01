@@ -1,0 +1,40 @@
+{
+  "seed": 88352,
+  "map_rows": 16,
+  "map_cols": 16,
+  "units": [
+    {
+      "type": "Warrior",
+      "team": 1,
+      "row": 4,
+      "col": 7,
+      "fortified": true,
+      "hp": 100
+    },
+    {
+      "type": "Warrior",
+      "team": 1,
+      "row": 5,
+      "col": 6,
+      "fortified": true,
+      "hp": 100
+    },
+    {
+      "type": "Archer",
+      "team": 1,
+      "row": 4,
+      "col": 6,
+      "fortified": true,
+      "hp": 100
+    },
+    {
+      "type": "Warrior",
+      "team": 2,
+      "row": 5,
+      "col": 7,
+      "fortified": true,
+      "hp": 100
+    }
+  ],
+  "cities": []
+}
