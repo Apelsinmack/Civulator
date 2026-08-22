@@ -98,6 +98,7 @@ invalid_action = -1
 fortify = 0
 damage_per_hp = 0.1
 kill = 10
+unit_lost = -10
 capture_civilian = 15
 capture_city = 20
 found_city = 15

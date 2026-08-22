@@ -7,6 +7,21 @@ from .player import Player
 from .city import City
 from .unit import WarriorUnit
 from .terrain import Terrain
+from ..config import CFG
+
+# Reward values: config.toml [training.rewards] overrides these defaults
+# (same merge pattern as Terrain tables).
+_DEFAULT_REWARDS = {
+    "invalid_action": -1,
+    "fortify": 0,
+    "damage_per_hp": 0.1,
+    "kill": 10,
+    "unit_lost": -10,
+    "capture_civilian": 15,
+    "capture_city": 20,
+    "found_city": 15,
+}
+REWARDS = {**_DEFAULT_REWARDS, **CFG.get("training", {}).get("rewards", {})}
 
 
 class GameEnvironment:
@@ -157,10 +172,10 @@ class GameEnvironment:
                     break
 
         if not selected_unit:
-            return self, -1, self.done
+            return self, REWARDS["invalid_action"], self.done
 
         if selected_unit.movement_points <= 0:
-            return self, -1, self.done
+            return self, REWARDS["invalid_action"], self.done
 
         # Select same tile: fortify, or found city if settler
         if select_pos == order_pos:
@@ -168,11 +183,11 @@ class GameEnvironment:
                 city = selected_unit.found_city(self)
                 if city:
                     city.assign_tiles(self)
-                    return self, 15, self.done
+                    return self, REWARDS["found_city"], self.done
                 else:
-                    return self, -1, self.done  # Invalid location
+                    return self, REWARDS["invalid_action"], self.done  # Invalid location
             success = selected_unit.fortify()
-            return self, (0 if success else -1), self.done
+            return self, (REWARDS["fortify"] if success else REWARDS["invalid_action"]), self.done
 
         # Check if order targets an enemy unit → attack
         enemy_unit = self._get_enemy_unit_at(order_pos)
@@ -185,13 +200,13 @@ class GameEnvironment:
         moved, final_pos = selected_unit.move(order_pos, self)
 
         if not moved:
-            return self, -1, self.done
+            return self, REWARDS["invalid_action"], self.done
 
         # Check if we captured a city
         tile = self.map.get_tile(final_pos)
         if tile and tile.city and tile.city.player != self.current_player:
             tile.city.set_owner(self.current_player)
-            reward += 20
+            reward += REWARDS["capture_city"]
 
         self._check_game_end()
         return self, reward, self.done
@@ -217,29 +232,29 @@ class GameEnvironment:
         # Melee units must be adjacent; ranged units handle range in their attack()
         adj_coords = self.map.get_adjacent_coords(attacker.coordinates)
         if not is_ranged and defender.coordinates not in adj_coords:
-            return -1
+            return REWARDS["invalid_action"]
 
         damage_dealt, damage_received, target_killed, attacker_killed = \
             attacker.attack(defender, self)
 
         # attack() returns (0,0,False,False) if out of range — treat as invalid
         if damage_dealt == 0 and not target_killed:
-            return -1
+            return REWARDS["invalid_action"]
 
         # Attacking always consumes all movement points
         attacker.movement_points = 0
 
         # Reward for damage dealt
-        reward += damage_dealt * 0.1
+        reward += damage_dealt * REWARDS["damage_per_hp"]
 
         if target_killed:
-            reward += 10
+            reward += REWARDS["kill"]
             # Capture civilian units (Settler, Worker) instead of killing them
             if defender.unit_type in ("Settler", "Worker") and not attacker_killed:
                 defender.player.remove_unit(defender)
                 defender.player = self.current_player
                 self.current_player.units.append(defender)
-                reward += 15  # Bonus for capturing a civilian
+                reward += REWARDS["capture_civilian"]
             else:
                 self.delete_unit(defender)
             # Only melee attackers move into the vacated tile
@@ -249,10 +264,10 @@ class GameEnvironment:
                 tile = self.map.get_tile(attacker.coordinates)
                 if tile and tile.city and tile.city.player != self.current_player:
                     tile.city.set_owner(self.current_player)
-                    reward += 20
+                    reward += REWARDS["capture_city"]
 
         if attacker_killed:
-            reward -= 10
+            reward += REWARDS["unit_lost"]
             self.delete_unit(attacker)
 
         return reward
