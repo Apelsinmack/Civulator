@@ -63,7 +63,7 @@ def test_engine_world_is_frozen_across_versions():
     a CHANGELOG entry and version bump are REQUIRED, and existing scenario
     terrain is invalidated."""
     env = GameEnvironment(8, 16, num_players=2).reset(seed=42)
-    terrains = [env.map.tiles[i, j].terrain_type for i in range(2) for j in range(8)]
+    terrains = [env.map.tiles[i, j].label for i in range(2) for j in range(8)]
     assert terrains == [
         "Desert", "Grassland", "Tundra", "Tundra", "Hills", "Mountain", "Plains", "Woods",
         "Grassland", "Hills", "Hills", "Plains", "Desert", "Plains", "Grassland", "Grassland",

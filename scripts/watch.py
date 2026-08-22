@@ -18,12 +18,16 @@ from civulator.agents.build_agent import BUILD_OPTIONS
 from civulator.game.city import City
 from civulator.game.unit import NUM_UNIT_SLOTS
 from civulator.viz.hex_render import (
-    TERRAIN_COLORS,
-    hex_to_pixel,
     draw_hex,
     draw_hex_outline,
+    draw_resource_marker,
+    draw_river_edges,
+    hex_to_pixel,
     make_camera,
+    tile_color,
     update_camera_zoom_pan,
+    wrap_camera_x,
+    wrapped_draw_x,
 )
 
 # --- Config ---
@@ -114,6 +118,10 @@ def run_viewer():
 
         # Zoom with scroll, pan with right mouse
         update_camera_zoom_pan(camera, zoom_step=0.05, zoom_min=0.1, zoom_max=3.0)
+        # Re-enter from the opposite side after panning past the column-wrap
+        # seam (§7.5 camera/seam policy) instead of drifting into unmapped
+        # space — this is a scrolling view, unlike the painter/recorder.
+        wrap_camera_x(camera, HEX_SIZE, env.m)
 
         # --- Game step ---
         if not done and not paused:
@@ -165,10 +173,15 @@ def run_viewer():
                 tile = env.map.tiles[row, col]
                 if tile is None:
                     continue
-                cx, cy = hex_to_pixel(row, col, HEX_SIZE)
-                color = TERRAIN_COLORS.get(tile.terrain_type, rl.GRAY)
-                draw_hex(cx, cy, HEX_SIZE - 1, color)
+                cx, cy = hex_to_pixel(row, col, HEX_SIZE, env.m)
+                cx = wrapped_draw_x(cx, camera.target.x, HEX_SIZE, env.m)
+                draw_hex(cx, cy, HEX_SIZE - 1, tile_color(tile))
                 draw_hex_outline(cx, cy, HEX_SIZE, rl.Color(60, 60, 60, 100))
+                draw_resource_marker(cx, cy, HEX_SIZE, tile)
+
+        # Rivers (design doc §5 — none generate until P4; the primitive is
+        # wired in now so P4's rivers appear automatically).
+        draw_river_edges(env.map, HEX_SIZE, env.m, camera_x=camera.target.x)
 
         # Draw cities
         for player in env.players:
@@ -176,7 +189,8 @@ def run_viewer():
                 continue
             pcolor = PLAYER_COLORS[player.player_index % len(PLAYER_COLORS)]
             for city in player.cities:
-                cx, cy = hex_to_pixel(*city.coordinates, HEX_SIZE)
+                cx, cy = hex_to_pixel(*city.coordinates, HEX_SIZE, env.m)
+                cx = wrapped_draw_x(cx, camera.target.x, HEX_SIZE, env.m)
                 rl.draw_circle(int(cx), int(cy), HEX_SIZE * 0.7, pcolor)
                 rl.draw_circle_lines(int(cx), int(cy), HEX_SIZE * 0.7, rl.WHITE)
 
@@ -186,7 +200,8 @@ def run_viewer():
                 continue
             pcolor = PLAYER_COLORS[player.player_index % len(PLAYER_COLORS)]
             for unit in player.units:
-                cx, cy = hex_to_pixel(*unit.coordinates, HEX_SIZE)
+                cx, cy = hex_to_pixel(*unit.coordinates, HEX_SIZE, env.m)
+                cx = wrapped_draw_x(cx, camera.target.x, HEX_SIZE, env.m)
                 # Offset by slot to avoid overlap
                 offset_x = (unit.slot - 1.5) * 4
                 rl.draw_circle(int(cx + offset_x), int(cy), 3, pcolor)

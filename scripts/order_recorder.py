@@ -25,13 +25,15 @@ import pyray as rl
 
 from civulator.tools.recording import DEFAULT_SCENARIO_DIR, RecordingSession
 from civulator.viz.hex_render import (
-    TERRAIN_COLORS,
     draw_hex,
     draw_hex_outline,
+    draw_resource_marker,
+    draw_river_edges,
     hex_to_pixel,
     load_sprites,
     make_camera,
     pixel_to_hex,
+    tile_color,
     unload_sprites,
     update_camera_zoom_pan,
 )
@@ -81,36 +83,41 @@ def draw_board(session, sprites, selectable, targets):
             tile = env.map.tiles[row, col]
             if tile is None:
                 continue
-            cx, cy = hex_to_pixel(row, col, HEX_SIZE)
-            draw_hex(cx, cy, HEX_SIZE - 1, TERRAIN_COLORS.get(tile.terrain_type, rl.GRAY))
+            cx, cy = hex_to_pixel(row, col, HEX_SIZE, session.m)
+            draw_hex(cx, cy, HEX_SIZE - 1, tile_color(tile))
             draw_hex_outline(cx, cy, HEX_SIZE, rl.Color(60, 60, 60, 100))
+            draw_resource_marker(cx, cy, HEX_SIZE, tile)
+
+    # Rivers (design doc §5 — none generate until P4; the primitive is wired
+    # in now so P4's rivers appear automatically).
+    draw_river_edges(env.map, HEX_SIZE, session.m)
 
     for row, col in targets:
-        cx, cy = hex_to_pixel(row, col, HEX_SIZE)
+        cx, cy = hex_to_pixel(row, col, HEX_SIZE, session.m)
         draw_hex(cx, cy, HEX_SIZE - 4, TARGET_COLOR)
 
     for row, col in selectable:
-        cx, cy = hex_to_pixel(row, col, HEX_SIZE)
+        cx, cy = hex_to_pixel(row, col, HEX_SIZE, session.m)
         draw_hex_outline(cx, cy, HEX_SIZE - 3, SELECTABLE_COLOR)
 
     if session.selected is not None:
-        cx, cy = hex_to_pixel(session.selected[0], session.selected[1], HEX_SIZE)
+        cx, cy = hex_to_pixel(session.selected[0], session.selected[1], HEX_SIZE, session.m)
         draw_hex_outline(cx, cy, HEX_SIZE, SELECT_COLOR)
         draw_hex_outline(cx, cy, HEX_SIZE - 2, SELECT_COLOR)
 
     for index, player in enumerate(env.players):
         color = PLAYER_COLORS[index % len(PLAYER_COLORS)]
         for city in player.cities:
-            cx, cy = hex_to_pixel(city.coordinates[0], city.coordinates[1], HEX_SIZE)
+            cx, cy = hex_to_pixel(city.coordinates[0], city.coordinates[1], HEX_SIZE, session.m)
             rl.draw_circle(int(cx), int(cy), HEX_SIZE * 0.6, color)
             rl.draw_circle_lines(int(cx), int(cy), HEX_SIZE * 0.6, rl.WHITE)
             rl.draw_text(b"C", int(cx) - 4, int(cy) - 5, 12, rl.WHITE)
         for unit in player.units:
-            draw_unit(unit, color, sprites)
+            draw_unit(unit, color, sprites, session.m)
 
 
-def draw_unit(unit, color, sprites):
-    cx, cy = hex_to_pixel(unit.coordinates[0], unit.coordinates[1], HEX_SIZE)
+def draw_unit(unit, color, sprites, wrap_w):
+    cx, cy = hex_to_pixel(unit.coordinates[0], unit.coordinates[1], HEX_SIZE, wrap_w)
     sprite = sprites.get(unit.unit_type)
     if sprite is not None:
         scale = (HEX_SIZE * 1.2) / max(sprite.width, sprite.height)

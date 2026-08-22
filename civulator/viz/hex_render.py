@@ -6,9 +6,17 @@ re-implemented the same hex math and drawing code. This module is the single
 home for that shared, tool-agnostic rendering code so future raylib-based
 tools (e.g. the Order Recorder) can reuse it instead of forking it again.
 
-Coordinate convention (unchanged from the original scripts, do not "fix"):
-axial hex coordinates stored as (row, col), rendered on a column-skewed
-("offset") pixel grid via hex_to_pixel/pixel_to_hex below.
+Coordinate convention: axial (row, col) storage is unchanged, but the
+PROJECTION is not (design doc §11 P2b, §7.5 amendment D24) — the pre-0.6
+column-skewed "offset" grid rendered ~17% of neighbor pairs as visually
+non-adjacent, a bug this patch fixes. The screen now shows a pointy-top
+BRICK RECTANGLE: axial converted to odd-r offset, offset column taken mod
+`wrap_w` — legal only because the map wraps on col (the cylinder quotient's
+gauge freedom). `hex_to_pixel`/`pixel_to_hex` take the map's column count as
+a required `wrap_w`/`cols` argument; passing the wrong value silently breaks
+the adjacency-render invariant (tests/test_hex_render.py). Scrolling views
+(watch.py) additionally need `wrap_camera_x`/`wrapped_draw_x` to handle the
+column-wrap seam — see their docstrings.
 
 This module may depend on pyray/numpy but must stay viz-only: it must never
 be imported by civulator.game or civulator.agents, and must never import
@@ -20,66 +28,78 @@ import os
 
 import pyray as rl
 
-
-# Terrain fill colors, keyed by Tile.terrain_type. Identical in both source
-# scripts prior to extraction (no divergence to reconcile).
-TERRAIN_COLORS = {
-    "Plains":      rl.Color(180, 200, 100, 255),
-    "Grassland":   rl.Color(100, 180, 80, 255),
-    "Desert":      rl.Color(220, 200, 140, 255),
-    "Tundra":      rl.Color(180, 200, 210, 255),
-    "Snow":        rl.Color(240, 240, 250, 255),
-    "Hills":       rl.Color(140, 160, 90, 255),
-    "Woods":       rl.Color(60, 120, 50, 255),
-    "Rainforest":  rl.Color(30, 100, 40, 255),
-    "Marsh":       rl.Color(100, 130, 100, 255),
-    "Floodplains": rl.Color(160, 190, 100, 255),
-    "Mountain":    rl.Color(120, 110, 100, 255),
-    "Ocean":       rl.Color(40, 80, 160, 255),
-    "Coast":       rl.Color(80, 140, 200, 255),
-    "Lake":        rl.Color(60, 120, 190, 255),
-}
+_S3 = math.sqrt(3)
 
 
-def hex_to_pixel(row, col, size):
-    """Convert axial hex (row, col) to pixel center, with offset for skewed grid."""
-    w = size * 2
-    h = size * math.sqrt(3)
-    x = col * w * 0.75 + size
-    y = row * h + (col % 2) * h * 0.5 + size
+# =====================================================================
+# Projection (design doc §7.5, D24): axial (row, col) <-> pointy-top brick
+# rectangle pixel coordinates. Storage stays axial; only the display changes.
+# =====================================================================
+
+
+def wrap_period(size, wrap_w):
+    """World pixel width P = sqrt(3) * size * wrap_w (§7.5) — the column-wrap period.
+
+    The single source of the period formula; shared by the camera-wrap
+    helpers, the river-edge primitive, and their tests.
+    """
+    return _S3 * size * wrap_w
+
+
+def hex_to_pixel(row, col, size, wrap_w):
+    """Axial (row, col) -> pixel center on the pointy-top brick rectangle.
+
+    Design doc §7.5 (D24) drop-in formula, used exactly as verified there:
+    convert axial to odd-r offset (`col_off`), then odd-r-offset to
+    pointy-top pixel. Taking `col_off % wrap_w` is what turns the true axial
+    embedding (a parallelogram leaning across H/2 columns) into an on-screen
+    RECTANGLE — legal only because the map wraps on col (the cylinder
+    quotient's gauge freedom, §7.5 finding 1).
+
+    `wrap_w` MUST be the map's column count (the same value passed to
+    pixel_to_hex/Map.get_adjacent_coords as `cols`/`width`) — a mismatch
+    silently breaks the adjacency-render invariant.
+    """
+    col_off = (col + (row - (row & 1)) // 2) % wrap_w
+    x = _S3 * size * (col_off + 0.5 * (row & 1)) + _S3 * 0.5 * size
+    y = 1.5 * size * row + size
     return x, y
 
 
 def pixel_to_hex(px, py, size, rows, cols):
-    """Find the hex (row, col) whose center is closest to a pixel position.
+    """Pixel position -> axial (row, col). Exact O(1) inverse of hex_to_pixel.
 
-    Brute-force nearest-center search over the full grid (O(rows*cols)), as
-    in the original scenario_painter.py implementation. `rows`/`cols` bound
-    the search to the caller's map size (watch.py had no equivalent function
-    since it never needed pixel->hex picking).
+    Design doc §7.5 (D24): fractional axial from the inverse pointy-top
+    formula, cube rounding to the nearest hex, `q % cols` to resolve clicks
+    on wrapped strips for free. Replaces the old per-frame O(rows*cols)
+    nearest-hex-center scan.
 
-    Returns (None, None) if no hex center is reasonably close to (px, py).
+    `cols` is the same wrap width hex_to_pixel calls `wrap_w`. Returns
+    (None, None) if the picked row is off-map (rows never wrap).
     """
-    best_r, best_c = 0, 0
-    best_dist = float("inf")
-    for r in range(rows):
-        for c in range(cols):
-            cx, cy = hex_to_pixel(r, c, size)
-            d = (px - cx) ** 2 + (py - cy) ** 2
-            if d < best_dist:
-                best_dist = d
-                best_r, best_c = r, c
-    # Only match if reasonably close
-    if best_dist < (size * size * 1.5):
-        return best_r, best_c
-    return None, None
+    x = px - _S3 * 0.5 * size
+    y = py - size
+    qf = (_S3 / 3 * x - y / 3) / size
+    rf = (2 / 3 * y) / size
+    sf = -qf - rf
+    q, r, s_ = round(qf), round(rf), round(sf)
+    dq, dr, ds = abs(q - qf), abs(r - rf), abs(s_ - sf)
+    if dq > dr and dq > ds:
+        q = -r - s_
+    elif dr > ds:
+        r = -q - s_
+    return (r, q % cols) if 0 <= r < rows else (None, None)
 
 
 def draw_hex(cx, cy, size, color):
-    """Draw a filled hexagon at pixel center."""
+    """Draw a filled hexagon at pixel center.
+
+    Pointy-top vertices (§7.5: angle = 60*i + 30, was 60*i for the old
+    flat-top art — sprites are unrotated centered icons, so no art changes).
+    """
     points = []
     for i in range(6):
-        angle = math.radians(60 * i)
+        angle = math.radians(60 * i + 30)
         px = cx + size * math.cos(angle)
         py = cy + size * math.sin(angle)
         points.append((px, py))
@@ -96,10 +116,10 @@ def draw_hex(cx, cy, size, color):
 
 
 def draw_hex_outline(cx, cy, size, color):
-    """Draw hex border."""
+    """Draw hex border (pointy-top vertices, §7.5: angle = 60*i + 30)."""
     for i in range(6):
-        a1 = math.radians(60 * i)
-        a2 = math.radians(60 * (i + 1))
+        a1 = math.radians(60 * i + 30)
+        a2 = math.radians(60 * (i + 1) + 30)
         rl.draw_line(
             int(cx + size * math.cos(a1)), int(cy + size * math.sin(a1)),
             int(cx + size * math.cos(a2)), int(cy + size * math.sin(a2)),
@@ -110,12 +130,19 @@ def draw_hex_outline(cx, cy, size, color):
 def make_camera(map_rows, map_cols, hex_size, screen_w, screen_h, zoom=1.0):
     """Create a Camera2D centered on a hex map laid out via hex_to_pixel.
 
+    Center = the true bounding-box midpoint of the pointy-top brick
+    rectangle (§7.5 drop-in formula), not the old flat-top approximation
+    (map_cols*size*0.75, map_rows*size*0.87 — numbers with no geometric
+    meaning under the current projection).
+
     Both scripts built their Camera2D this way, differing only in the
     starting `zoom` (watch.py: 0.5, scenario_painter.py: 1.0) — callers pass
     their own value so behavior is unchanged.
     """
     camera = rl.Camera2D()
-    camera.target = rl.Vector2(map_cols * hex_size * 0.75, map_rows * hex_size * 0.87)
+    center_x = (_S3 * hex_size * (map_cols + 0.5)) / 2
+    center_y = (1.5 * hex_size * (map_rows - 1) + 2 * hex_size) / 2
+    camera.target = rl.Vector2(center_x, center_y)
     camera.offset = rl.Vector2(screen_w / 2, screen_h / 2)
     camera.rotation = 0.0
     camera.zoom = zoom
@@ -139,6 +166,209 @@ def update_camera_zoom_pan(camera, zoom_step=0.05, zoom_min=0.1, zoom_max=3.0):
         delta = rl.get_mouse_delta()
         camera.target.x -= delta.x / camera.zoom
         camera.target.y -= delta.y / camera.zoom
+
+
+# =====================================================================
+# Camera-wrap helpers (§7.5 camera/seam policy): for SCROLLING views only
+# (watch.py, the future mapgen preview CLI). Painter/recorder show the whole
+# board at once and need none of this — "nothing special", per the doc.
+# =====================================================================
+
+
+def wrap_camera_x(camera, size, wrap_w):
+    """Wrap camera.target.x into [0, P) after panning (§7.5 camera/seam policy).
+
+    P = wrap_period(size, wrap_w). Call once per frame, after
+    update_camera_zoom_pan, on a scrolling view — so panning past the seam
+    re-enters from the other side instead of drifting into unmapped space.
+    Mutates `camera` in place and also returns the wrapped value.
+    """
+    period = wrap_period(size, wrap_w)
+    camera.target.x = camera.target.x % period
+    return camera.target.x
+
+
+def wrapped_draw_x(x, camera_x, size, wrap_w):
+    """The k*P copy (k in {-1, 0, +1}) of a raw hex_to_pixel x nearest the camera.
+
+    `x` is already in [0, P) (hex_to_pixel takes the offset column mod
+    wrap_w internally). Scrolling views draw each tile/unit at this shifted
+    x so tiles near the camera render in whichever copy is actually on
+    screen (§7.5 camera/seam policy) — otherwise everything on the far side
+    of the canonical [0, P) strip vanishes the moment the camera crosses the
+    seam.
+    """
+    period = wrap_period(size, wrap_w)
+    best = x
+    best_dist = abs(x - camera_x)
+    for k in (-1, 1):
+        shifted = x + k * period
+        d = abs(shifted - camera_x)
+        if d < best_dist:
+            best_dist = d
+            best = shifted
+    return best
+
+
+# =====================================================================
+# Terrain compositing (design doc §7.5/P2b item 3): replaces the old flat
+# TERRAIN_COLORS dict, which was keyed on the now-removed Tile.terrain_type.
+# Hues are seeded from that dict plus the archived map_generator_prototype.py
+# TERRAIN_COLORS (base + feature-overlay hex values) — reused in spirit, not
+# copied verbatim, since neither table had a relief/feature COMPOSITING rule
+# to lift.
+# =====================================================================
+
+# Base hue per base_terrain.
+_BASE_COLORS = {
+    "Grassland": (100, 180, 80),
+    "Plains":    (180, 200, 100),
+    "Desert":    (220, 200, 140),
+    "Tundra":    (180, 200, 210),
+    "Snow":      (240, 240, 250),
+    "Coast":     (80, 140, 200),
+    "Lake":      (60, 120, 190),
+    "Ocean":     (40, 80, 160),
+}
+_FALLBACK_COLOR = (130, 130, 130)  # unknown base_terrain (config typo) -- not a crash
+
+_HILLS_DARKEN = 0.85  # relief hills: darken ~15%
+_MOUNTAIN_TINT = (110, 100, 95)
+_MOUNTAIN_BLEND = 0.6  # relief mountain: strong shade, distinct from its base
+
+# feature -> (tint RGB, blend fraction). Woods/Rainforest darken toward green;
+# Marsh/Floodplains/Oasis/Reef/Ice each get their own distinct tint.
+_FEATURE_TINTS = {
+    "Woods":       ((40, 100, 40), 0.45),
+    "Rainforest":  ((20, 90, 30), 0.60),
+    "Marsh":       ((90, 110, 90), 0.50),
+    "Floodplains": ((170, 195, 110), 0.40),
+    "Oasis":       ((60, 170, 130), 0.55),
+    "Reef":        ((60, 200, 190), 0.55),
+    "Ice":         ((225, 240, 250), 0.60),
+}
+
+_RESOURCE_DOT_COLOR = rl.Color(255, 215, 60, 255)
+_RESOURCE_DOT_OUTLINE = rl.Color(25, 20, 0, 220)
+
+
+def _blend(rgb, target, amount):
+    r, g, b = rgb
+    tr, tg, tb = target
+    return (r + (tr - r) * amount, g + (tg - g) * amount, b + (tb - b) * amount)
+
+
+def _clamp255(v):
+    return max(0, min(255, int(round(v))))
+
+
+def tile_color(tile):
+    """Composite fill color for one tile: base x relief x feature (§7.5 P2b).
+
+    Replaces the old TERRAIN_COLORS.get(tile.terrain_type, ...) lookup —
+    Tile.terrain_type is gone; this reads the composable layers directly.
+    Resources are deliberately NOT folded in here (see draw_resource_marker):
+    a resource is a small overlay glyph, not a base-color change, so the
+    terrain underneath stays legible.
+
+    Order: base hue -> relief modifier (hills darken ~15%; mountain shades
+    strongly toward a distinct rock tone, regardless of base) -> feature
+    tint (Woods/Rainforest darken toward green; Marsh/Floodplains/Oasis/
+    Reef/Ice each a distinct tint). Never raises: an unrecognized layer
+    value (e.g. a config typo) falls back to a neutral gray / leaves the
+    color unmodified rather than crashing the render loop.
+
+    Returns an rl.Color.
+    """
+    rgb = _BASE_COLORS.get(tile.base_terrain, _FALLBACK_COLOR)
+
+    if tile.relief == "hills":
+        rgb = tuple(c * _HILLS_DARKEN for c in rgb)
+    elif tile.relief == "mountain":
+        rgb = _blend(rgb, _MOUNTAIN_TINT, _MOUNTAIN_BLEND)
+
+    if tile.feature is not None:
+        tint = _FEATURE_TINTS.get(tile.feature)
+        if tint is not None:
+            rgb = _blend(rgb, tint[0], tint[1])
+
+    r, g, b = (_clamp255(c) for c in rgb)
+    return rl.Color(r, g, b, 255)
+
+
+def draw_resource_marker(cx, cy, size, tile):
+    """Small centered dot marking `tile.resource`, drawn after draw_hex (§7.5).
+
+    A generic marker rather than per-resource art: 0.6 ships bonus-tier
+    resources as gameplay content only (design doc §3.2) — distinguishing
+    them visually per-resource is out of this patch's scope. No-op if the
+    tile carries no resource.
+    """
+    if tile.resource is None:
+        return
+    radius = max(2.0, size * 0.16)
+    rl.draw_circle(int(cx), int(cy), radius + 1, _RESOURCE_DOT_OUTLINE)
+    rl.draw_circle(int(cx), int(cy), radius, _RESOURCE_DOT_COLOR)
+
+
+# =====================================================================
+# River-edge primitive (design doc §5, §7.5 item 4). Rivers don't generate
+# until patch P4 — this primitive is wired into painter/recorder/watch now
+# so P4's rivers appear automatically; tests hand-build edges via
+# Map.add_river.
+# =====================================================================
+
+RIVER_COLOR = rl.Color(70, 130, 220, 255)
+
+
+def river_edge_endpoints(coords1, coords2, size, wrap_w):
+    """Pixel endpoints of the segment along the shared edge of two adjacent tiles.
+
+    `coords1`/`coords2` must be hex-adjacent (as returned by
+    Map.get_adjacent_coords / stored in Map.rivers) — the shared-edge
+    geometry assumes it. Two regular hexagons that share an edge have that
+    edge centered at the midpoint of their rendered centers, perpendicular
+    to the line between them, with length `size` (a regular hexagon's edge
+    length equals its circumradius).
+
+    Handles the column-wrap seam: picks whichever of the three k in
+    {-1, 0, +1} P-shifted copies of tile2's center is nearest tile1's, so a
+    river crossing the seam still renders as one short segment instead of a
+    spurious line stretching across the map (same k-shift-nearest rule as
+    wrapped_draw_x, §7.5 seam policy).
+
+    Returns ((x1, y1), (x2, y2)).
+    """
+    cx1, cy1 = hex_to_pixel(coords1[0], coords1[1], size, wrap_w)
+    cx2, cy2 = hex_to_pixel(coords2[0], coords2[1], size, wrap_w)
+    cx2 = wrapped_draw_x(cx2, cx1, size, wrap_w)
+
+    mx, my = (cx1 + cx2) / 2, (cy1 + cy2) / 2
+    dx, dy = cx2 - cx1, cy2 - cy1
+    dist = math.hypot(dx, dy)
+    if dist == 0:
+        return (mx, my), (mx, my)
+    ux, uy = dx / dist, dy / dist
+    px, py = -uy, ux
+    half = size / 2
+    return (mx - px * half, my - py * half), (mx + px * half, my + py * half)
+
+
+def draw_river_edges(map_obj, size, wrap_w, color=RIVER_COLOR, thickness=3.0, camera_x=None):
+    """Draw every Map.rivers edge as a segment along the tiles' shared edge (§7.5).
+
+    `camera_x`, if given (scrolling views only), additionally shifts each
+    drawn segment by whichever k*P copy lands nearest the camera — the same
+    rule wrapped_draw_x applies to tiles, so a river near the seam renders
+    in the copy actually on screen. Painter/recorder (fully visible boards)
+    call this with `camera_x=None`.
+    """
+    for coords1, coords2 in map_obj.rivers:
+        (x1, y1), (x2, y2) = river_edge_endpoints(coords1, coords2, size, wrap_w)
+        if camera_x is not None:
+            shift = wrapped_draw_x(x1, camera_x, size, wrap_w) - x1
+            x1, x2 = x1 + shift, x2 + shift
+        rl.draw_line_ex(rl.Vector2(x1, y1), rl.Vector2(x2, y2), thickness, color)
 
 
 def load_sprites(sprite_files, art_dir):

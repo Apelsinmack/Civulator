@@ -126,12 +126,12 @@ class TestComposedProperties:
             "Grassland (Hills), Woods"
         assert Tile(0, 0, "Desert", relief="mountain").label == "Desert (Mountain)"
 
-    def test_terrain_type_is_the_deprecated_label_alias(self):
-        """Read-only alias kept only for the not-yet-updated visual tools (P2b)."""
+    def test_terrain_type_alias_is_gone(self):
+        """The deprecated Tile.terrain_type alias is removed (design §11 P2b) —
+        the three viz scripts that were its last readers now composite colors
+        from the layers directly (civulator.viz.hex_render.tile_color)."""
         tile = Tile(0, 0, "Grassland", relief="hills")
-        assert tile.terrain_type == tile.label
-        with pytest.raises(AttributeError):
-            tile.terrain_type = "Hills"
+        assert not hasattr(tile, "terrain_type")
 
     def test_no_river_state_on_the_tile(self):
         """Rivers are Map edges only (§9.1) — has_river is gone."""

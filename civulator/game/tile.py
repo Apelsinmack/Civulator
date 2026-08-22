@@ -60,16 +60,6 @@ class Tile:
             text += f", {self.feature}"
         return text
 
-    @property
-    def terrain_type(self):
-        """DEPRECATED alias for `label`, removed in P2b (design §11).
-
-        No engine or agent code reads this — it exists only so that the visual
-        tools, which still key their colors on the old flat terrain names, keep
-        running (rendering an unstyled default) until P2b re-points them.
-        """
-        return self.label
-
     # --- Composed properties (derived from the layers, never stored twice) ---
 
     @property

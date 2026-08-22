@@ -12,6 +12,7 @@ Controls:
   F            — toggle fortified
   S            — save scenario + generate new terrain
   R            — regenerate terrain without saving
+  L            — toggle (row,col) debug label overlay (off by default)
   SCROLL       — zoom
   RMOUSE DRAG  — pan (hold right mouse + drag)
 """
@@ -28,15 +29,17 @@ import pyray as rl
 from civulator.game.environment import GameEnvironment
 from civulator.meta import build_manifest
 from civulator.viz.hex_render import (
-    TERRAIN_COLORS,
-    hex_to_pixel,
-    pixel_to_hex,
     draw_hex,
     draw_hex_outline,
-    make_camera,
-    update_camera_zoom_pan,
+    draw_resource_marker,
+    draw_river_edges,
+    hex_to_pixel,
     load_sprites,
+    make_camera,
+    pixel_to_hex,
+    tile_color,
     unload_sprites,
+    update_camera_zoom_pan,
 )
 
 # --- Config ---
@@ -77,6 +80,7 @@ class PainterState:
         self.city_mode = False
         self.scenario_count = 0
         self.sprites = {}     # loaded textures
+        self.show_coords = False  # (row,col) debug label overlay (§7.5), off by default
         self.generate_terrain()
 
     def generate_terrain(self):
@@ -197,6 +201,8 @@ def run_painter():
         if rl.is_key_pressed(rl.KEY_S):
             if state.units or state.cities:
                 state.save()
+        if rl.is_key_pressed(rl.KEY_L):
+            state.show_coords = not state.show_coords
 
         # Zoom, pan with right mouse drag
         update_camera_zoom_pan(camera, zoom_step=0.1, zoom_min=0.3, zoom_max=3.0)
@@ -231,14 +237,21 @@ def run_painter():
                 tile = state.game_map.tiles[row, col]
                 if tile is None:
                     continue
-                cx, cy = hex_to_pixel(row, col, HEX_SIZE)
-                color = TERRAIN_COLORS.get(tile.terrain_type, rl.GRAY)
-                draw_hex(cx, cy, HEX_SIZE - 1, color)
+                cx, cy = hex_to_pixel(row, col, HEX_SIZE, MAP_COLS)
+                draw_hex(cx, cy, HEX_SIZE - 1, tile_color(tile))
                 draw_hex_outline(cx, cy, HEX_SIZE, rl.Color(60, 60, 60, 100))
+                draw_resource_marker(cx, cy, HEX_SIZE, tile)
+                if state.show_coords:
+                    rl.draw_text(f"{row},{col}".encode(), int(cx) - 12, int(cy) + HEX_SIZE * 0.3,
+                                 10, rl.Color(20, 20, 20, 220))
+
+        # Rivers (design doc §5 — none generate until P4; the primitive is
+        # wired in now so P4's rivers appear automatically).
+        draw_river_edges(state.game_map, HEX_SIZE, MAP_COLS)
 
         # Cities
         for city in state.cities:
-            cx, cy = hex_to_pixel(city["row"], city["col"], HEX_SIZE)
+            cx, cy = hex_to_pixel(city["row"], city["col"], HEX_SIZE, MAP_COLS)
             pcolor = PLAYER_COLORS[city["team"] - 1]
             rl.draw_circle(int(cx), int(cy), HEX_SIZE * 0.6, pcolor)
             rl.draw_circle_lines(int(cx), int(cy), HEX_SIZE * 0.6, rl.WHITE)
@@ -246,7 +259,7 @@ def run_painter():
 
         # Units
         for unit in state.units:
-            cx, cy = hex_to_pixel(unit["row"], unit["col"], HEX_SIZE)
+            cx, cy = hex_to_pixel(unit["row"], unit["col"], HEX_SIZE, MAP_COLS)
             pcolor = PLAYER_COLORS[unit["team"] - 1]
             utype = unit["type"]
 
@@ -279,7 +292,7 @@ def run_painter():
         mouse_world = rl.get_screen_to_world_2d(mouse_screen, camera)
         hr, hc = pixel_to_hex(mouse_world.x, mouse_world.y, HEX_SIZE, MAP_ROWS, MAP_COLS)
         if hr is not None and 0 <= hr < MAP_ROWS and 0 <= hc < MAP_COLS:
-            hx, hy = hex_to_pixel(hr, hc, HEX_SIZE)
+            hx, hy = hex_to_pixel(hr, hc, HEX_SIZE, MAP_COLS)
             draw_hex_outline(hx, hy, HEX_SIZE, rl.Color(255, 255, 255, 150))
 
         rl.end_mode_2d()
@@ -328,8 +341,9 @@ def run_painter():
         rl.draw_text(b"CLICK = place    SHIFT+CLICK = remove", panel_x, y_controls + 20, 12, rl.DARKGRAY)
         rl.draw_text(b"S = save + new terrain", panel_x, y_controls + 36, 12, rl.DARKGRAY)
         rl.draw_text(b"R = regenerate terrain", panel_x, y_controls + 52, 12, rl.DARKGRAY)
-        rl.draw_text(b"SCROLL = zoom    RMOUSE = pan", panel_x, y_controls + 68, 12, rl.DARKGRAY)
-        rl.draw_text(b"ESC = quit", panel_x, y_controls + 84, 12, rl.DARKGRAY)
+        rl.draw_text(b"L = toggle (row,col) labels", panel_x, y_controls + 68, 12, rl.DARKGRAY)
+        rl.draw_text(b"SCROLL = zoom    RMOUSE = pan", panel_x, y_controls + 84, 12, rl.DARKGRAY)
+        rl.draw_text(b"ESC = quit", panel_x, y_controls + 100, 12, rl.DARKGRAY)
 
         rl.end_drawing()
 
