@@ -50,4 +50,4 @@ One line per system built for reuse. If what you need is here, use it; if it alm
 
 ## Related Projects
 
-- **Breach** — shares hex/grid AI patterns, C++/pybind11 architecture, and RL lessons both ways.
+- **Breach** — shares AI patterns, C++/pybind11 architecture, and RL lessons both ways.

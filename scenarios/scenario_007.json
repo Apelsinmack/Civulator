@@ -1,0 +1,188 @@
+{
+  "seed": 18089,
+  "terrain_seeded": true,
+  "map_rows": 16,
+  "map_cols": 16,
+  "units": [
+    {
+      "type": "Warrior",
+      "team": 1,
+      "row": 8,
+      "col": 6,
+      "fortified": false,
+      "hp": 100
+    },
+    {
+      "type": "Warrior",
+      "team": 1,
+      "row": 7,
+      "col": 5,
+      "fortified": false,
+      "hp": 100
+    },
+    {
+      "type": "Warrior",
+      "team": 2,
+      "row": 6,
+      "col": 7,
+      "fortified": false,
+      "hp": 100
+    },
+    {
+      "type": "Archer",
+      "team": 2,
+      "row": 6,
+      "col": 6,
+      "fortified": false,
+      "hp": 100
+    }
+  ],
+  "cities": [],
+  "manifest": {
+    "game_version": "0.5.1",
+    "git_commit": "81bd685",
+    "config": {
+      "map": {
+        "rows": 24,
+        "columns": 48,
+        "type": "basic",
+        "terrain_weights": {
+          "Plains": 0.3,
+          "Grassland": 0.3,
+          "Desert": 0.1,
+          "Tundra": 0.1,
+          "Hills": 0.1,
+          "Woods": 0.05,
+          "Mountain": 0.05
+        },
+        "features": {
+          "woods_chance": 0.2,
+          "rainforest_chance": 0.1
+        }
+      },
+      "terrain": {
+        "movement_costs": {
+          "Plains": 1,
+          "Grassland": 1,
+          "Desert": 1,
+          "Tundra": 1,
+          "Snow": 1,
+          "Hills": 2,
+          "Woods": 2,
+          "Rainforest": 2,
+          "Marsh": 2,
+          "Floodplains": 1,
+          "Mountain": 999,
+          "Ocean": 1,
+          "Coast": 1,
+          "Lake": 1
+        },
+        "defense_modifiers": {
+          "Plains": 0,
+          "Grassland": 0,
+          "Desert": 0,
+          "Tundra": 0,
+          "Snow": 0,
+          "Hills": 3,
+          "Woods": 3,
+          "Rainforest": 3,
+          "Marsh": -2,
+          "Floodplains": -2,
+          "Mountain": 0,
+          "Ocean": 0,
+          "Coast": 0,
+          "Lake": 0
+        },
+        "los": {
+          "Plains": [
+            0,
+            0
+          ],
+          "Grassland": [
+            0,
+            0
+          ],
+          "Desert": [
+            0,
+            0
+          ],
+          "Tundra": [
+            0,
+            0
+          ],
+          "Snow": [
+            0,
+            0
+          ],
+          "Hills": [
+            1,
+            1
+          ],
+          "Woods": [
+            1,
+            0
+          ],
+          "Rainforest": [
+            1,
+            0
+          ],
+          "Marsh": [
+            0,
+            0
+          ],
+          "Floodplains": [
+            0,
+            0
+          ],
+          "Mountain": [
+            2,
+            0
+          ],
+          "Ocean": [
+            0,
+            0
+          ],
+          "Coast": [
+            0,
+            0
+          ],
+          "Lake": [
+            0,
+            0
+          ]
+        }
+      },
+      "game": {
+        "num_players": 8,
+        "max_turns": 1000,
+        "starting_warriors": 3,
+        "min_city_distance": 3
+      },
+      "training": {
+        "episodes": 64,
+        "batch_size": 32,
+        "max_turns": 250,
+        "learning_rate": 0.001,
+        "gamma": 0.9,
+        "epsilon_start": 1.0,
+        "epsilon_end": 0.05,
+        "epsilon_decay_episodes": 5000,
+        "target_update_freq": 100,
+        "encoder": "enhanced",
+        "fully_conv": true,
+        "fog_of_war": false,
+        "rewards": {
+          "invalid_action": -1,
+          "fortify": 0,
+          "damage_per_hp": 0.1,
+          "kill": 10,
+          "unit_lost": -10,
+          "capture_civilian": 15,
+          "capture_city": 20,
+          "found_city": 15
+        }
+      }
+    },
+    "date": "2026-08-22T16:00:51.369294+00:00"
+  }
+}
