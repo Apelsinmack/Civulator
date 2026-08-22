@@ -21,67 +21,19 @@ Mountain = 0.05
 woods_chance = 0.2       # Plains, Grassland, Tundra
 rainforest_chance = 0.1  # Plains, Grassland
 
-[terrain.movement_costs]
-Plains = 1
-Grassland = 1
-Desert = 1
-Tundra = 1
-Snow = 1
-Hills = 2
-Woods = 2
-Rainforest = 2
-Marsh = 2
-Floodplains = 1
-Mountain = 999           # Impassable
-Ocean = 1
-Coast = 1
-Lake = 1
-
-[terrain.defense_modifiers]
-Plains = 0
-Grassland = 0
-Desert = 0
-Tundra = 0
-Snow = 0
-Hills = 3
-Woods = 3
-Rainforest = 3
-Marsh = -2
-Floodplains = -2
-Mountain = 0
-Ocean = 0
-Coast = 0
-Lake = 0
-
-# --- Line of Sight ---
-# Each terrain has an obstacle_level and a vantage_level.
-# You can see tiles at distance = 1 + max(0, your_vantage - obstacle_level_between)
-# This is a placeholder system — refine as we test gameplay.
-[terrain.los]
-# [obstacle_level, vantage_level]
-Plains =     [0, 0]
-Grassland =  [0, 0]
-Desert =     [0, 0]
-Tundra =     [0, 0]
-Snow =       [0, 0]
-Hills =      [1, 1]     # Blocks flat-level sight, but lets you see further
-Woods =      [1, 0]     # Blocks sight, no vantage
-Rainforest = [1, 0]
-Marsh =      [0, 0]
-Floodplains = [0, 0]
-Mountain =   [2, 0]     # Fully blocks LoS, can't stand on it
-Ocean =      [0, 0]
-Coast =      [0, 0]
-Lake =       [0, 0]
-
 # =====================================================================
 # Composable terrain model (v0.6, docs/terrain_model_design.md §3.1) — ADDITIVE.
-# Lives alongside the legacy terrain.movement_costs / defense_modifiers / los /
-# map.terrain_weights / map.features tables above; those still drive all
-# gameplay today (Tile.terrain_type / update_terrain_properties). This schema
-# is read only by civulator.terrain_model (pure interpreter) and consumed by
-# nothing else yet — engine re-pointing is patch P2a, which also removes the
-# legacy tables above. See civulator/terrain_model.py for the `on` semantics.
+# Every gameplay number a tile has is the SUM of its layers' contributions
+# (base x relief x feature x resource), interpreted by civulator.terrain_model
+# and read by the engine through Tile's composed properties. Line of sight is
+# `los = [obstacle, vantage]`: you see distance 2 + vantage, and an obstacle
+# blocks when its level exceeds the observer's vantage.
+#
+# P2a removed the legacy [terrain.movement_costs] / [terrain.defense_modifiers] /
+# [terrain.los] tables (and the Terrain class that merged them) — this schema is
+# now the only source. [map.terrain_weights] / [map.features] above still feed
+# the interim world-gen shim in Map.generate_map; patch P3 replaces both with
+# the mapgen package.
 # =====================================================================
 
 # --- Base terrains: land ---
@@ -222,7 +174,14 @@ on = { bases = ["Coast", "Ocean"] }
 [terrain.resource.Wheat]
 class = "bonus"
 yields = [1, 0]
-on = { bases = ["Plains"], relief = ["flat"], features = ["none", "Floodplains"] }
+# Civ 6: Wheat sits on flat Plains, or on Desert Floodplains. The single
+# AND-of-ORs mapping the design doc sketched (bases=["Plains"],
+# features=["none","Floodplains"]) is unsatisfiable on its Floodplains branch —
+# Floodplains only exist on Desert — so this uses the list-of-mappings form.
+on = [
+    { bases = ["Plains"], relief = ["flat"], features = ["none"] },
+    { bases = ["Desert"], relief = ["flat"], features = ["Floodplains"] },
+]
 
 [terrain.resource.Rice]
 class = "bonus"
@@ -267,6 +226,47 @@ on = { bases = ["Coast", "Lake"] }
 
 [terrain.river]
 crossing_cost = 1
+
+# --- Improvements (§3.1: the same `on` formalism as terrain layers) ---
+# Consumed by GameEnvironment.can_build_improvement_at / build_improvement.
+# These mirror the hardcoded terrain lists P2a replaced: the legacy flat
+# terrain names "Hills" and "Floodplains" become a relief and a feature
+# constraint, and features were never checked (a Woods Plains tile always
+# allowed a Farm), so only the mappings below constrain them.
+# An improvement without an `on` key is buildable nowhere.
+
+[improvements.Farm]
+on = [
+    { bases = ["Plains", "Grassland", "Desert"], relief = ["flat"] },
+    { features = ["Floodplains"] },
+]
+
+[improvements.Mine]
+on = [
+    { relief = ["hills"] },
+    { bases = ["Desert", "Tundra", "Snow"], relief = ["flat"] },
+]
+
+[improvements.Plantation]
+on = { bases = ["Plains", "Grassland", "Desert"], relief = ["flat"] }
+
+[improvements.Camp]
+on = { bases = ["Plains", "Grassland", "Tundra", "Desert"], relief = ["flat"] }
+
+[improvements.Pasture]
+on = { bases = ["Plains", "Grassland", "Desert", "Tundra"], relief = ["flat"] }
+
+[improvements.Quarry]
+on = { bases = ["Plains", "Desert", "Grassland", "Tundra"], relief = ["flat"] }
+
+[improvements."Fishing Boats"]
+on = { bases = ["Coast", "Lake"] }
+
+[improvements."Oil Well"]
+on = [
+    { bases = ["Desert", "Tundra", "Snow"], relief = ["flat"] },
+    { bases = ["Coast", "Ocean"] },
+]
 
 [game]
 num_players = 8

@@ -11,7 +11,6 @@ import sys
 import numpy as np
 import pytest
 
-from civulator.game.terrain import Terrain
 from civulator.tools.recording import (
     RecordingSession,
     build_env_from_scenario,
@@ -25,10 +24,13 @@ SCENARIO_DIR = os.path.join(
 SCENARIO_001 = os.path.join(SCENARIO_DIR, "scenario_001.json")
 
 
+def _layers(tile):
+    """A tile's whole terrain state (design doc §3) as a comparable tuple."""
+    return (tile.base_terrain, tile.relief, tile.feature, tile.resource)
+
+
 def _terrain_grid(env):
-    return [
-        [env.map.tiles[r, c].terrain_type for c in range(env.m)] for r in range(env.n)
-    ]
+    return [[_layers(env.map.tiles[r, c]) for c in range(env.m)] for r in range(env.n)]
 
 
 # --- (a) scenario loading ---------------------------------------------------
@@ -79,7 +81,7 @@ def test_painter_and_recorder_build_the_same_terrain_from_one_seed():
     }
     env = build_env_from_scenario(scenario)
     painted = [
-        [state.game_map.tiles[r, c].terrain_type for c in range(painter.MAP_COLS)]
+        [_layers(state.game_map.tiles[r, c]) for c in range(painter.MAP_COLS)]
         for r in range(painter.MAP_ROWS)
     ]
     assert painted == _terrain_grid(env)
@@ -89,12 +91,13 @@ def test_painter_and_recorder_build_the_same_terrain_from_one_seed():
 
 
 def _passable(env, coords):
+    """Land-domain passability through the canonical check (design doc §3.3)."""
     tile = env.map.get_tile(coords)
-    return tile is not None and Terrain.MOVEMENT_COSTS.get(tile.terrain_type, 1) < 999
+    return tile is not None and tile.is_passable("land")
 
 
 def _cost(env, coords):
-    return Terrain.MOVEMENT_COSTS.get(env.map.get_tile(coords).terrain_type, 1)
+    return env.map.get_tile(coords).movement_cost
 
 
 def _find_attack_line(env):

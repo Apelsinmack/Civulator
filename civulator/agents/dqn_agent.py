@@ -122,7 +122,9 @@ class DQNAgent:
         Args:
             state: State tensor
             epsilon: Exploration rate
-            game_env: GameEnvironment for precise masking (recommended)
+            game_env: GameEnvironment — REQUIRED. The action masks read live
+                unit and terrain data; their state-tensor fallback was deleted
+                in P2a (design doc §3.3).
 
         Returns:
             tuple: (selected_pos, move_pos) as integer indices

@@ -4,9 +4,11 @@ A tile's gameplay properties are the additive sum of its layers' contributions:
 `base_terrain x relief x feature(<=1) x resource(<=1)`. This module is the one
 place that sums those contributions (`compose`) and the one place that checks
 whether a layer is allowed to sit on a given base/relief/feature combination
-(`check_on`, `validate`) — design doc D7: "one `on`-matrix evaluator ... Tile
-enforces through it, the generator chooses placements via it, the painter
-places through Tile."
+(`matches` / `check_on` / `validate`) — design doc D7: "one `on`-matrix
+evaluator ... Tile enforces through it, the generator chooses placements via
+it, the painter places through Tile." It also holds the canonical
+terrain-domain passability check (`can_enter`, §3.3/D8), which every mover —
+units, spawns, the A* cost-grid builder, the action masks — goes through.
 
 Imports only civulator.config: no civulator.game / civulator.agents /
 civulator.viz. This is what lets the (pure) future mapgen package and the
@@ -106,6 +108,25 @@ def _match(on, base, relief, feature):
     return True
 
 
+def matches(on, base, relief=None, feature=None):
+    """Evaluate any `on` constraint against a base/relief/feature combination.
+
+    The single `on`-matrix evaluator (design doc D7). Terrain layers reach it
+    through check_on(); non-layer consumers that carry their own `on` tables —
+    improvements, `[improvements.*]` in config.toml, per §3.1 — call this
+    directly.
+
+    Args:
+        on: a mapping (bases/relief/features OR-lists, AND-ed) or a list of
+            mappings (valid if ANY matches). Falsy means unconstrained.
+    """
+    if not on:
+        return True
+    if isinstance(on, dict):
+        return _match(on, base, relief, feature)
+    return any(_match(group, base, relief, feature) for group in on)
+
+
 def check_on(layer_kind, layer_name, base, relief, feature):
     """Evaluate the `on` placement constraint for one layer table entry.
 
@@ -119,14 +140,23 @@ def check_on(layer_kind, layer_name, base, relief, feature):
         True if `layer_name` has no `on` entry (unconstrained) or if the given
         combination satisfies it (any group, if `on` is a list of groups).
     """
-    table = _LAYER_TABLES[layer_kind]
-    entry = table.get(layer_name, {})
-    on = entry.get("on")
-    if not on:
-        return True
-    if isinstance(on, dict):
-        return _match(on, base, relief, feature)
-    return any(_match(group, base, relief, feature) for group in on)
+    entry = _LAYER_TABLES[layer_kind].get(layer_name, {})
+    return matches(entry.get("on"), base, relief, feature)
+
+
+def can_enter(domain, tile):
+    """Canonical terrain-domain passability check (design doc §3.3, D8).
+
+    Answers "does this terrain admit a unit of this movement domain" — domain
+    match plus the impassable flag. Occupancy (unit slots) is a separate
+    concern and is NOT considered here.
+
+    `tile` is anything carrying composed `.domain` / `.impassable` — a Tile or
+    a ComposedProperties. A missing tile (off-map) admits nobody.
+    """
+    if tile is None:
+        return False
+    return tile.domain == domain and not tile.impassable
 
 
 def validate(base, relief=None, feature=None, resource=None):
@@ -143,6 +173,12 @@ def validate(base, relief=None, feature=None, resource=None):
     if relief is not None:
         if relief not in RELIEF_TABLE:
             raise ValueError(f"Unknown relief: {relief!r}")
+        # Water is always flat (§3) — a domain rule rather than an `on` list, so
+        # that a future water base terrain inherits it without being enumerated.
+        if relief != "flat" and BASE_TABLE[base].get("domain") == "water":
+            raise ValueError(
+                f"Relief {relief!r} is not valid on water base {base!r} — water is always flat"
+            )
         if not check_on("relief", relief, base, relief, feature):
             raise ValueError(f"Relief {relief!r} is not valid on base {base!r}")
 

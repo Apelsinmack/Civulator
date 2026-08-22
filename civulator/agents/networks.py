@@ -434,47 +434,27 @@ class FullyConvSeparateNetwork(nn.Module):
         return select_qvalues, None
 
 
-def get_valid_select_mask(state, game_env=None):
+def get_valid_select_mask(state, game_env):
     """Generate a mask for valid unit selections with slot support.
 
     Output shape: [n*m*NUM_SLOTS] — one entry per tile-slot combination.
     Index encoding: tile_index * NUM_SLOTS + slot
 
-    If game_env is provided, uses actual unit data for precise per-slot masking.
-    Otherwise falls back to state tensor heuristic (own HP + movement channels).
+    `game_env` is required: masking reads the actual unit data. (The old
+    state-tensor fallback, which could not distinguish slots, was unreachable
+    from live code and was deleted in P2a — design doc §3.3.)
     """
-    d = state.shape[0]
     n, m = state.shape[1], state.shape[2]
     device = state.device
 
-    if game_env is not None:
-        # Precise masking from game state
-        mask = torch.zeros(n * m * NUM_UNIT_SLOTS, device=device)
-        current_player = game_env.current_player
-        for unit in current_player.units:
-            if unit.health > 0 and unit.movement_points > 0:
-                r, c = unit.coordinates
-                tile_idx = r * m + c
-                mask[tile_idx * NUM_UNIT_SLOTS + unit.slot] = 1.0
-        return mask
-    else:
-        # Fallback: use state tensor channels (can't distinguish slots)
-        if d in (25, 27):  # enhanced encoder (27 = fog of war variant)
-            hp_ch, move_ch = 5, 9
-        else:
-            hp_ch, move_ch = 1, 2
-
-        unit_health = state[hp_ch, :, :]
-        movement = state[move_ch, :, :]
-        has_unit = ((movement > 0.01) * (unit_health > 0.01)).float()
-
-        # Repeat for all slots (fallback can't distinguish — mark slot 0 only)
-        mask = torch.zeros(n * m * NUM_UNIT_SLOTS, device=device)
-        flat = has_unit.flatten()
-        for i in range(n * m):
-            if flat[i] > 0:
-                mask[i * NUM_UNIT_SLOTS] = 1.0  # Slot 0 (military) as default
-        return mask
+    mask = torch.zeros(n * m * NUM_UNIT_SLOTS, device=device)
+    current_player = game_env.current_player
+    for unit in current_player.units:
+        if unit.health > 0 and unit.movement_points > 0:
+            r, c = unit.coordinates
+            tile_idx = r * m + c
+            mask[tile_idx * NUM_UNIT_SLOTS + unit.slot] = 1.0
+    return mask
 
 
 def adjust_mask_for_end_turn(original_mask):
@@ -483,15 +463,21 @@ def adjust_mask_for_end_turn(original_mask):
     return torch.cat([original_mask, torch.tensor([1.0], device=device)])
 
 
-def get_valid_moves_mask(state, selected_pos, game_env=None):
+def get_valid_moves_mask(state, selected_pos, game_env):
     """Generate a mask for valid move destinations from the selected unit.
 
     selected_pos: tile_index * NUM_SLOTS + slot (slot-aware encoding)
 
-    Valid = adjacent tile (hex adjacency) where the unit's slot is not
-    occupied by a friendly unit, plus the current tile (for fortify/found city).
+    Valid = adjacent tile (hex adjacency) the unit's movement domain may enter
+    (design doc §3.3/§7 — terrain filtering the masks never had before; water
+    and mountains are now unofferable rather than illegal-but-attemptable) and
+    where the unit's slot is not occupied by a friendly unit, plus the current
+    tile (for fortify/found city).
+
+    `game_env` is required; the old state-tensor fallback branch (unreachable
+    from live code) was deleted in P2a.
     """
-    d, n, m = state.shape
+    _, n, m = state.shape
     device = state.device
 
     # Decode tile-slot from selected_pos
@@ -506,71 +492,53 @@ def get_valid_moves_mask(state, selected_pos, game_env=None):
 
     valid_move_mask = torch.zeros(n, m, device=device)
 
-    if game_env is not None:
-        # Precise masking from game state
-        selected_unit = game_env.get_unit_in_slot(
-            (row, col), selected_slot, game_env.current_player
+    selected_unit = game_env.get_unit_in_slot(
+        (row, col), selected_slot, game_env.current_player
+    )
+    if selected_unit is None or selected_unit.movement_points <= 0:
+        return valid_move_mask.flatten()
+
+    from ..game.map import HEX_DIRECTIONS
+    for dr, dc in HEX_DIRECTIONS:
+        new_row = row + dr
+        new_col = (col + dc) % m
+        if new_row < 0 or new_row >= n:
+            continue
+
+        # Terrain first: the unit's movement domain must admit the tile
+        if not selected_unit.can_enter(game_env.map.get_tile((new_row, new_col))):
+            continue
+
+        # Check if our slot is occupied by a friendly unit
+        friendly_in_slot = game_env.is_slot_occupied(
+            (new_row, new_col), selected_unit.slot, game_env.current_player
         )
-        if selected_unit is None or selected_unit.movement_points <= 0:
-            return valid_move_mask.flatten()
-
-        from ..game.map import HEX_DIRECTIONS
-        for dr, dc in HEX_DIRECTIONS:
-            new_row = row + dr
-            new_col = (col + dc) % m
-            if new_row < 0 or new_row >= n:
-                continue
-
-            # Check if our slot is occupied by a friendly unit
-            friendly_in_slot = game_env.is_slot_occupied(
-                (new_row, new_col), selected_unit.slot, game_env.current_player
-            )
-            if not friendly_in_slot:
-                valid_move_mask[new_row, new_col] = 1
-            else:
-                # Allow if enemy present (attack)
-                enemy_there = any(
-                    u.player != game_env.current_player
-                    for u in game_env.get_units_at((new_row, new_col))
-                )
-                if enemy_there:
-                    valid_move_mask[new_row, new_col] = 1
-
-        # Ranged units: enemy-occupied tiles within range AND line of sight
-        # are valid targets (rules-LoS — if the unit can shoot it, it can see
-        # it, so this leaks nothing under fog of war)
-        if selected_unit.get_base_ranged_strength() > 0:
-            attack_range = selected_unit.get_range()
-            for player in game_env.players:
-                if player is game_env.current_player:
-                    continue
-                for enemy in player.units:
-                    er, ec = enemy.coordinates
-                    if (
-                        game_env.map.distance_function((row, col), (er, ec)) <= attack_range
-                        and game_env.check_line_of_sight((row, col), (er, ec))
-                    ):
-                        valid_move_mask[er, ec] = 1
-    else:
-        # Fallback: state tensor heuristic
-        if d in (25, 27):  # enhanced encoder (27 = fog of war variant)
-            hp_ch, enemy_hp_ch = 5, 16
-            enemy_sign = 1
+        if not friendly_in_slot:
+            valid_move_mask[new_row, new_col] = 1
         else:
-            hp_ch, enemy_hp_ch = 1, 4
-            enemy_sign = -1
-
-        from ..game.map import HEX_DIRECTIONS
-        for dr, dc in HEX_DIRECTIONS:
-            new_row = row + dr
-            new_col = (col + dc) % m
-            if new_row < 0 or new_row >= n:
-                continue
-
-            friendly = state[hp_ch, new_row, new_col].item() > 0.01
-            enemy = state[enemy_hp_ch, new_row, new_col].item() * enemy_sign > 0.01
-            if not friendly or enemy:
+            # Allow if enemy present (attack)
+            enemy_there = any(
+                u.player != game_env.current_player
+                for u in game_env.get_units_at((new_row, new_col))
+            )
+            if enemy_there:
                 valid_move_mask[new_row, new_col] = 1
+
+    # Ranged units: enemy-occupied tiles within range AND line of sight
+    # are valid targets (rules-LoS — if the unit can shoot it, it can see
+    # it, so this leaks nothing under fog of war)
+    if selected_unit.get_base_ranged_strength() > 0:
+        attack_range = selected_unit.get_range()
+        for player in game_env.players:
+            if player is game_env.current_player:
+                continue
+            for enemy in player.units:
+                er, ec = enemy.coordinates
+                if (
+                    game_env.map.distance_function((row, col), (er, ec)) <= attack_range
+                    and game_env.check_line_of_sight((row, col), (er, ec))
+                ):
+                    valid_move_mask[er, ec] = 1
 
     # Current tile is always valid (fortify / found city)
     valid_move_mask[row, col] = 1

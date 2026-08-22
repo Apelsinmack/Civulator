@@ -12,9 +12,18 @@ from test_combat_range import make_flat_env, place
 
 
 def world_fingerprint(env):
-    """Everything random about a freshly reset world, as comparable data."""
+    """Everything random about a freshly reset world, as comparable data.
+
+    Terrain is compared as the composable layers themselves (design doc §3) —
+    the tile's whole terrain state, not a flat name.
+    """
     terrain = [
-        (env.map.tiles[i, j].terrain_type, tuple(env.map.tiles[i, j].features))
+        (
+            env.map.tiles[i, j].base_terrain,
+            env.map.tiles[i, j].relief,
+            env.map.tiles[i, j].feature,
+            env.map.tiles[i, j].resource,
+        )
         for i in range(env.n)
         for j in range(env.m)
     ]

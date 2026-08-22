@@ -4,10 +4,10 @@ import numpy as np
 
 from .map import Map
 from ..rng import PortableRNG
+from ..terrain_model import can_enter, matches
 from .player import Player
 from .city import City
-from .unit import WarriorUnit
-from .terrain import Terrain
+from .unit import WarriorUnit, movement_domain
 from ..config import CFG
 
 # Reward values: config.toml [training.rewards] overrides these defaults
@@ -23,6 +23,15 @@ _DEFAULT_REWARDS = {
     "found_city": 15,
 }
 REWARDS = {**_DEFAULT_REWARDS, **CFG.get("training", {}).get("rewards", {})}
+
+_GAME_CFG = CFG.get("game", {})
+STARTING_WARRIORS = _GAME_CFG.get("starting_warriors", 3)
+MIN_CITY_DISTANCE = _GAME_CFG.get("min_city_distance", 3)
+
+# Improvement placement rules — the same `on` formalism as terrain layers
+# (design doc §3.1, §9.6), replacing the hardcoded terrain lists this file
+# used to carry. An improvement with no `on` entry is buildable nowhere.
+IMPROVEMENTS = CFG.get("improvements", {})
 
 
 class GameEnvironment:
@@ -108,7 +117,7 @@ class GameEnvironment:
         self.rng.shuffle(starting_locations)
 
         # Place starting units and cities.
-        # found_city returns None on an invalid spot (Mountain/Ocean tile, or
+        # found_city returns None on an invalid spot (an unsettleable tile, or
         # within min city distance of an already-placed capital) — re-roll
         # until every player actually has a capital (issue #1: silently
         # city-less players were marked dead and wiped on their first turn).
@@ -128,16 +137,19 @@ class GameEnvironment:
                     f"small/full for {self.num_players} players?"
                 )
 
-            # Place warriors around the city using hex adjacency
+            # Place warriors around the city using hex adjacency. Every spot
+            # goes through the canonical terrain-domain check (§3.3, §9.10) —
+            # no more warriors spawning on mountains or in the sea.
+            warrior_domain = movement_domain("Warrior")
             adj_coords = self.map.get_adjacent_coords((start_x, start_y))
             warriors_placed = 0
             for pos in adj_coords:
-                if warriors_placed >= 3:
+                if warriors_placed >= STARTING_WARRIORS:
                     break
+                if not can_enter(warrior_domain, self.map.get_tile(pos)):
+                    continue
                 if self.is_valid_position(pos) and not self.is_occupied(pos):
-                    tile = self.map.get_tile(pos)
-                    terrain = tile.terrain_type if tile else "Plains"
-                    unit = WarriorUnit(player, pos, terrain)
+                    unit = WarriorUnit(player, pos)
                     player.units.append(unit)
                     self.add_unit_to_tile(unit, pos)
                     warriors_placed += 1
@@ -389,14 +401,6 @@ class GameEnvironment:
 
     # --- Tile query helpers ---
 
-    def get_terrain_at(self, coordinates):
-        tile = self.map.get_tile(coordinates)
-        return tile.terrain_type if tile else None
-
-    def has_feature(self, coordinates, feature_type):
-        tile = self.map.get_tile(coordinates)
-        return tile is not None and tile.has_feature(feature_type)
-
     def is_river_between(self, coords1, coords2):
         return self.map.has_river_between(coords1, coords2)
 
@@ -463,15 +467,18 @@ class GameEnvironment:
     # --- City management ---
 
     def can_found_city_at(self, coordinates):
+        """Settleable (§3): land domain, not impassable, free of a city, spaced out."""
         tile = self.map.get_tile(coordinates)
-        if not tile or tile.terrain_type in ["Mountain", "Ocean"] or tile.city:
+        if not tile or tile.city:
+            return False
+        if tile.domain != "land" or tile.impassable:
             return False
 
         # Minimum distance from other cities
         for player in self.players:
             for city in player.cities:
                 distance = self.map.distance_function(coordinates, city.coordinates)
-                if distance < 3:
+                if distance < MIN_CITY_DISTANCE:
                     return False
         return True
 
@@ -500,18 +507,10 @@ class GameEnvironment:
         if not tile or tile.city or improvement_type in tile.improvements:
             return False
 
-        terrain_improvements = {
-            "Farm": ["Plains", "Grassland", "Desert", "Floodplains"],
-            "Mine": ["Hills", "Desert", "Tundra", "Snow"],
-            "Plantation": ["Plains", "Grassland", "Desert"],
-            "Camp": ["Plains", "Grassland", "Tundra", "Desert"],
-            "Pasture": ["Plains", "Grassland", "Desert", "Tundra"],
-            "Quarry": ["Plains", "Desert", "Grassland", "Tundra"],
-            "Fishing Boats": ["Coast", "Lake"],
-            "Oil Well": ["Desert", "Tundra", "Snow", "Coast", "Ocean"],
-        }
-        valid_terrains = terrain_improvements.get(improvement_type, [])
-        return tile.terrain_type in valid_terrains
+        entry = IMPROVEMENTS.get(improvement_type)
+        if entry is None or "on" not in entry:
+            return False
+        return matches(entry["on"], tile.base_terrain, tile.relief, tile.feature)
 
     def build_improvement(self, coordinates, improvement_type):
         """Build an improvement on the specified tile."""
@@ -523,8 +522,8 @@ class GameEnvironment:
 
     # --- Pathfinding wrappers ---
 
-    def path_finder(self, start, destination):
-        return self.map.path_finder(start, destination)
+    def path_finder(self, start, destination, domain="land"):
+        return self.map.path_finder(start, destination, domain=domain)
 
     def distance_function(self, p1, p2):
         return self.map.distance_function(p1, p2)

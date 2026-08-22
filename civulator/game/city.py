@@ -1,9 +1,9 @@
 """City class with production, population, and buildings."""
 
-from .terrain import Terrain
+from ..terrain_model import can_enter
 from .unit import (
     Unit, WarriorUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
-    HorsemanUnit, CatapultUnit, SettlerUnit, WorkerUnit,
+    HorsemanUnit, CatapultUnit, SettlerUnit, WorkerUnit, movement_domain,
 )
 
 
@@ -68,6 +68,10 @@ class City:
         Priority: sort by food descending, then production descending.
         City center is always worked (free). Each pop works one extra tile.
         Called on city founding and population change.
+
+        Only UNWORKABLE tiles are skipped — that is impassable ones (§3).
+        Water is workable: a coastal city works its Coast and Lake tiles even
+        though no land unit can walk on them.
         """
         adj_coords = game_env.map.get_adjacent_coords(self.coordinates)
 
@@ -75,9 +79,8 @@ class City:
         tile_scores = []
         for pos in adj_coords:
             tile = game_env.map.get_tile(pos)
-            if tile and tile.terrain_type != "Mountain":
-                yields = Terrain.PRODUCTION_VALUES.get(tile.terrain_type, [0, 0])
-                food, prod = int(yields[0]), int(yields[1])
+            if tile and not tile.impassable:
+                food, prod = tile.yields
                 tile_scores.append((food, prod, pos))
 
         # Sort: food desc, then production desc
@@ -96,29 +99,25 @@ class City:
         """Calculate total food from city center + worked tiles."""
         # City center (always worked, free)
         center_tile = game_env.map.get_tile(self.coordinates)
-        center_yields = Terrain.PRODUCTION_VALUES.get(center_tile.terrain_type, [0, 0])
-        total_food = int(center_yields[0])
+        total_food = center_tile.yields[0]
 
         # Worked tiles
         for pos in self.worked_tiles:
             tile = game_env.map.get_tile(pos)
             if tile:
-                yields = Terrain.PRODUCTION_VALUES.get(tile.terrain_type, [0, 0])
-                total_food += int(yields[0])
+                total_food += tile.yields[0]
 
         return total_food
 
     def calculate_production(self, game_env):
         """Calculate total production from city center + worked tiles."""
         center_tile = game_env.map.get_tile(self.coordinates)
-        center_yields = Terrain.PRODUCTION_VALUES.get(center_tile.terrain_type, [0, 0])
-        total_prod = int(center_yields[1])
+        total_prod = center_tile.yields[1]
 
         for pos in self.worked_tiles:
             tile = game_env.map.get_tile(pos)
             if tile:
-                yields = Terrain.PRODUCTION_VALUES.get(tile.terrain_type, [0, 0])
-                total_prod += int(yields[1])
+                total_prod += tile.yields[1]
 
         # Minimum 1 production per turn (so cities can always build, just slowly)
         return max(1, total_prod)
@@ -194,14 +193,18 @@ class City:
     def complete_unit_production(self, unit_type, game_env):
         """Place a newly produced unit on the city tile or first empty adjacent tile.
 
-        Priority: city center > adjacent tiles.
-        If all are occupied, returns False (unit deferred to next turn).
+        Priority: city center > adjacent tiles. Every candidate goes through
+        the canonical terrain-domain check (§3.3, §9.10) — production may not
+        drop a land unit into a lake or onto a mountain.
+        If none is available, returns False (unit deferred to next turn).
         """
+        domain = movement_domain(unit_type)
+
         # Try city center first
         friendly_on_center = any(
             u.player == self.player for u in game_env.get_units_at(self.coordinates)
         )
-        if not friendly_on_center:
+        if not friendly_on_center and can_enter(domain, game_env.map.get_tile(self.coordinates)):
             unit = _create_unit(unit_type, self.player, self.coordinates)
             self.player.units.append(unit)
             game_env.add_unit_to_tile(unit, self.coordinates)
@@ -210,13 +213,15 @@ class City:
         # Try adjacent tiles
         adj_coords = game_env.map.get_adjacent_coords(self.coordinates)
         for pos in adj_coords:
+            if not can_enter(domain, game_env.map.get_tile(pos)):
+                continue
             if game_env.is_valid_position(pos) and not game_env.is_occupied(pos):
                 unit = _create_unit(unit_type, self.player, pos)
                 self.player.units.append(unit)
                 game_env.add_unit_to_tile(unit, pos)
                 return True
 
-        # All tiles occupied — defer to next turn
+        # All tiles occupied or unreachable — defer to next turn
         return False
 
     def set_owner(self, new_player):

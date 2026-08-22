@@ -14,8 +14,6 @@ from abc import ABC, abstractmethod
 import numpy as np
 import torch
 
-from ..game.terrain import Terrain
-
 
 class StateEncoder(ABC):
     """Abstract base class for state encoders."""
@@ -133,7 +131,11 @@ class EnhancedStateEncoder(StateEncoder):
     MAX_RANGE = 2.0
     MAX_MOVEMENT = 4.0
     MAX_DEFENSE_BONUS = 12.0
-    MAX_TERRAIN_COST = 3.0
+    # v0.6 (design doc E6): 3 -> 4 so that saturation (1.0) again means
+    # "impassable" and nothing else — the costliest passable composite
+    # (hills + Woods = 3) now sits at 0.75. At the old clamp forested hills
+    # aliased mountains and oceans, which is fatal on water worlds.
+    MAX_TERRAIN_COST = 4.0
 
     def __init__(self, fog_of_war=None):
         if fog_of_war is None:
@@ -141,15 +143,20 @@ class EnhancedStateEncoder(StateEncoder):
             fog_of_war = CFG.get("training", {}).get("fog_of_war", False)
         self.fog_of_war = fog_of_war
         self._terrain_cache = None  # Cached terrain layer (static per episode)
-        self._terrain_cache_id = None  # Map object id for cache invalidation
+        self._terrain_cache_key = None  # (map_uid, terrain_epoch) — design doc §3.4
 
     def get_depth(self, num_players):
         return 27 if self.fog_of_war else 25
 
     def _get_terrain_layer(self, game_env):
-        """Return cached terrain cost layer, rebuilding only on new episode."""
-        map_id = id(game_env.map)
-        if self._terrain_cache is not None and self._terrain_cache_id == map_id:
+        """Return the cached terrain cost layer, rebuilt when the terrain changes.
+
+        Keyed on (map_uid, terrain_epoch) per design doc §3.4: id(map) could
+        alias a recycled object after GC, and terrain edits (Tile.set_layers)
+        must invalidate.
+        """
+        key = (game_env.map.map_uid, game_env.map.terrain_epoch)
+        if self._terrain_cache is not None and self._terrain_cache_key == key:
             return self._terrain_cache
 
         n, m = game_env.n, game_env.m
@@ -158,10 +165,11 @@ class EnhancedStateEncoder(StateEncoder):
             for j in range(m):
                 tile = game_env.map.tiles[i, j]
                 if tile is not None:
-                    cost = Terrain.MOVEMENT_COSTS.get(tile.terrain_type, 1)
+                    # Impassable pins to the max, so 1.0 is unique to it (E6)
+                    cost = self.MAX_TERRAIN_COST if tile.impassable else tile.movement_cost
                     terrain[i, j] = min(cost, self.MAX_TERRAIN_COST) / self.MAX_TERRAIN_COST
         self._terrain_cache = terrain
-        self._terrain_cache_id = map_id
+        self._terrain_cache_key = key
         return terrain
 
     def _encode_unit(self, state, unit, ch_class, ch_stats, game_env):
@@ -181,9 +189,15 @@ class EnhancedStateEncoder(StateEncoder):
             fort_bonus = 3
         elif unit.fortification >= 2:
             fort_bonus = 6
+        # Composed defense of the tile the unit is standing on RIGHT NOW —
+        # the engine reads the same number (design doc E6 / §9.7-8; before 0.6
+        # both sides used a spawn-time terrain snapshot). Clamped at 1.0:
+        # hills + Woods + full fortification is exactly MAX_DEFENSE_BONUS.
         tile = game_env.map.tiles[i, j]
-        terrain_bonus = Terrain.DEFENSE_MODIFIERS.get(tile.terrain_type, 0) if tile else 0
-        state[ch_stats + 5, i, j] = (fort_bonus + terrain_bonus) / self.MAX_DEFENSE_BONUS
+        terrain_bonus = tile.defense_bonus if tile else 0
+        state[ch_stats + 5, i, j] = min(
+            (fort_bonus + terrain_bonus) / self.MAX_DEFENSE_BONUS, 1.0
+        )
 
     def encode(self, game_env, player_index, device=None):
         if device is None:

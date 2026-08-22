@@ -16,11 +16,10 @@ from civulator.game.unit import NUM_UNIT_SLOTS, ArcherUnit, WarriorUnit
 from test_combat_range import make_flat_env, place
 
 
-def set_terrain(env, coords, terrain_type):
-    tile = env.map.get_tile(coords)
-    tile.terrain_type = terrain_type
-    tile.update_terrain_properties()
-    env.map._visible_cache.clear()  # terrain changed under the cache's feet
+def set_terrain(env, coords, base, relief=None, feature=None):
+    """Repaint one tile. set_layers bumps the map's terrain epoch, which is what
+    drops the line-of-sight cache (design doc §3.4) — no manual clearing."""
+    env.map.get_tile(coords).set_layers(base, relief=relief, feature=feature, map_ref=env.map)
 
 
 # --- Engine perception surface ---
@@ -39,7 +38,7 @@ def test_visibility_radius_on_flat_ground():
 def test_mountain_blocks_sight_but_is_seen_itself():
     env = make_flat_env()
     place(env, WarriorUnit, 0, (4, 4))
-    set_terrain(env, (4, 5), "Mountain")
+    set_terrain(env, (4, 5), "Plains", relief="mountain")
     vis = env.get_visibility_mask(0)
 
     assert vis[4, 5], "adjacent mountain is visible"
@@ -149,7 +148,7 @@ def test_ranged_mask_respects_line_of_sight():
     env = make_flat_env()
     archer = place(env, ArcherUnit, 0, (2, 2))
     place(env, WarriorUnit, 1, (2, 4))
-    set_terrain(env, (2, 3), "Mountain")
+    set_terrain(env, (2, 3), "Plains", relief="mountain")
     mask = _mask_for(env, archer)
     assert mask[2, 4] == 0, "blocked LoS: not a valid target"
 

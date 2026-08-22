@@ -14,9 +14,9 @@ import numpy as np
 from .. import hexmath
 from ..hexmath import HEX_DIRECTIONS  # re-exported: civulator.agents.networks imports it from here
 from ..rng import PortableRNG
+from ..terrain_model import can_enter, check_on
 
 from .tile import Tile
-from .terrain import Terrain
 
 # Try to load C++ module for fast pathfinding
 try:
@@ -25,6 +25,25 @@ try:
     HAS_CPP_CORE = True
 except ImportError:
     HAS_CPP_CORE = False
+
+# A* adapter encoding: the C++ hex_astar wire format treats cost >= 99 as
+# blocked (design doc §3.3). Only the cost-grid builder writes it, and only the
+# two A* implementations read it — no gameplay code compares magic costs.
+BLOCKED_COST = 99.0
+
+# Interim world-gen shim (design doc §11 P2a): the pre-0.6 flat terrain names
+# in [map.terrain_weights] mapped onto layer triples (base, relief, feature).
+# Patch P3 deletes this together with generate_map's random draws, replacing
+# both with the mapgen package.
+_LEGACY_TERRAIN_LAYERS = {
+    "Plains": ("Plains", "flat", None),
+    "Grassland": ("Grassland", "flat", None),
+    "Desert": ("Desert", "flat", None),
+    "Tundra": ("Tundra", "flat", None),
+    "Hills": ("Plains", "hills", None),
+    "Woods": ("Grassland", "flat", "Woods"),
+    "Mountain": ("Plains", "mountain", None),
+}
 
 
 class Map:
@@ -45,14 +64,31 @@ class Map:
         # Terrain/feature randomness draws from here; pass the owning
         # GameEnvironment's rng for reproducible maps.
         self.rng = rng if rng is not None else PortableRNG()
-        # Per-tile visibility cache — terrain is static for the Map's lifetime,
-        # so what a tile can see never changes within an episode.
-        self._visible_cache = {}
         self.map_uid = next(Map._uid_counter)
         self.terrain_epoch = 0
+        # Terrain-derived caches, all keyed by (map_uid, terrain_epoch) per
+        # design doc §3.4 — set_layers bumps the epoch and they rebuild.
+        self._visible_cache = {}
+        self._visible_cache_epoch = 0
+        self._cost_grids = {}
 
     def generate_map(self, map_type="basic"):
-        """Generate a map with random terrain. Weights from config.toml."""
+        """Generate a map with random terrain. Weights from config.toml.
+
+        INTERIM SHIM (design doc §11 P2a): the draw ORDER is exactly the
+        pre-0.6 one — one weighted terrain choice per tile, then the feature
+        rolls — so a seed keeps producing the same sequence of draws; only the
+        resulting tiles are layered now (_LEGACY_TERRAIN_LAYERS). Two
+        consequences of the real validity matrix, both deliberate:
+
+        * legacy "Woods" tiles are Grassland + Woods, legacy "Hills" and
+          "Mountain" are Plains + that relief (§3: relief keeps its base);
+        * Rainforest is Plains-only in the new matrix, so where the old world
+          would have put it on Grassland the roll is still consumed (draw order
+          is preserved) but nothing is placed.
+
+        Patch P3 replaces this method wholesale with the mapgen package.
+        """
         from ..config import CFG
 
         cfg_weights = CFG.get("map", {}).get("terrain_weights", {})
@@ -76,19 +112,30 @@ class Map:
         for i in range(self.n):
             for j in range(self.m):
                 terrain = self.rng.choices(terrain_types, weights=weights, k=1)[0]
-                self.tiles[i, j] = Tile(i, j, terrain)
+                base, relief, feature = _LEGACY_TERRAIN_LAYERS.get(
+                    terrain, (terrain, "flat", None)
+                )
 
                 if terrain in ["Plains", "Grassland", "Tundra"] and self.rng.random() < woods_chance:
-                    self.tiles[i, j].add_feature("Woods")
+                    if check_on("feature", "Woods", base, relief, None):
+                        feature = "Woods"
                 elif terrain in ["Plains", "Grassland"] and self.rng.random() < rainforest_chance:
-                    self.tiles[i, j].add_feature("Rainforest")
+                    if check_on("feature", "Rainforest", base, relief, None):
+                        feature = "Rainforest"
+
+                self.tiles[i, j] = Tile(i, j, base, relief=relief, feature=feature)
 
     def add_river(self, tile1_coords, tile2_coords):
-        """Add a river between two tiles."""
+        """Add a river between two tiles.
+
+        Bumps terrain_epoch like Tile.set_layers does (design doc §3.4): river
+        edges are terrain state, and the cost grids become river-aware in P6.
+        """
         if tile1_coords < tile2_coords:
             self.rivers.add((tile1_coords, tile2_coords))
         else:
             self.rivers.add((tile2_coords, tile1_coords))
+        self.terrain_epoch += 1
 
     def has_river_between(self, tile1_coords, tile2_coords):
         """Check if there's a river between two tiles."""
@@ -132,14 +179,31 @@ class Map:
         """
         return hexmath.distance(p1, p2, self.m)
 
-    def _build_cost_grid(self):
-        """Build a 2D cost array from terrain for A* pathfinding."""
+    def _build_cost_grid(self, domain):
+        """2D movement-cost array for one movement domain, cached per terrain epoch.
+
+        Tiles the domain cannot enter (wrong domain or impassable — decided by
+        the canonical check, never by a cost comparison) are written as
+        BLOCKED_COST: the A* adapter encoding, per design doc §3.3. Cached on
+        (map_uid, terrain_epoch, domain) — Tile.set_layers bumps the epoch.
+        """
+        key = (self.map_uid, self.terrain_epoch, domain)
+        cached = self._cost_grids.get(key)
+        if cached is not None:
+            return cached
+
         cost = np.ones((self.n, self.m), dtype=np.float32)
         for r in range(self.n):
             for q in range(self.m):
                 tile = self.tiles[r, q]
-                if tile is not None:
-                    cost[r, q] = Terrain.MOVEMENT_COSTS.get(tile.terrain_type, 1)
+                if tile is None:
+                    continue
+                cost[r, q] = tile.movement_cost if can_enter(domain, tile) else BLOCKED_COST
+        # Keep one grid per domain for the current epoch; drop stale epochs.
+        self._cost_grids = {
+            k: v for k, v in self._cost_grids.items() if k[1] == self.terrain_epoch
+        }
+        self._cost_grids[key] = cost
         return cost
 
     def _build_occupied_grid(self, goal=None):
@@ -155,14 +219,17 @@ class Map:
             occupied[goal[0], goal[1] % self.m] = False
         return occupied
 
-    def path_finder(self, p1, p2):
+    def path_finder(self, p1, p2, domain="land"):
         """A* pathfinding on the hex grid with terrain costs.
 
         Uses C++ civulator_core when available, falls back to Python A*.
+        River crossing costs are per-edge and stay invisible here until patch
+        P6 extends both A* implementations (design doc E3).
 
         Args:
             p1: Start coordinates as numpy array or tuple [row, col]
             p2: Destination coordinates as numpy array or tuple [row, col]
+            domain: Movement domain of the traveller ("land" | "water").
 
         Returns:
             list: List of numpy arrays representing the path (excluding start)
@@ -173,7 +240,7 @@ class Map:
         if start == goal:
             return []
 
-        cost_grid = self._build_cost_grid()
+        cost_grid = self._build_cost_grid(domain)
         occupied = self._build_occupied_grid(goal)
 
         if HAS_CPP_CORE:
@@ -220,7 +287,7 @@ class Map:
             for neighbor in self.get_adjacent_coords(current):
                 r, q = neighbor
                 terrain_cost = cost_grid[r, q]
-                if terrain_cost >= 99:
+                if terrain_cost >= BLOCKED_COST:  # A* adapter encoding, see BLOCKED_COST
                     continue
                 if occupied[r, q] and neighbor != goal:
                     continue
@@ -237,20 +304,17 @@ class Map:
     def get_vision_range(self, coordinates):
         """Get how far a unit at these coordinates can see.
 
-        Base range is 2 tiles. Vantage level adds extra range.
-        Configured via terrain.los in config.toml.
+        Base range is 2 tiles. The tile's composed vantage adds extra range.
         """
         tile = self.get_tile(coordinates)
         if tile is None:
             return 0
-        los = Terrain.LOS.get(tile.terrain_type, [0, 0])
-        vantage = los[1]
-        return 2 + vantage  # Base sight range + vantage bonus
+        return 2 + tile.los[1]  # Base sight range + vantage bonus
 
     def check_line_of_sight(self, from_coords, to_coords):
         """Check if there's a clear line of sight between two coordinates.
 
-        Uses obstacle_level and vantage_level from Terrain.LOS (config.toml).
+        Uses the tiles' composed (obstacle, vantage) line-of-sight values.
         - Adjacent tiles are always visible.
         - Standing on high ground (vantage > 0) lets you see over low obstacles.
         - An obstacle blocks if its obstacle_level > observer's vantage_level.
@@ -261,10 +325,10 @@ class Map:
         if not from_tile or not to_tile:
             return False
 
-        # Can't see from impassable terrain (mountains)
-        from_los = Terrain.LOS.get(from_tile.terrain_type, [0, 0])
-        if Terrain.MOVEMENT_COSTS.get(from_tile.terrain_type, 1) >= 999:
+        # Can't see from impassable terrain (mountains) — nobody stands there
+        if from_tile.impassable:
             return False
+        from_los = from_tile.los
 
         # Adjacent tiles: always visible
         dist = self.distance_function(from_coords, to_coords)
@@ -284,8 +348,7 @@ class Map:
             tile = self.get_tile(coord)
             if tile is None:
                 return False
-            obstacle = Terrain.LOS.get(tile.terrain_type, [0, 0])[0]
-            if obstacle > observer_vantage:
+            if tile.los[0] > observer_vantage:
                 return False
 
         return True
@@ -325,8 +388,13 @@ class Map:
 
         First call for a tile computes get_visible_tiles once; afterwards a
         player's whole visibility mask is just a union of cached sets over
-        its unit/city positions — no line-of-sight walks.
+        its unit/city positions — no line-of-sight walks. Terrain edits
+        (Tile.set_layers) bump terrain_epoch and drop the cache (§3.4).
         """
+        if self._visible_cache_epoch != self.terrain_epoch:
+            self._visible_cache = {}
+            self._visible_cache_epoch = self.terrain_epoch
+
         key = (coordinates[0], coordinates[1] % self.m)
         cached = self._visible_cache.get(key)
         if cached is None:

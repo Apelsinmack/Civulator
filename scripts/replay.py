@@ -77,7 +77,7 @@ def play_game(env, agents, epsilon=0.05, pause=True):
         step += 1
         current_agent = agents[env.current_player.player_index]
         state = next_state
-        action = current_agent.select_action(state, epsilon=epsilon)
+        action = current_agent.select_action(state, epsilon=epsilon, game_env=env)
 
         action_matrix = [
             np.array([action[0] // env.m, action[0] % env.m]),

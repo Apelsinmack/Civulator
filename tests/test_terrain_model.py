@@ -137,21 +137,14 @@ class TestOnMatrixResources:
         with pytest.raises(ValueError):
             tm.validate("Plains", relief="hills", resource="Wheat")
 
-    def test_wheat_floodplains_branch_is_currently_unreachable(self):
-        """Documents a spec inconsistency (not resolved here — see the P1 report).
-
-        Wheat's `on` is copied verbatim from design doc §3.1's own worked
-        example: bases=["Plains"], features=["none", "Floodplains"]. Floodplains'
-        `on` is copied verbatim from §3's prose: "Floodplains on flat Desert".
-        Those two, taken together, make Wheat's "or Floodplains" branch dead:
-        Floodplains only ever exists on a Desert base, but Wheat requires a
-        Plains base, so the AND is never satisfiable. Both entries are exactly
-        as specified; the fix (e.g. Floodplains on Plains too, or Wheat on
-        Desert too) is a content decision left to the orchestrator/Erik.
-        """
-        assert tm.check_on(
-            "resource", "Wheat", base="Desert", relief="flat", feature="Floodplains"
-        ) is False
+    def test_wheat_on_desert_floodplains(self):
+        """P1 found the single-mapping form of Wheat's `on` unsatisfiable on its
+        Floodplains branch (Floodplains exist only on Desert, but the mapping
+        also demanded a Plains base). P2a fixed it to the Civ-6-faithful
+        disjunction: flat Plains, OR Desert Floodplains."""
+        tm.validate("Desert", relief="flat", feature="Floodplains", resource="Wheat")
+        with pytest.raises(ValueError):
+            tm.validate("Plains", relief="flat", feature="Woods", resource="Wheat")
 
     def test_rice_allows_marsh(self):
         tm.validate("Grassland", relief="flat", resource="Rice")
@@ -200,6 +193,39 @@ class TestOnMatrixResources:
         tm.validate("Lake", resource="Fish")
         with pytest.raises(ValueError):
             tm.validate("Ocean", resource="Fish")
+
+
+class TestWaterIsAlwaysFlat:
+    """§3: relief is land-only — validate rejects it on a water-domain base."""
+
+    @pytest.mark.parametrize("base", ["Coast", "Lake", "Ocean"])
+    @pytest.mark.parametrize("relief", ["hills", "mountain"])
+    def test_relief_on_water_is_invalid(self, base, relief):
+        with pytest.raises(ValueError):
+            tm.validate(base, relief=relief)
+
+    @pytest.mark.parametrize("base", ["Coast", "Lake", "Ocean"])
+    def test_flat_water_is_valid(self, base):
+        tm.validate(base, relief="flat")
+
+
+class TestCanEnter:
+    """The canonical terrain-domain passability check (§3.3, D8)."""
+
+    def test_land_unit_on_land(self):
+        assert tm.can_enter("land", tm.compose("Plains")) is True
+
+    def test_land_unit_on_water(self):
+        assert tm.can_enter("land", tm.compose("Coast")) is False
+
+    def test_water_unit_on_water(self):
+        assert tm.can_enter("water", tm.compose("Ocean")) is True
+
+    def test_mountain_blocks_everyone(self):
+        assert tm.can_enter("land", tm.compose("Plains", relief="mountain")) is False
+
+    def test_missing_tile_admits_nobody(self):
+        assert tm.can_enter("land", None) is False
 
 
 class TestValidateCatchesUnknownNames:

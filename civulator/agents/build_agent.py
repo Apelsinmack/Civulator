@@ -10,7 +10,6 @@ from .networks import horizontal_wrap_padding
 from .replay_memory import ReplayMemory, Transition
 from ..game.unit import Unit
 from ..game.city import City
-from ..game.terrain import Terrain
 
 
 # Build options — index in this list = action index

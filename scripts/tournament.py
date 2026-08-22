@@ -127,7 +127,7 @@ def play_match(agent_a, agent_b, num_games=100, epsilon=0.05):
         while not done and step < 5000:
             step += 1
             pi = env.current_player.player_index
-            action = agents_in_game[pi].select_action(state, epsilon=epsilon)
+            action = agents_in_game[pi].select_action(state, epsilon=epsilon, game_env=env)
 
             if action[0] == env.n * env.m:
                 env.current_player.end_turn()

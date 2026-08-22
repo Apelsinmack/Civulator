@@ -1,66 +1,113 @@
 """Tile class representing a single hex on the game map."""
 
-from dataclasses import dataclass
-from typing import Optional
-
-import numpy as np
-
-from .terrain import Terrain
-from ..terrain_model import compose, validate
-
-
-@dataclass
-class TileLayers:
-    """The v0.6 composable layers (design doc §3): base x relief x feature x resource.
-
-    Holds only the new-model state. Kept off Tile's existing `resource` and
-    `features` attributes on purpose — those are legacy and stay authoritative
-    for gameplay until the P2a engine re-point, so nothing here may collide
-    with or change their behavior. Set exclusively via Tile.set_layers();
-    read the derived gameplay numbers from Tile.composed.
-    """
-
-    base: Optional[str] = None
-    relief: Optional[str] = None
-    feature: Optional[str] = None
-    resource: Optional[str] = None
+from ..terrain_model import can_enter, compose, validate
 
 
 class Tile:
-    """Represents a single tile on the map."""
+    """One hex: the composable terrain layers plus what stands on them.
 
-    def __init__(self, row, column, terrain_type="Plains"):
+    Terrain state is exactly four layers (design doc §3) —
+    `base_terrain` x `relief` x `feature` (<=1) x `resource` (<=1). Every
+    gameplay number (yields, movement_cost, defense_bonus, los, domain,
+    impassable) is DERIVED from them by terrain_model.compose(), never stored
+    independently; `set_layers` is the only mutator.
+
+    Rivers are not tile state — `Map.rivers` (edges) is the single river
+    representation (§9.1).
+    """
+
+    def __init__(self, row, column, base_terrain="Plains", relief=None,
+                 feature=None, resource=None):
         self.row = row
         self.column = column
         self.coordinates = (row, column)
-        self.terrain_type = terrain_type
-        self.features = []
         self.improvements = []
-        self.resource = None
         self.units = []
         self.city = None
 
-        # v0.6 composable layers (design doc §3) — additive, new state only.
-        # Unset until set_layers() is called; unused by gameplay until P2a.
-        self.layers = TileLayers()
-        self.composed = None
+        self.set_layers(base_terrain, relief=relief, feature=feature, resource=resource)
 
-        self.update_terrain_properties()
+    # --- Terrain layers (the only terrain state) ---
 
-    def update_terrain_properties(self):
-        """Update the tile properties based on terrain type and features."""
-        self.defense_bonus = Terrain.DEFENSE_MODIFIERS.get(self.terrain_type, 0)
-        self.movement_cost = Terrain.MOVEMENT_COSTS.get(self.terrain_type, 1)
-        self.production_value = Terrain.PRODUCTION_VALUES.get(
-            self.terrain_type, np.array([0, 0])
-        )
+    def set_layers(self, base, relief=None, feature=None, resource=None, map_ref=None):
+        """Set the composable layers (design doc §3.1) — the only terrain mutator.
 
-        if "Woods" in self.features:
-            self.defense_bonus += 3
-            self.movement_cost += 1
-        if "Rainforest" in self.features:
-            self.defense_bonus += 3
-            self.movement_cost += 1
+        Validates the combination via terrain_model.validate() (raises
+        ValueError on an invalid `on` placement — e.g. a feature on a base it
+        can't grow on), then recomputes the composed properties. Bumps
+        map_ref.terrain_epoch (§3.4) when a Map is given, so its
+        terrain-derived caches (LoS, cost grids, encoder layers) invalidate.
+
+        `relief=None` means flat.
+        """
+        relief = "flat" if relief is None else relief
+        validate(base, relief=relief, feature=feature, resource=resource)
+        self.base_terrain = base
+        self.relief = relief
+        self.feature = feature
+        self.resource = resource
+        self.composed = compose(base, relief=relief, feature=feature, resource=resource)
+        if map_ref is not None:
+            map_ref.terrain_epoch += 1
+
+    @property
+    def label(self):
+        """Display/debug name for the terrain, e.g. "Grassland (Hills), Woods" (§3)."""
+        text = self.base_terrain
+        if self.relief != "flat":
+            text += f" ({self.relief.capitalize()})"
+        if self.feature:
+            text += f", {self.feature}"
+        return text
+
+    @property
+    def terrain_type(self):
+        """DEPRECATED alias for `label`, removed in P2b (design §11).
+
+        No engine or agent code reads this — it exists only so that the visual
+        tools, which still key their colors on the old flat terrain names, keep
+        running (rendering an unstyled default) until P2b re-points them.
+        """
+        return self.label
+
+    # --- Composed properties (derived from the layers, never stored twice) ---
+
+    @property
+    def yields(self):
+        """(food, production) — the additive sum of all layer contributions."""
+        return self.composed.yields
+
+    @property
+    def movement_cost(self):
+        return self.composed.movement
+
+    @property
+    def defense_bonus(self):
+        return self.composed.defense
+
+    @property
+    def los(self):
+        """(obstacle, vantage) — additive line-of-sight contributions."""
+        return self.composed.los
+
+    @property
+    def domain(self):
+        """"land" | "water" — from the base terrain."""
+        return self.composed.domain
+
+    @property
+    def impassable(self):
+        """Blocks every domain (mountain relief) and makes the tile unworkable (§3)."""
+        return self.composed.impassable
+
+    def is_passable(self, domain="land"):
+        """Whether the terrain admits a unit of `domain` — the canonical check (§3.3)."""
+        return can_enter(domain, self)
+
+    def is_water(self):
+        return self.domain == "water"
+
+    # --- Occupants ---
 
     def add_unit(self, unit):
         """Add a unit to this tile."""
@@ -70,18 +117,6 @@ class Tile:
         """Remove a unit from this tile."""
         if unit in self.units:
             self.units.remove(unit)
-
-    def add_feature(self, feature):
-        """Add a feature to this tile."""
-        if feature not in self.features:
-            self.features.append(feature)
-            self.update_terrain_properties()
-
-    def remove_feature(self, feature):
-        """Remove a feature from this tile."""
-        if feature in self.features:
-            self.features.remove(feature)
-            self.update_terrain_properties()
 
     def add_improvement(self, improvement):
         """Add an improvement to this tile."""
@@ -96,39 +131,3 @@ class Tile:
     def set_city(self, city):
         """Set a city on this tile."""
         self.city = city
-
-    def is_passable(self):
-        """Check if this tile is passable by land units."""
-        return self.terrain_type != "Mountain" and self.movement_cost < 999
-
-    def is_water(self):
-        """Check if this tile is a water tile."""
-        return self.terrain_type in ["Ocean", "Coast", "Lake"]
-
-    def has_feature(self, feature):
-        """Check if this tile has a specific feature."""
-        return feature in self.features
-
-    def has_river(self):
-        """Check if this tile has a river."""
-        return "River" in self.features
-
-    def set_layers(self, base, relief=None, feature=None, resource=None, map_ref=None):
-        """Set the v0.6 composable layers (design doc §3.1) — the only mutator for them.
-
-        Validates the combination via terrain_model.validate() (raises
-        ValueError on an invalid `on` placement — e.g. a feature on a base it
-        can't grow on), then stores it on self.layers and recomputes
-        self.composed via terrain_model.compose(). Bumps map_ref.terrain_epoch
-        (design doc §3.4) when a Map is given, so its terrain-derived caches
-        know to invalidate.
-
-        Does not touch terrain_type, features, resource, or
-        update_terrain_properties() — those legacy attributes keep driving all
-        gameplay unchanged until the P2a engine re-point.
-        """
-        validate(base, relief=relief, feature=feature, resource=resource)
-        self.layers = TileLayers(base=base, relief=relief, feature=feature, resource=resource)
-        self.composed = compose(base, relief=relief, feature=feature, resource=resource)
-        if map_ref is not None:
-            map_ref.terrain_epoch += 1

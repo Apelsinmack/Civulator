@@ -5,8 +5,13 @@ import random
 
 import numpy as np
 
-from .terrain import Terrain
+from ..config import CFG
+from ..terrain_model import can_enter
 
+# Rivers cost this much extra to cross, per edge (design doc D23) — the single
+# source, replacing the two hardcoded +1s this file used to carry. A* does not
+# see it until patch P6 (E3).
+RIVER_CROSSING_COST = CFG.get("terrain", {}).get("river", {}).get("crossing_cost", 1)
 
 NUM_UNIT_SLOTS = 4  # Military, Civilian, Siege Support, Great Person
 
@@ -26,6 +31,27 @@ UNIT_SLOT = {
     "SiegeTower": 2,   # siege support
     # Great people (slot 3) — future
 }
+
+# Movement domain per unit type (design doc §3.3) — the sixth unit data table.
+# Everything is land in 0.6; naval units and embarkation are the seam this
+# leaves open (a new domain value + a capability check inside can_enter).
+MOVEMENT_DOMAIN = {
+    "Warrior": "land",
+    "Archer": "land",
+    "Swordsman": "land",
+    "Spearman": "land",
+    "Horseman": "land",
+    "Settler": "land",
+    "Worker": "land",
+    "Catapult": "land",
+    "BatteringRam": "land",
+    "SiegeTower": "land",
+}
+
+
+def movement_domain(unit_type):
+    """Movement domain of a unit type — for callers placing a unit that doesn't exist yet."""
+    return MOVEMENT_DOMAIN.get(unit_type, "land")
 
 
 class Unit:
@@ -88,13 +114,12 @@ class Unit:
         "Catapult": 120,
     }
 
-    def __init__(self, player, coordinates, unit_type, terrain=None):
+    def __init__(self, player, coordinates, unit_type):
         self.player = player
         self.coordinates = coordinates
         self.unit_type = unit_type
         self.health = 100.0
         self.movement_points = self.get_max_movement()
-        self.terrain = terrain
         self.fortification = 0  # 0, 1, or 2
         self.has_acted = False  # Did this unit act this turn?
 
@@ -111,6 +136,22 @@ class Unit:
 
     def get_max_movement(self):
         return self.MAX_MOVEMENT.get(self.unit_type, 2)
+
+    def get_movement_domain(self):
+        return movement_domain(self.unit_type)
+
+    def can_enter(self, tile):
+        """Whether this unit's domain may stand on `tile` (design doc §3.3).
+
+        Terrain only — occupancy (slots) is a separate check. Delegates to the
+        one canonical implementation in terrain_model.
+        """
+        return can_enter(self.get_movement_domain(), tile)
+
+    def current_tile(self):
+        """The tile this unit stands on, or None when it has no environment yet."""
+        env = self.player.game_env if self.player is not None else None
+        return env.map.get_tile(self.coordinates) if env is not None else None
 
     def get_base_combat_strength(self):
         return self.BASE_COMBAT_STRENGTH.get(self.unit_type, 10)
@@ -168,18 +209,14 @@ class Unit:
         hp_penalty = -10 * (100 - self.health) / 100
         strength += hp_penalty
 
-        # Terrain defense (only when defending)
-        if not is_attacking and self.terrain:
-            terrain_mod = Terrain.DEFENSE_MODIFIERS.get(self.terrain, 0)
-            strength += terrain_mod
-
-            # Stacking: Woods/Rainforest on Hills
-            if self.terrain == "Hills" and self.player and self.player.game_env:
-                if (
-                    self.player.game_env.has_feature(self.coordinates, "Woods")
-                    or self.player.game_env.has_feature(self.coordinates, "Rainforest")
-                ):
-                    strength += 3
+        # Terrain defense (only when defending) — the CURRENT tile's composed
+        # value, which stacks relief and feature by construction (§3.1). The
+        # pre-0.6 spawn-time terrain snapshot froze this at the spawn tile
+        # (§9.7) and needed a hand-written Hills+Woods special case.
+        if not is_attacking:
+            tile = self.current_tile()
+            if tile is not None:
+                strength += tile.defense_bonus
 
         # Fortification bonus (only when defending)
         if not is_attacking and self.fortification > 0:
@@ -229,16 +266,16 @@ class Unit:
             return False, self.coordinates
 
         # Check terrain at destination
-        terrain_at_dest = game_env.get_terrain_at(dest)
-        if terrain_at_dest is None or Terrain.MOVEMENT_COSTS.get(terrain_at_dest, 1) >= 999:
+        dest_tile = game_env.map.get_tile(dest)
+        if not self.can_enter(dest_tile):
             return False, self.coordinates
 
         # Check if destination is adjacent (distance 1) — bypass pathfinder
         adj_coords = game_env.map.get_adjacent_coords(self.coordinates)
         if dest in adj_coords:
-            movement_cost = Terrain.MOVEMENT_COSTS.get(terrain_at_dest, 1)
+            movement_cost = dest_tile.movement_cost
             if game_env.is_river_between(self.coordinates, dest):
-                movement_cost += 1
+                movement_cost += RIVER_CROSSING_COST
 
             if self.movement_points < movement_cost:
                 return False, self.coordinates
@@ -263,7 +300,7 @@ class Unit:
         # Non-adjacent: use pathfinder
         start_pos = np.array(self.coordinates)
         dest_pos = np.array(new_coordinates)
-        path = game_env.path_finder(start_pos, dest_pos)
+        path = game_env.path_finder(start_pos, dest_pos, domain=self.get_movement_domain())
 
         if not path:
             return False, self.coordinates
@@ -276,11 +313,13 @@ class Unit:
             next_pos_tuple = tuple(next_pos)
             current_pos_tuple = tuple(current_pos)
 
-            terrain_at_next = game_env.get_terrain_at(next_pos_tuple)
-            movement_cost = Terrain.MOVEMENT_COSTS.get(terrain_at_next, 1)
+            next_tile = game_env.map.get_tile(next_pos_tuple)
+            if not self.can_enter(next_tile):
+                break
+            movement_cost = next_tile.movement_cost
 
             if game_env.is_river_between(current_pos_tuple, next_pos_tuple):
-                movement_cost += 1
+                movement_cost += RIVER_CROSSING_COST
 
             if remaining_mp < movement_cost:
                 break
@@ -391,15 +430,15 @@ class Unit:
 class WarriorUnit(Unit):
     """Basic melee combat unit."""
 
-    def __init__(self, player, coordinates, terrain=None):
-        super().__init__(player, coordinates, "Warrior", terrain)
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Warrior")
 
 
 class ArcherUnit(Unit):
     """Basic ranged combat unit."""
 
-    def __init__(self, player, coordinates, terrain=None):
-        super().__init__(player, coordinates, "Archer", terrain)
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Archer")
 
     def attack(self, target, game_env):
         """Archers perform ranged attacks."""
@@ -417,29 +456,29 @@ class ArcherUnit(Unit):
 class SwordsmanUnit(Unit):
     """Advanced melee combat unit."""
 
-    def __init__(self, player, coordinates, terrain=None):
-        super().__init__(player, coordinates, "Swordsman", terrain)
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Swordsman")
 
 
 class SpearmanUnit(Unit):
     """Anti-cavalry unit."""
 
-    def __init__(self, player, coordinates, terrain=None):
-        super().__init__(player, coordinates, "Spearman", terrain)
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Spearman")
 
 
 class HorsemanUnit(Unit):
     """Fast cavalry unit."""
 
-    def __init__(self, player, coordinates, terrain=None):
-        super().__init__(player, coordinates, "Horseman", terrain)
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Horseman")
 
 
 class CatapultUnit(Unit):
     """Siege unit effective against cities."""
 
-    def __init__(self, player, coordinates, terrain=None):
-        super().__init__(player, coordinates, "Catapult", terrain)
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Catapult")
 
     def attack(self, target, game_env):
         """Catapults perform bombard attacks."""
@@ -457,8 +496,8 @@ class CatapultUnit(Unit):
 class SettlerUnit(Unit):
     """Unit for founding new cities."""
 
-    def __init__(self, player, coordinates, terrain=None):
-        super().__init__(player, coordinates, "Settler", terrain)
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Settler")
 
     def found_city(self, game_env, name="New City"):
         """Found a new city at the unit's current location."""
@@ -478,8 +517,8 @@ class SettlerUnit(Unit):
 class WorkerUnit(Unit):
     """Unit for tile improvements."""
 
-    def __init__(self, player, coordinates, terrain=None):
-        super().__init__(player, coordinates, "Worker", terrain)
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Worker")
 
     def build_improvement(self, improvement_type, game_env):
         """Build an improvement on the current tile."""

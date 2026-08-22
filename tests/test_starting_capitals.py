@@ -7,7 +7,7 @@ dead by end_turn on turn one, and their units are deleted: the observed
 "city disappears near game start".
 """
 
-from civulator.game.environment import GameEnvironment
+from civulator.game.environment import MIN_CITY_DISTANCE, GameEnvironment
 
 
 def test_every_player_gets_exactly_one_capital():
@@ -28,8 +28,9 @@ def test_capitals_respect_min_distance_and_terrain():
         capitals = [p.cities[0].coordinates for p in env.players]
         for i, a in enumerate(capitals):
             tile = env.map.get_tile(a)
-            assert tile.terrain_type not in ("Mountain", "Ocean")
+            # Settleable = land domain and not impassable (design doc §3)
+            assert tile.domain == "land" and not tile.impassable
             for b in capitals[i + 1:]:
-                assert env.map.distance_function(a, b) >= 3, (
+                assert env.map.distance_function(a, b) >= MIN_CITY_DISTANCE, (
                     f"seed {seed}: capitals {a} and {b} closer than min distance"
                 )

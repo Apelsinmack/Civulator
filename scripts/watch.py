@@ -12,7 +12,6 @@ import numpy as np
 from civulator.config import CFG
 from civulator.meta import load_weights
 from civulator.game import GameEnvironment
-from civulator.game.terrain import Terrain
 from civulator.agents import DQNAgent, BuildAgent, BasicStateEncoder, EnhancedStateEncoder
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.agents.build_agent import BUILD_OPTIONS

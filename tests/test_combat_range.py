@@ -16,17 +16,13 @@ def make_flat_env(n=8, m=16):
     env = GameEnvironment(n, m, num_players=2)
     for i in range(n):
         for j in range(m):
-            tile = env.map.tiles[i, j]
-            tile.terrain_type = "Plains"
-            tile.features = []
-            tile.update_terrain_properties()
+            env.map.tiles[i, j].set_layers("Plains", map_ref=env.map)
     return env
 
 
 def place(env, unit_cls, player_index, coords):
     player = env.players[player_index]
-    tile = env.map.get_tile(coords)
-    unit = unit_cls(player, coords, tile.terrain_type)
+    unit = unit_cls(player, coords)
     player.units.append(unit)
     env.add_unit_to_tile(unit, coords)
     return unit

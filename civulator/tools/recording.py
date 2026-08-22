@@ -131,8 +131,7 @@ def _place_unit(env, entry):
     player = env.players[int(entry.get("team", 1)) - 1]
     unit_cls = UNIT_CLASSES.get(entry.get("type", "Warrior"), WarriorUnit)
 
-    terrain = env.get_terrain_at((row, col))
-    unit = unit_cls(player, (row, col), terrain)
+    unit = unit_cls(player, (row, col))
     unit.health = float(entry.get("hp", 100))
     if entry.get("fortified"):
         unit.fortification = 1
