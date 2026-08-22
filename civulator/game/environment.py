@@ -32,7 +32,7 @@ class GameEnvironment:
         env.step(action) -> (raw_state, reward, done, info)
     """
 
-    def __init__(self, n, m, num_players=2, map_type="basic"):
+    def __init__(self, n, m, num_players=2, map_type="basic", seed=None):
         self.n = n
         self.m = m
         self.num_players = num_players
@@ -42,8 +42,12 @@ class GameEnvironment:
         self.done = False
         self.players = []
 
+        # All engine randomness (map gen, starting locations, damage rolls)
+        # draws from this instance — reset(seed=...) reproduces a world exactly.
+        self.rng = random.Random(seed)
+
         # Initialize map and players
-        self.map = Map(n, m)
+        self.map = Map(n, m, rng=self.rng)
         self.map.generate_map(map_type)
 
         for i in range(num_players):
@@ -53,20 +57,28 @@ class GameEnvironment:
         self.current_player_index = 0
         self.current_player = self.players[self.current_player_index]
 
-    def reset(self, num_players=None):
+    def reset(self, num_players=None, seed=None):
         """Reset the game for a new episode.
+
+        Args:
+            num_players: Optionally change the player count.
+            seed: If given, reseeds the engine RNG — the resulting map,
+                starting locations, and all subsequent randomness are
+                exactly reproducible.
 
         Returns:
             self: The reset game environment (agents extract what they need).
         """
         if num_players is not None:
             self.num_players = num_players
+        if seed is not None:
+            self.rng.seed(seed)
 
         self.turn_counter = 1
         self.done = False
 
         # Regenerate map
-        self.map = Map(self.n, self.m)
+        self.map = Map(self.n, self.m, rng=self.rng)
         self.map.generate_map(self.map_type)
 
         # Reset or recreate players
@@ -89,7 +101,7 @@ class GameEnvironment:
 
         # Calculate starting locations and randomize assignment
         starting_locations = self._calculate_starting_locations()
-        random.shuffle(starting_locations)
+        self.rng.shuffle(starting_locations)
 
         # Place starting units and cities
         for i, player in enumerate(self.players):
@@ -119,17 +131,17 @@ class GameEnvironment:
     def _calculate_starting_locations(self):
         """Calculate starting locations for all players, spread across the map."""
         if self.num_players == 2:
-            p1_x = random.randint(0, self.n - 1)
-            p1_y = random.randint(0, self.m // 2 - 1)
-            p2_x = random.randint(0, self.n - 1)
-            p2_y = random.randint(self.m // 2, self.m - 1)
+            p1_x = self.rng.randint(0, self.n - 1)
+            p1_y = self.rng.randint(0, self.m // 2 - 1)
+            p2_x = self.rng.randint(0, self.n - 1)
+            p2_y = self.rng.randint(self.m // 2, self.m - 1)
             return [(p1_x, p1_y), (p2_x, p2_y)]
         else:
             locations = []
             partition = self.m // self.num_players
             for i in range(self.num_players):
-                x = random.randint(0, self.n - 1)
-                y = random.randint(i * partition, (i + 1) * partition - 1)
+                x = self.rng.randint(0, self.n - 1)
+                y = self.rng.randint(i * partition, (i + 1) * partition - 1)
                 locations.append((x, y))
             return locations
 

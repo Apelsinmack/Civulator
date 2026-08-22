@@ -29,11 +29,14 @@ HEX_DIRECTIONS = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
 class Map:
     """Represents the game map composed of hex tiles."""
 
-    def __init__(self, n_rows, m_columns):
+    def __init__(self, n_rows, m_columns, rng=None):
         self.n = n_rows
         self.m = m_columns
         self.tiles = np.empty((self.n, self.m), dtype=object)
         self.rivers = set()
+        # Terrain/feature randomness draws from here; pass the owning
+        # GameEnvironment's rng for reproducible maps.
+        self.rng = rng if rng is not None else random.Random()
 
     def generate_map(self, map_type="basic"):
         """Generate a map with random terrain. Weights from config.toml."""
@@ -59,12 +62,12 @@ class Map:
 
         for i in range(self.n):
             for j in range(self.m):
-                terrain = np.random.choice(terrain_types, p=weights)
+                terrain = self.rng.choices(terrain_types, weights=weights, k=1)[0]
                 self.tiles[i, j] = Tile(i, j, terrain)
 
-                if terrain in ["Plains", "Grassland", "Tundra"] and random.random() < woods_chance:
+                if terrain in ["Plains", "Grassland", "Tundra"] and self.rng.random() < woods_chance:
                     self.tiles[i, j].add_feature("Woods")
-                elif terrain in ["Plains", "Grassland"] and random.random() < rainforest_chance:
+                elif terrain in ["Plains", "Grassland"] and self.rng.random() < rainforest_chance:
                     self.tiles[i, j].add_feature("Rainforest")
 
     def add_river(self, tile1_coords, tile2_coords):

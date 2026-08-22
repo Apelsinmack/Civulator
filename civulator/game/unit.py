@@ -319,15 +319,18 @@ class Unit:
             return True
         return False
 
-    def calculate_damage(self, attacker_strength, defender_strength):
+    def calculate_damage(self, attacker_strength, defender_strength, rng=None):
         """
         Calculate damage using the Civ6 formula.
 
         Damage(HP) = 30 * e^(0.04 * StrengthDifference) * random(80%, 120%)
+
+        The roll draws from rng (the game's seeded RNG) when given, so combat
+        outcomes are reproducible; falls back to the global random module.
         """
         strength_diff = attacker_strength - defender_strength
         base_damage = 30 * math.exp(0.04 * strength_diff)
-        random_factor = random.uniform(0.8, 1.2)
+        random_factor = (rng if rng is not None else random).uniform(0.8, 1.2)
         damage = base_damage * random_factor
         return max(1, min(100, damage))
 
@@ -356,7 +359,8 @@ class Unit:
         defender_strength = target.get_combat_strength(False, self)
 
         # Calculate and apply damage
-        damage_dealt = self.calculate_damage(attacker_strength, defender_strength)
+        rng = getattr(game_env, "rng", None)
+        damage_dealt = self.calculate_damage(attacker_strength, defender_strength, rng=rng)
         target.health -= damage_dealt
         target_killed = target.health <= 0
 
@@ -364,7 +368,7 @@ class Unit:
         attacker_killed = False
         if not is_ranged and not target_killed:
             damage_received = self.calculate_damage(
-                defender_counterattack_strength, attacker_strength
+                defender_counterattack_strength, attacker_strength, rng=rng
             )
             self.health -= damage_received
             attacker_killed = self.health <= 0
