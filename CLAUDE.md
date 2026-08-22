@@ -10,6 +10,7 @@ Civulator is a **research project**: deep reinforcement learning in a simplified
 
 - **Rules** (invariants + canonical systems): this file. Keep it lean — narrative does not belong here.
 - **Tasks & roadmap**: GitHub issues at `Apelsinmack/Civulator`; the roadmap is the milestones **A: Combat**, **B: Peacetime growth**, **C: Diplomacy**.
+- **Session handoff**: pinned issue #31 — read its newest comment when starting a session; append one comment at session close (done / next / open questions). Only the latest comment is current.
 - **Narrative** (design thinking, specs, results discussion): `docs/` and `documents/`. Gameplay-rule changes with measured effects: `CHANGELOG.md` (semver game version).
 - **Scientific record**: `stats/`, `weights/trained/` (+ its `manifest.md` registry). Never delete previous results.
 
@@ -40,6 +41,7 @@ One line per system built for reuse. If what you need is here, use it; if it alm
 | Networks | `SelectAndMove` / `SharedBackbone` / `FullyConv` / `FullyConvSeparate` (`agents/networks.py`) | FullyConv variants are map-size independent — required for large maps |
 | Hex renderer | `civulator/viz/hex_render.py` (hex↔pixel, drawing, terrain colors, camera, sprites) | All visual tools import it; no forked rendering code. `viz/` may use pyray/numpy, never torch; the engine never imports `viz/` |
 | Artifact manifests | `civulator/meta.py` (`build_manifest` / `save_weights` / `load_weights`) | Everyone saving or loading weights/scenarios/stats embeds and reads manifests through this module |
+| Combat-training tools | Painter: `scripts/scenario_painter.py`. Recorder: `scripts/order_recorder.py` on `civulator/tools/recording.py` (`RecordingSession`) | The only authoring path for scenarios and demonstrations — recorded data stays in the agent's exact action space. Extend these; never build a second editor/recorder |
 
 ## Tech stack
 
