@@ -5,6 +5,25 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
+## v0.5.1 — Portable engine RNG (PCG32) (2026-08-22)
+
+**RNG stream change: a seed from before v0.5.1 produces a DIFFERENT world
+after it.** No v0.5.0 scenario files existed yet, so nothing was invalidated —
+this swap deliberately landed *before* the first reproducible scenarios were
+painted. From now on the seeded world is frozen by a golden test
+(tests/test_rng.py::test_engine_world_is_frozen_across_versions); changing it
+again requires a version bump and CHANGELOG entry.
+
+- `civulator/rng.py`: PortableRNG — PCG-XSH-RR 64/32, bit-verified against
+  O'Neill's published pcg32 reference output. Replaces `random.Random`
+  everywhere in the engine (map gen, starting locations, damage rolls).
+- Purpose (#33): a future C++ engine twin can reproduce the identical random
+  stream, so golden seeded games gate each ported subsystem. Derived-draw
+  specs (floats, randint, shuffle, choices) documented in the module docstring
+  and frozen as golden test vectors.
+
+---
+
 ## v0.5.0 — Fog of war + ranged targeting + fortify fix (2026-08-22)
 
 **Gameplay/training-affecting: training runs before and after this version are

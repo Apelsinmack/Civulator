@@ -1,10 +1,9 @@
 """GameEnvironment -- the main game simulation interface."""
 
-import random
-
 import numpy as np
 
 from .map import Map
+from ..rng import PortableRNG
 from .player import Player
 from .city import City
 from .unit import WarriorUnit
@@ -46,7 +45,9 @@ class GameEnvironment:
 
         # All engine randomness (map gen, starting locations, damage rolls)
         # draws from this instance — reset(seed=...) reproduces a world exactly.
-        self.rng = random.Random(seed)
+        # PortableRNG (PCG32, civulator/rng.py) so a C++ engine twin can
+        # reproduce the identical stream (issue #33).
+        self.rng = PortableRNG(seed)
 
         # Initialize map and players
         self.map = Map(n, m, rng=self.rng)

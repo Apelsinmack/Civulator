@@ -7,9 +7,10 @@ Distance = max(|dq|, |dr|, |dq + dr|) with cylindrical wrapping on q-axis (colum
 
 import os
 import sys
-import random
 
 import numpy as np
+
+from ..rng import PortableRNG
 
 from .tile import Tile
 from .terrain import Terrain
@@ -36,7 +37,7 @@ class Map:
         self.rivers = set()
         # Terrain/feature randomness draws from here; pass the owning
         # GameEnvironment's rng for reproducible maps.
-        self.rng = rng if rng is not None else random.Random()
+        self.rng = rng if rng is not None else PortableRNG()
         # Per-tile visibility cache — terrain is static for the Map's lifetime,
         # so what a tile can see never changes within an episode.
         self._visible_cache = {}
