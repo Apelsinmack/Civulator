@@ -19,7 +19,6 @@ Controls:
 import os
 import sys
 import json
-import math
 import random
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -28,6 +27,17 @@ import pyray as rl
 import numpy as np
 
 from civulator.game.map import Map
+from civulator.viz.hex_render import (
+    TERRAIN_COLORS,
+    hex_to_pixel,
+    pixel_to_hex,
+    draw_hex,
+    draw_hex_outline,
+    make_camera,
+    update_camera_zoom_pan,
+    load_sprites,
+    unload_sprites,
+)
 
 # --- Config ---
 MAP_ROWS = 16
@@ -52,77 +62,6 @@ PLAYER_COLORS = [
     rl.Color(50, 100, 220, 255),   # Team 1: Blue
     rl.Color(220, 50, 50, 255),    # Team 2: Red
 ]
-
-TERRAIN_COLORS = {
-    "Plains":      rl.Color(180, 200, 100, 255),
-    "Grassland":   rl.Color(100, 180, 80, 255),
-    "Desert":      rl.Color(220, 200, 140, 255),
-    "Tundra":      rl.Color(180, 200, 210, 255),
-    "Snow":        rl.Color(240, 240, 250, 255),
-    "Hills":       rl.Color(140, 160, 90, 255),
-    "Woods":       rl.Color(60, 120, 50, 255),
-    "Rainforest":  rl.Color(30, 100, 40, 255),
-    "Marsh":       rl.Color(100, 130, 100, 255),
-    "Floodplains": rl.Color(160, 190, 100, 255),
-    "Mountain":    rl.Color(120, 110, 100, 255),
-    "Ocean":       rl.Color(40, 80, 160, 255),
-    "Coast":       rl.Color(80, 140, 200, 255),
-    "Lake":        rl.Color(60, 120, 190, 255),
-}
-
-
-# --- Hex math ---
-
-def hex_to_pixel(row, col, size):
-    w = size * 2
-    h = size * math.sqrt(3)
-    x = col * w * 0.75 + size
-    y = row * h + (col % 2) * h * 0.5 + size
-    return x, y
-
-
-def pixel_to_hex(px, py, size):
-    """Approximate: find closest hex center to pixel position."""
-    best_r, best_c = 0, 0
-    best_dist = float("inf")
-    for r in range(MAP_ROWS):
-        for c in range(MAP_COLS):
-            cx, cy = hex_to_pixel(r, c, size)
-            d = (px - cx) ** 2 + (py - cy) ** 2
-            if d < best_dist:
-                best_dist = d
-                best_r, best_c = r, c
-    # Only match if reasonably close
-    if best_dist < (size * size * 1.5):
-        return best_r, best_c
-    return None, None
-
-
-def draw_hex(cx, cy, size, color):
-    points = []
-    for i in range(6):
-        angle = math.radians(60 * i)
-        points.append((cx + size * math.cos(angle), cy + size * math.sin(angle)))
-    for i in range(6):
-        j = (i + 1) % 6
-        rl.draw_triangle(
-            rl.Vector2(cx, cy),
-            rl.Vector2(points[i][0], points[i][1]),
-            rl.Vector2(points[j][0], points[j][1]),
-            color,
-        )
-
-
-def draw_hex_outline(cx, cy, size, color):
-    for i in range(6):
-        a1 = math.radians(60 * i)
-        a2 = math.radians(60 * (i + 1))
-        rl.draw_line(
-            int(cx + size * math.cos(a1)), int(cy + size * math.sin(a1)),
-            int(cx + size * math.cos(a2)), int(cy + size * math.sin(a2)),
-            color,
-        )
-
 
 # --- State ---
 
@@ -194,15 +133,10 @@ class PainterState:
 
     def load_sprites(self):
         art_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "art")
-        for unit_type, filename in SPRITE_FILES.items():
-            path = os.path.join(art_dir, filename)
-            if os.path.exists(path):
-                tex = rl.load_texture(path.encode())
-                self.sprites[unit_type] = tex
+        self.sprites = load_sprites(SPRITE_FILES, art_dir)
 
     def unload_sprites(self):
-        for tex in self.sprites.values():
-            rl.unload_texture(tex)
+        unload_sprites(self.sprites)
 
 
 # --- Main ---
@@ -227,11 +161,7 @@ def run_painter():
             if nums:
                 state.scenario_count = max(nums)
 
-    camera = rl.Camera2D()
-    camera.target = rl.Vector2(MAP_COLS * HEX_SIZE * 0.75, MAP_ROWS * HEX_SIZE * 0.87)
-    camera.offset = rl.Vector2(SCREEN_W / 2, SCREEN_H / 2)
-    camera.rotation = 0.0
-    camera.zoom = 1.0
+    camera = make_camera(MAP_ROWS, MAP_COLS, HEX_SIZE, SCREEN_W, SCREEN_H, zoom=1.0)
 
     while not rl.window_should_close():
         # --- Input ---
@@ -255,24 +185,15 @@ def run_painter():
             if state.units or state.cities:
                 state.save()
 
-        # Zoom
-        wheel = rl.get_mouse_wheel_move()
-        if wheel != 0:
-            camera.zoom += wheel * 0.1
-            camera.zoom = max(0.3, min(camera.zoom, 3.0))
-
-        # Pan with right mouse drag
-        if rl.is_mouse_button_down(rl.MOUSE_BUTTON_RIGHT):
-            delta = rl.get_mouse_delta()
-            camera.target.x -= delta.x / camera.zoom
-            camera.target.y -= delta.y / camera.zoom
+        # Zoom, pan with right mouse drag
+        update_camera_zoom_pan(camera, zoom_step=0.1, zoom_min=0.3, zoom_max=3.0)
 
         # Place/remove with left click (only when not dragging)
         if rl.is_mouse_button_pressed(rl.MOUSE_BUTTON_LEFT):
             # Convert screen pos to world pos
             mouse_screen = rl.get_mouse_position()
             mouse_world = rl.get_screen_to_world_2d(mouse_screen, camera)
-            row, col = pixel_to_hex(mouse_world.x, mouse_world.y, HEX_SIZE)
+            row, col = pixel_to_hex(mouse_world.x, mouse_world.y, HEX_SIZE, MAP_ROWS, MAP_COLS)
 
             if row is not None and 0 <= row < MAP_ROWS and 0 <= col < MAP_COLS:
                 # Check if tile is passable (not ocean/mountain for units)
@@ -343,7 +264,7 @@ def run_painter():
         # Hover highlight
         mouse_screen = rl.get_mouse_position()
         mouse_world = rl.get_screen_to_world_2d(mouse_screen, camera)
-        hr, hc = pixel_to_hex(mouse_world.x, mouse_world.y, HEX_SIZE)
+        hr, hc = pixel_to_hex(mouse_world.x, mouse_world.y, HEX_SIZE, MAP_ROWS, MAP_COLS)
         if hr is not None and 0 <= hr < MAP_ROWS and 0 <= hc < MAP_COLS:
             hx, hy = hex_to_pixel(hr, hc, HEX_SIZE)
             draw_hex_outline(hx, hy, HEX_SIZE, rl.Color(255, 255, 255, 150))
