@@ -313,12 +313,7 @@ class RecordingSession:
         state = self.encode_state().cpu().numpy()
         before = self._snapshot()
 
-        # GameEnvironment.step only reaches its fortify branch when
-        # select_pos == order_pos, which a slot-aware 3-tuple select can never
-        # satisfy against a 2-tuple order — so a fortify order is issued with
-        # the legacy 2-tuple select (it resolves to the first own unit on the
-        # tile, which for a single-military-slot combat scenario is this one).
-        select_arg = np.array([row, col]) if kind == "fortify" else np.array([row, col, slot])
+        select_arg = np.array([row, col, slot])
         self.env.step([select_arg, np.array(coords)])
 
         if self._snapshot() == before:

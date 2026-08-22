@@ -189,8 +189,9 @@ class GameEnvironment:
         if selected_unit.movement_points <= 0:
             return self, REWARDS["invalid_action"], self.done
 
-        # Select same tile: fortify, or found city if settler
-        if select_pos == order_pos:
+        # Select same tile: fortify, or found city if settler.
+        # Compare positions only — select_pos may carry a third slot element.
+        if select_pos[:2] == order_pos[:2]:
             if selected_unit.unit_type == "Settler":
                 city = selected_unit.found_city(self)
                 if city:
