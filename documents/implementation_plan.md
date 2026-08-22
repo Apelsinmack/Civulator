@@ -242,9 +242,7 @@ For every change:
 
 ---
 
-## TODO (Immediate)
+## TODO
 
-1. **Add build order tracking** to trainer.py — track 1st/2nd/nth build per episode, aggregate, plot
-2. **Run shared vs separate backbone tournament** — compare FullyConvNetwork vs FullyConvSeparateNetwork
-3. **Verify settlers** — check if agents actually build and use settlers (needs build tracking)
-4. **Update CHANGELOG.md** with v0.4.0 entry
+Task tracking moved to GitHub issues (`Apelsinmack/Civulator`, milestones A/B/C) on 2026-08-22.
+This document remains as design narrative only — do not add task lists here.

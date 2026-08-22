@@ -1,90 +1,51 @@
 # Civulator - Project CLAUDE.md
 
-> **Last updated**: 2026-03-03
+> **Last updated**: 2026-08-22 — rules-first restructure. Narrative moved to `docs/`/`documents/`; tasks moved to GitHub issues.
 
 ## What Is This?
 
-Civulator is a **research project** exploring deep reinforcement learning in a simplified Civilization-like strategy game. The goal is not just to build a working agent, but to **systematically measure what works and what doesn't** -- comparing architectures, state representations, reward functions, and training configurations through controlled experiments.
+Civulator is a **research project**: deep reinforcement learning in a simplified Civilization-like hex strategy game. We don't just build an agent — we **systematically measure what works**, comparing architectures, state representations, reward functions, and training configurations through controlled experiments. The active codebase is the Python package `civulator/` plus the C++ module `cpp/` (pybind11 → `civulator_core`); the original C# engine is archived.
 
-Every change should be accompanied by evidence: training curves, win rate plots, and documented comparisons against previous versions. We improve incrementally by measuring performance, not by guessing.
+## Where things live
 
-The game simulates hex-grid turn-based strategy with cities, units, combat, and terrain. RL agents learn to play via DQN with a Select-and-Move action architecture.
+- **Rules** (invariants + canonical systems): this file. Keep it lean — narrative does not belong here.
+- **Tasks**: GitHub issues at `Apelsinmack/Civulator`. Milestones are the big goals: **A: Combat**, **B: Peacetime growth**, **C: Diplomacy**. Roadmap lists in markdown files are forbidden — they drift.
+- **Narrative** (design thinking, specs, results discussion): `docs/` and `documents/`. Gameplay-rule changes with measured effects: `CHANGELOG.md` (semver game version).
+- **Scientific record**: `stats/`, `weights/trained/` (+ its `manifest.md` registry). Never delete previous results.
 
-**Origin**: Started as a collaboration between Erik (Python/RL) and Patrik (C# game engine). The C# code is archived/legacy -- only the Python codebase is active (2026-03-05).
+## Rules (invariants)
 
-## Research Methodology
+- **The engine is a pure simulation.** `civulator/game/` must never import torch, matplotlib, or anything from `civulator/agents/`. Agents read raw state through `GameEnvironment` and build their own tensors (`StateEncoder.encode`).
+- **Research method**: baseline first; one variable at a time; every change documented with training curves / win rates; fixed seeds and logged hyperparameters. (True engine reproducibility is blocked until seedable RNG lands — issue #26.)
+- **Axial (q, r) coordinates only**, stored as `(row=r, col=q)` in a 2D array, cylindrical wrap on q. Never write new adjacency/distance/path code — use the canonical hex math below (the ranged-attack bug #24 is what happens otherwise).
+- **All gameplay constants live in `config.toml`** — no hardcoded gameplay numbers in new code (known pre-existing drift: rewards, issue #25).
+- **Every training artifact gets recorded**: for now, hand-write new weights into `weights/trained/manifest.md` (naming: `{size}_{channels}_{episodes}ep.pth`); embedded machine-readable manifests are issue #28.
 
-- **Baseline first**: Before changing anything, establish a measurable baseline (win rate, training curve shape, convergence speed).
-- **One variable at a time**: When testing a new idea (e.g., different state encoder, new reward function), change only that variable and compare against the baseline.
-- **Document everything**: Each experiment should record: what was changed, hypothesis, training parameters, results (plots), and conclusions.
-- **Keep old results**: Training plots and win histories are saved in `stats/`. Never delete previous results -- they are the project's scientific record.
-- **Reproducibility**: Use fixed random seeds. Log hyperparameters. Save model checkpoints so experiments can be replicated or resumed.
+## Canonical systems — check this table before building anything new
 
-## Project Location
+One line per system built for reuse. If what you need is here, use it; if it almost fits, extend it — never build a parallel copy.
 
-`C:\Users\steen\projects\civulator` (Work Desktop, cloned 2026-03-18)
+| System | Where | Rule |
+|---|---|---|
+| Game interface | `GameEnvironment` (`game/environment.py`) | The only way to create/step/mutate game state. Trainer, viewer, painter, recorder all go through it |
+| Hex math | `Map.distance_function` / `get_adjacent_coords` / `path_finder` (`game/map.py`) + `civulator_core` (C++ A*, Python fallback) | The only hex distance/adjacency/pathfinding — never reimplement |
+| Gameplay config | `config.toml` via `CFG` (`civulator/config.py`) | Single source for terrain, LoS, map gen, game and training params |
+| Unit system | `Unit` + data tables + `UNIT_SLOT` (`game/unit.py`); 4 stacking slots | Adding a unit type touches: the 5 tables + `UNIT_SLOT` (unit.py), `_create_unit` (city.py), `CLASS_INDEX` (state_encoders.py) — all three files, every time |
+| Combat | `Unit.attack` + `calculate_damage` (Civ6 formula) + `GameEnvironment._execute_attack` | All damage flows through this path |
+| City economy | `City.process_turn` / `assign_tiles` (`game/city.py`) | Food → growth → production logic lives here only |
+| Line of sight | `Map.check_line_of_sight` + `Terrain.LOS` | Obstacle/vantage levels come from config.toml |
+| State encoding | `StateEncoder` ABC (`agents/state_encoders.py`): Basic (2N+1 ch), Enhanced (25 ch) | New representations subclass it; never fork an agent to change encoding |
+| Action masking | `get_valid_select_mask` / `get_valid_moves_mask` (`agents/networks.py`) | Agent masks AND human-tool click-highlighting must share these — anything else creates train/play skew |
+| DQN stack | `DQNAgent`, `ReplayMemory`, `BuildAgent` (`agents/`), `train_agents` (`training/trainer.py`) | One of each; experiments parameterize, don't fork |
+| Networks | `SelectAndMove` / `SharedBackbone` / `FullyConv` / `FullyConvSeparate` (`agents/networks.py`) | FullyConv variants are map-size independent — required for large maps |
+| Hex renderer | `scripts/watch.py` (extraction into a shared module: issue #27) | Base for all visual tools; no more forked rendering code |
 
-## Current State (as of 2026-03-20)
+## Environment
 
-- **Codebase**: `civulator/` Python package + `cpp/` C++ module (pybind11)
-- **C++ module**: `civulator_core` — hex A* pathfinding, hex distance (built with CMake + MSVC)
-- **Coordinate system**: Axial (q, r) — replaced offset even/odd system
-- **State encoder**: EnhancedStateEncoder (25 channels), cached terrain, numpy-based (11x faster)
-- **Config**: `config.toml` drives terrain, LoS, map gen, training params
-- **Unit stacking**: 4 slots (military/civilian/siege support/great person)
-- **Training**: Target network, epsilon decay (1.0→0.05 over 5000 episodes)
-- **Networks**: FullyConvNetwork for large maps (no FC layers, map-size independent)
-- **Current scale**: 8 players on 24x48 map
-- **Viewer**: `scripts/watch.py` — raylib live viewer with hex grid, zoom/pan
-- **GPU**: RTX 3060 (Work Desktop), PyTorch with CUDA
-
-## Architecture Overview
-
-See `documents/design_document.md` for the full architectural vision and refactoring plan.
-
-### Key Files (current, pre-refactor)
-
-| File | Role |
-|------|------|
-| `python/v2_debugging/pyCiv.py` | Game environment: Terrain, Tile, Map, Unit, City, Player, GameEnvironment |
-| `python/v2_debugging/GlobalDQNetworkSelectingAndMovingMultipleAgents.py` | DQN agent, network, replay memory, training loop |
-| `python/v2_debugging/main_trainer.py` | Entry point with CLI args |
-| `python/v2_debugging/ascii_map_display.py` | Debug visualization |
-| `python/v2_debugging/debug_integration.py` | Debug versions of key functions |
-
-### Core Concepts
-
-- **Hexagonal grid** stored as a 2D matrix with offset coordinates (even/odd row adjacency)
-- **Cylindrical map** wraps horizontally, not vertically
-- **Select-and-Move action space**: agent first selects a unit tile, then selects a destination tile
-- **State tensor**: `[d, n, m]` where `d = 2*num_players + 1` (cities, unit health, movement points per player)
-- **Agent builds its own state**: `build_state_tensor(game_env)` -- the environment exposes raw state, agent decides representation
-
-### Known Issues
-
-See design document for full analysis. Remaining:
-- Q-values for select and move are summed (branching DQN — intentional design choice)
-- Multiple units on same tile overwrite in state tensor (mitigated by slot system)
-- Lots of commented-out old code in pyCiv.py (archived, not active)
-
-### Fixed (2026-03-20)
-- ~~No target network~~ → target network with periodic sync
-- ~~8-directional move masking~~ → axial hex directions
-- ~~Fixed epsilon~~ → linear decay from config.toml
-- ~~Build agent only sees first city~~ → per-city state tracking
-
-## Tech Stack
-
-- Python 3 (anaconda base environment)
-- PyTorch (needs CUDA reinstall for GPU training)
-- NumPy, Matplotlib
+- Python: anaconda base env; PyTorch + CUDA (RTX 3060 on Work Desktop); pyray for viewers.
+- C++: `cpp/` built with CMake + MSVC; import falls back to pure Python gracefully.
+- Machine specifics (paths, GPUs, env names) live in `environment.md` / the `machine-env` skill — not here.
 
 ## Related Projects
 
-- **Breach** (another game with similar tile system -- can share tile/map design patterns)
-
-## Development Notes
-
-- All version folders (`v1/version1-4`, `v2_debugging`, `deepQlearningBot`, `pyCiv`, `misc`) are historical. The refactoring will consolidate into a single clean codebase.
-- The game environment should remain a pure simulation with no RL dependencies.
-- pyCiv currently imports torch, nn, F, plt -- these should be removed from the game module.
+- **Breach** — shares hex/grid AI patterns, C++/pybind11 architecture, and RL lessons both ways.
