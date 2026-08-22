@@ -5,11 +5,14 @@ The array is a skewed rectangle — this is intentional and accepted.
 Distance = max(|dq|, |dr|, |dq + dr|) with cylindrical wrapping on q-axis (columns).
 """
 
+import itertools
 import os
 import sys
 
 import numpy as np
 
+from .. import hexmath
+from ..hexmath import HEX_DIRECTIONS  # re-exported: civulator.agents.networks imports it from here
 from ..rng import PortableRNG
 
 from .tile import Tile
@@ -23,12 +26,16 @@ try:
 except ImportError:
     HAS_CPP_CORE = False
 
-# Axial hex directions — same for every tile, no even/odd branching
-HEX_DIRECTIONS = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
-
 
 class Map:
     """Represents the game map composed of hex tiles."""
+
+    # Process-unique map_uid source (design doc §3.4): id() reuse after GC would
+    # let two different Map objects alias the same cache key, which a plain
+    # id()-keyed cache cannot detect. Nothing reads map_uid/terrain_epoch yet in
+    # P1 — the caches they will key (LoS, cost grids, encoder layers) re-point
+    # to them in P2a.
+    _uid_counter = itertools.count()
 
     def __init__(self, n_rows, m_columns, rng=None):
         self.n = n_rows
@@ -41,6 +48,8 @@ class Map:
         # Per-tile visibility cache — terrain is static for the Map's lifetime,
         # so what a tile can see never changes within an episode.
         self._visible_cache = {}
+        self.map_uid = next(Map._uid_counter)
+        self.terrain_epoch = 0
 
     def generate_map(self, map_type="basic"):
         """Generate a map with random terrain. Weights from config.toml."""
@@ -106,31 +115,22 @@ class Map:
         return adjacent
 
     def get_adjacent_coords(self, coordinates):
-        """Get coordinates of all adjacent tiles (axial hex + cylindrical wrapping)."""
-        row, col = coordinates
-        coords = []
-        for dr, dc in HEX_DIRECTIONS:
-            new_row = row + dr
-            new_col = (col + dc) % self.m  # Cylindrical wrap on q-axis
-            if 0 <= new_row < self.n:
-                coords.append((new_row, new_col))
-        return coords
+        """Get coordinates of all adjacent tiles (axial hex + cylindrical wrapping).
+
+        Thin wrapper: delegates to civulator.hexmath, the canonical hex-math
+        implementation (design doc §11 P1; CLAUDE.md hex-math row).
+        """
+        return hexmath.adjacent_coords(coordinates, self.n, self.m)
 
     def distance_function(self, p1, p2):
         """Hex distance with cylindrical wrapping.
 
         d = max(|dq|, |dr|, |dq + dr|)  where dq picks the shorter wrap path.
-        """
-        dq_direct = p2[1] - p1[1]
-        # Check if wrapping is shorter
-        if dq_direct > 0:
-            dq_wrapped = dq_direct - self.m
-        else:
-            dq_wrapped = dq_direct + self.m
-        dq = dq_direct if abs(dq_direct) <= abs(dq_wrapped) else dq_wrapped
 
-        dr = p2[0] - p1[0]
-        return max(abs(dq), abs(dr), abs(dq + dr))
+        Thin wrapper: delegates to civulator.hexmath, the canonical hex-math
+        implementation (design doc §11 P1; CLAUDE.md hex-math row).
+        """
+        return hexmath.distance(p1, p2, self.m)
 
     def _build_cost_grid(self):
         """Build a 2D cost array from terrain for A* pathfinding."""

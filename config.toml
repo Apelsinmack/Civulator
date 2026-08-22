@@ -74,6 +74,200 @@ Ocean =      [0, 0]
 Coast =      [0, 0]
 Lake =       [0, 0]
 
+# =====================================================================
+# Composable terrain model (v0.6, docs/terrain_model_design.md §3.1) — ADDITIVE.
+# Lives alongside the legacy terrain.movement_costs / defense_modifiers / los /
+# map.terrain_weights / map.features tables above; those still drive all
+# gameplay today (Tile.terrain_type / update_terrain_properties). This schema
+# is read only by civulator.terrain_model (pure interpreter) and consumed by
+# nothing else yet — engine re-pointing is patch P2a, which also removes the
+# legacy tables above. See civulator/terrain_model.py for the `on` semantics.
+# =====================================================================
+
+# --- Base terrains: land ---
+[terrain.base.Grassland]
+yields = [2, 0]
+movement = 1
+defense = 0
+los = [0, 0]
+domain = "land"
+
+[terrain.base.Plains]
+yields = [1, 1]
+movement = 1
+defense = 0
+los = [0, 0]
+domain = "land"
+
+[terrain.base.Desert]
+yields = [0, 0]
+movement = 1
+defense = 0
+los = [0, 0]
+domain = "land"
+
+[terrain.base.Tundra]
+yields = [1, 0]
+movement = 1
+defense = 0
+los = [0, 0]
+domain = "land"
+
+[terrain.base.Snow]
+yields = [0, 0]
+movement = 1
+defense = 0
+los = [0, 0]
+domain = "land"
+
+# --- Base terrains: water ---
+[terrain.base.Coast]
+yields = [1, 0]
+movement = 1
+defense = 0
+los = [0, 0]
+domain = "water"
+
+[terrain.base.Lake]
+yields = [2, 0]
+movement = 1
+defense = 0
+los = [0, 0]
+domain = "water"
+
+[terrain.base.Ocean]
+yields = [1, 0]
+movement = 1
+defense = 0
+los = [0, 0]
+domain = "water"
+
+# --- Relief (land only; water is always flat, §3) ---
+[terrain.relief.flat]
+yields = [0, 0]
+movement = 0
+defense = 0
+los = [0, 0]
+
+[terrain.relief.hills]
+yields = [0, 1]
+movement = 1             # additive: Grassland + hills costs 2
+defense = 3
+los = [1, 1]
+
+[terrain.relief.mountain]
+yields = [0, 0]
+movement = 0              # blocking comes from `impassable`, not a cost sentinel (D6)
+defense = 0
+los = [3, 0]
+impassable = true
+
+# --- Features (<=1 per tile) ---
+[terrain.feature.Woods]
+yields = [0, 1]
+movement = 1
+defense = 3
+los = [1, 0]
+on = { bases = ["Plains", "Grassland", "Tundra"], relief = ["flat", "hills"] }
+
+[terrain.feature.Rainforest]
+yields = [1, 0]
+movement = 1
+defense = 3
+los = [1, 0]
+on = { bases = ["Plains"], relief = ["flat", "hills"] }
+
+[terrain.feature.Marsh]
+yields = [1, 0]
+movement = 1
+defense = -2
+los = [0, 0]
+on = { bases = ["Grassland"], relief = ["flat"] }
+
+[terrain.feature.Floodplains]
+yields = [3, 0]
+movement = 0
+defense = -2
+los = [0, 0]
+on = { bases = ["Desert"], relief = ["flat"] }
+# "along rivers" (§3) is a river-edge/adjacency condition, out of scope for
+# this per-tile base/relief/feature evaluator — enforced at generation time
+# (mapgen, patch P4), not here.
+
+[terrain.feature.Oasis]
+yields = [3, 0]
+movement = 0
+defense = 0
+los = [0, 0]
+on = { bases = ["Desert"], relief = ["flat"] }
+# "no river on-tile, no adjacent water/Oasis/Floodplains" (§3) is likewise a
+# spatial condition enforced by the generator (P4), not by this evaluator.
+
+[terrain.feature.Reef]
+yields = [1, 1]
+movement = 0
+defense = 0
+los = [0, 0]
+on = { bases = ["Coast"] }
+
+[terrain.feature.Ice]
+yields = [0, 0]
+movement = 0
+defense = 0
+los = [0, 0]
+on = { bases = ["Coast", "Ocean"] }
+# "polar" (§3) is a latitude condition, enforced by the generator (P3/P4).
+
+# --- Resources (bonus tier, §3.2; luxury/strategic ship schema-ready via `class`) ---
+[terrain.resource.Wheat]
+class = "bonus"
+yields = [1, 0]
+on = { bases = ["Plains"], relief = ["flat"], features = ["none", "Floodplains"] }
+
+[terrain.resource.Rice]
+class = "bonus"
+yields = [1, 0]
+on = { bases = ["Grassland"], relief = ["flat"], features = ["none", "Marsh"] }
+
+[terrain.resource.Cattle]
+class = "bonus"
+yields = [1, 0]
+on = { bases = ["Grassland"], relief = ["flat"], features = ["none"] }
+
+[terrain.resource.Sheep]
+class = "bonus"
+yields = [0, 1]
+on = { relief = ["hills"], features = ["none"] }
+
+[terrain.resource.Stone]
+class = "bonus"
+yields = [0, 1]
+on = { bases = ["Grassland"], relief = ["flat", "hills"], features = ["none"] }
+
+[terrain.resource.Deer]
+class = "bonus"
+yields = [0, 1]
+# "Woods or Tundra" (§3.2) is a disjunction across dimensions that a single
+# AND-of-ORs mapping cannot express — `on` as a list of mappings means valid
+# if ANY one matches (civulator/terrain_model.py check_on/_match).
+on = [
+    { features = ["Woods"] },
+    { bases = ["Tundra"] },
+]
+
+[terrain.resource.Bananas]
+class = "bonus"
+yields = [1, 0]
+on = { features = ["Rainforest"] }
+
+[terrain.resource.Fish]
+class = "bonus"
+yields = [1, 0]
+on = { bases = ["Coast", "Lake"] }
+
+[terrain.river]
+crossing_cost = 1
+
 [game]
 num_players = 8
 max_turns = 1000

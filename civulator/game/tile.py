@@ -1,8 +1,29 @@
 """Tile class representing a single hex on the game map."""
 
+from dataclasses import dataclass
+from typing import Optional
+
 import numpy as np
 
 from .terrain import Terrain
+from ..terrain_model import compose, validate
+
+
+@dataclass
+class TileLayers:
+    """The v0.6 composable layers (design doc §3): base x relief x feature x resource.
+
+    Holds only the new-model state. Kept off Tile's existing `resource` and
+    `features` attributes on purpose — those are legacy and stay authoritative
+    for gameplay until the P2a engine re-point, so nothing here may collide
+    with or change their behavior. Set exclusively via Tile.set_layers();
+    read the derived gameplay numbers from Tile.composed.
+    """
+
+    base: Optional[str] = None
+    relief: Optional[str] = None
+    feature: Optional[str] = None
+    resource: Optional[str] = None
 
 
 class Tile:
@@ -18,6 +39,11 @@ class Tile:
         self.resource = None
         self.units = []
         self.city = None
+
+        # v0.6 composable layers (design doc §3) — additive, new state only.
+        # Unset until set_layers() is called; unused by gameplay until P2a.
+        self.layers = TileLayers()
+        self.composed = None
 
         self.update_terrain_properties()
 
@@ -86,3 +112,23 @@ class Tile:
     def has_river(self):
         """Check if this tile has a river."""
         return "River" in self.features
+
+    def set_layers(self, base, relief=None, feature=None, resource=None, map_ref=None):
+        """Set the v0.6 composable layers (design doc §3.1) — the only mutator for them.
+
+        Validates the combination via terrain_model.validate() (raises
+        ValueError on an invalid `on` placement — e.g. a feature on a base it
+        can't grow on), then stores it on self.layers and recomputes
+        self.composed via terrain_model.compose(). Bumps map_ref.terrain_epoch
+        (design doc §3.4) when a Map is given, so its terrain-derived caches
+        know to invalidate.
+
+        Does not touch terrain_type, features, resource, or
+        update_terrain_properties() — those legacy attributes keep driving all
+        gameplay unchanged until the P2a engine re-point.
+        """
+        validate(base, relief=relief, feature=feature, resource=resource)
+        self.layers = TileLayers(base=base, relief=relief, feature=feature, resource=resource)
+        self.composed = compose(base, relief=relief, feature=feature, resource=resource)
+        if map_ref is not None:
+            map_ref.terrain_epoch += 1
