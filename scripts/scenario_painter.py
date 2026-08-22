@@ -94,8 +94,9 @@ class PainterState:
         self.cities = []
 
     def add_unit(self, row, col):
-        # Remove existing at this position
-        self.remove_at(row, col)
+        # Replace any existing unit here, but leave a city in place — units
+        # garrison cities; the engine supports both on one tile (issue #38)
+        self.units = [u for u in self.units if not (u["row"] == row and u["col"] == col)]
         self.units.append({
             "type": UNIT_TYPES[self.selected_type],
             "team": self.team + 1,
@@ -105,7 +106,8 @@ class PainterState:
         })
 
     def add_city(self, row, col):
-        self.remove_at(row, col)
+        # Replace any existing city here, but leave a garrisoning unit alone
+        self.cities = [c for c in self.cities if not (c["row"] == row and c["col"] == col)]
         self.cities.append({
             "team": self.team + 1,
             "row": row, "col": col,
