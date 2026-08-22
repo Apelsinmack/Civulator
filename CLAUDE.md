@@ -9,7 +9,7 @@ Civulator is a **research project**: deep reinforcement learning in a simplified
 ## Where things live
 
 - **Rules** (invariants + canonical systems): this file. Keep it lean — narrative does not belong here.
-- **Tasks**: GitHub issues at `Apelsinmack/Civulator`. Milestones are the big goals: **A: Combat**, **B: Peacetime growth**, **C: Diplomacy**. Roadmap lists in markdown files are forbidden — they drift.
+- **Tasks & roadmap**: GitHub issues at `Apelsinmack/Civulator`; the roadmap is the milestones **A: Combat**, **B: Peacetime growth**, **C: Diplomacy**.
 - **Narrative** (design thinking, specs, results discussion): `docs/` and `documents/`. Gameplay-rule changes with measured effects: `CHANGELOG.md` (semver game version).
 - **Scientific record**: `stats/`, `weights/trained/` (+ its `manifest.md` registry). Never delete previous results.
 
@@ -40,11 +40,10 @@ One line per system built for reuse. If what you need is here, use it; if it alm
 | Networks | `SelectAndMove` / `SharedBackbone` / `FullyConv` / `FullyConvSeparate` (`agents/networks.py`) | FullyConv variants are map-size independent — required for large maps |
 | Hex renderer | `scripts/watch.py` (extraction into a shared module: issue #27) | Base for all visual tools; no more forked rendering code |
 
-## Environment
+## Tech stack
 
-- Python: anaconda base env; PyTorch with CUDA for training; pyray for viewers.
-- C++: `cpp/` built with CMake + MSVC; import falls back to pure Python gracefully.
-- Machine specifics (paths, GPUs, env names) live in `environment.md` / the `machine-env` skill — not here.
+- Python 3, PyTorch (CUDA), NumPy; pyray for visual tools.
+- C++ module: `cpp/` (pybind11 + CMake) → `civulator_core`; imports fall back to pure Python gracefully.
 
 ## Related Projects
 
