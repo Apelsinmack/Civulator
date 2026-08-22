@@ -107,11 +107,26 @@ class GameEnvironment:
         starting_locations = self._calculate_starting_locations()
         self.rng.shuffle(starting_locations)
 
-        # Place starting units and cities
+        # Place starting units and cities.
+        # found_city returns None on an invalid spot (Mountain/Ocean tile, or
+        # within min city distance of an already-placed capital) — re-roll
+        # until every player actually has a capital (issue #1: silently
+        # city-less players were marked dead and wiped on their first turn).
         for i, player in enumerate(self.players):
             start_x, start_y = starting_locations[i]
 
-            self.found_city(player, (start_x, start_y), f"{player.name}'s Capital")
+            city = self.found_city(player, (start_x, start_y), f"{player.name}'s Capital")
+            attempts = 0
+            while city is None and attempts < 1000:
+                start_x = self.rng.randint(0, self.n - 1)
+                start_y = self.rng.randint(0, self.m - 1)
+                city = self.found_city(player, (start_x, start_y), f"{player.name}'s Capital")
+                attempts += 1
+            if city is None:
+                raise RuntimeError(
+                    f"Could not place a capital for {player.name} — map too "
+                    f"small/full for {self.num_players} players?"
+                )
 
             # Place warriors around the city using hex adjacency
             adj_coords = self.map.get_adjacent_coords((start_x, start_y))

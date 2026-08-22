@@ -5,6 +5,20 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
+## v0.5.2 — Every player gets a capital (2026-08-22)
+
+Fixes the long-standing "city disappears near game start" bug (#1): `reset()`
+ignored `found_city`'s return value, which is silently `None` on a
+Mountain/Ocean start tile or within min city distance of an earlier capital.
+The city-less player was marked dead by `end_turn` on turn one and their
+units deleted — observed as a vanishing city. Capitals now re-roll (seeded
+rng, bounded) until placed; reset raises if the map genuinely can't fit the
+player count. Spawn-affecting: episode worlds differ from v0.5.1 for seeds
+that previously produced an invalid start. The full starting-locations
+overhaul (standardized map sizes, generate-terrain-around-starts) remains #10.
+
+---
+
 ## v0.5.1 — Portable engine RNG (PCG32) (2026-08-22)
 
 **RNG stream change: a seed from before v0.5.1 produces a DIFFERENT world
