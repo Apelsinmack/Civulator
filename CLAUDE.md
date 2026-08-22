@@ -42,7 +42,7 @@ One line per system built for reuse. If what you need is here, use it; if it alm
 
 ## Environment
 
-- Python: anaconda base env; PyTorch + CUDA (RTX 3060 on Work Desktop); pyray for viewers.
+- Python: anaconda base env; PyTorch with CUDA for training; pyray for viewers.
 - C++: `cpp/` built with CMake + MSVC; import falls back to pure Python gracefully.
 - Machine specifics (paths, GPUs, env names) live in `environment.md` / the `machine-env` skill — not here.
 
