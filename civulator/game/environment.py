@@ -2,6 +2,8 @@
 
 import random
 
+import numpy as np
+
 from .map import Map
 from .player import Player
 from .city import City
@@ -98,6 +100,7 @@ class GameEnvironment:
                 player.culture = 0
                 player.technologies = []
                 player.policies = []
+                player.explored = None
 
         # Calculate starting locations and randomize assignment
         starting_locations = self._calculate_starting_locations()
@@ -125,6 +128,10 @@ class GameEnvironment:
 
         self.current_player_index = 0
         self.current_player = self.players[self.current_player_index]
+
+        # Initial exploration: everyone knows their starting surroundings
+        for i in range(len(self.players)):
+            self.update_exploration(i)
 
         return self
 
@@ -206,6 +213,7 @@ class GameEnvironment:
         enemy_unit = self._get_enemy_unit_at(order_pos)
         if enemy_unit is not None:
             reward = self._execute_attack(selected_unit, enemy_unit)
+            self.update_exploration(self.current_player.player_index)
             self._check_game_end()
             return self, reward, self.done
 
@@ -220,6 +228,9 @@ class GameEnvironment:
         if tile and tile.city and tile.city.player != self.current_player:
             tile.city.set_owner(self.current_player)
             reward += REWARDS["capture_city"]
+
+        # Movement changes what the player can see
+        self.update_exploration(self.current_player.player_index)
 
         self._check_game_end()
         return self, reward, self.done
@@ -321,6 +332,44 @@ class GameEnvironment:
 
         if self.turn_counter > self.max_turns:
             self.done = True
+
+    # --- Perception (fog of war) ---
+    # The engine owns the truth about what each player can see; encoders
+    # decide whether/how to apply it (config.toml [training] fog_of_war).
+
+    def get_visibility_mask(self, player_index):
+        """(n, m) bool array: tiles currently visible to the player.
+
+        Union of line-of-sight from every unit and city the player owns
+        (cities have eyes too). Cheap after warm-up: per-tile visibility is
+        cached on the Map because terrain is static within an episode.
+        """
+        mask = np.zeros((self.n, self.m), dtype=bool)
+        player = self.players[player_index]
+        for entity in list(player.units) + list(player.cities):
+            for r, q in self.map.visible_from(entity.coordinates):
+                mask[r, q] = True
+        return mask
+
+    def get_explored_mask(self, player_index):
+        """(n, m) bool array: tiles the player has ever seen (fog memory)."""
+        explored = self.players[player_index].explored
+        if explored is None or explored.shape != (self.n, self.m):
+            return np.zeros((self.n, self.m), dtype=bool)
+        return explored
+
+    def update_exploration(self, player_index):
+        """Fold current visibility into the player's explored memory.
+
+        Returns the current visibility mask.
+        """
+        vis = self.get_visibility_mask(player_index)
+        player = self.players[player_index]
+        if player.explored is None or player.explored.shape != (self.n, self.m):
+            player.explored = vis.copy()
+        else:
+            player.explored |= vis
+        return vis
 
     # --- Tile query helpers ---
 

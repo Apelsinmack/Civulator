@@ -109,6 +109,17 @@ class EnhancedStateEncoder(StateEncoder):
         Channel 22:     Own cities (1 at city tile)
         Channel 23:     Enemy cities (1 at city tile)
         Channel 24:     Terrain movement cost (normalized, cached per episode)
+
+    Fog of war (config.toml [training] fog_of_war, or fog_of_war= kwarg):
+        When on, the encoder applies the engine's perception masks — three
+        knowledge states: visible / explored-but-fogged / hidden:
+        - enemy units only where currently visible (units move)
+        - enemy cities and terrain only where ever explored (they don't move)
+        - two extra channels so the network can tell "empty" from "unseen":
+            Channel 25: currently visible mask
+            Channel 26: explored (fog memory) mask
+        Depth becomes 27. When off (default), output is identical to the
+        pre-fog encoder (depth 25).
     """
 
     CLASS_INDEX = {
@@ -124,12 +135,16 @@ class EnhancedStateEncoder(StateEncoder):
     MAX_DEFENSE_BONUS = 12.0
     MAX_TERRAIN_COST = 3.0
 
-    def __init__(self):
+    def __init__(self, fog_of_war=None):
+        if fog_of_war is None:
+            from ..config import CFG
+            fog_of_war = CFG.get("training", {}).get("fog_of_war", False)
+        self.fog_of_war = fog_of_war
         self._terrain_cache = None  # Cached terrain layer (static per episode)
         self._terrain_cache_id = None  # Map object id for cache invalidation
 
     def get_depth(self, num_players):
-        return 25
+        return 27 if self.fog_of_war else 25
 
     def _get_terrain_layer(self, game_env):
         """Return cached terrain cost layer, rebuilding only on new episode."""
@@ -175,19 +190,30 @@ class EnhancedStateEncoder(StateEncoder):
             device = torch.device("cpu")
 
         n, m = game_env.n, game_env.m
-        state = np.zeros((25, n, m), dtype=np.float32)
+        state = np.zeros((self.get_depth(len(game_env.players)), n, m), dtype=np.float32)
 
         current_player = game_env.players[player_index]
+
+        if self.fog_of_war:
+            visible = game_env.get_visibility_mask(player_index)
+            # Union for robustness on hand-built envs that never called
+            # update_exploration; explored always contains visible
+            explored = game_env.get_explored_mask(player_index) | visible
+        else:
+            visible = explored = None
 
         # Own units (ch 0-4 class, ch 5-10 stats)
         for unit in current_player.units:
             self._encode_unit(state, unit, 0, 5, game_env)
 
-        # Enemy units (ch 11-15 class, ch 16-21 stats)
+        # Enemy units (ch 11-15 class, ch 16-21 stats) — units move, so under
+        # fog they exist only where currently visible
         for player in game_env.players:
             if player == current_player:
                 continue
             for unit in player.units:
+                if visible is not None and not visible[unit.coordinates]:
+                    continue
                 self._encode_unit(state, unit, 11, 16, game_env)
 
         # Own cities (ch 22)
@@ -195,15 +221,24 @@ class EnhancedStateEncoder(StateEncoder):
             i, j = city.coordinates
             state[22, i, j] = 1.0
 
-        # Enemy cities (ch 23)
+        # Enemy cities (ch 23) — cities don't move, so under fog they are
+        # remembered wherever the player has ever explored
         for player in game_env.players:
             if player == current_player:
                 continue
             for city in player.cities:
                 i, j = city.coordinates
+                if explored is not None and not explored[i, j]:
+                    continue
                 state[23, i, j] = 1.0
 
-        # Terrain (ch 24) — cached per episode
-        state[24] = self._get_terrain_layer(game_env)
+        # Terrain (ch 24) — cached per episode; under fog only where explored
+        terrain = self._get_terrain_layer(game_env)
+        if explored is not None:
+            state[24] = terrain * explored
+            state[25] = visible.astype(np.float32)
+            state[26] = explored.astype(np.float32)
+        else:
+            state[24] = terrain
 
         return torch.from_numpy(state).to(device)

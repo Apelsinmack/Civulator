@@ -17,9 +17,14 @@ class Player:
         self.culture = 0
         self.technologies = []
         self.policies = []
+        # Fog-of-war memory: (n, m) bool array of ever-seen tiles, owned by
+        # the environment (see GameEnvironment.update_exploration)
+        self.explored = None
 
     def start_turn(self):
         """Process the start of a player's turn."""
+        self.game_env.update_exploration(self.player_index)
+
         for unit in self.units:
             unit.reset_movement()
             unit.heal()

@@ -37,6 +37,9 @@ class Map:
         # Terrain/feature randomness draws from here; pass the owning
         # GameEnvironment's rng for reproducible maps.
         self.rng = rng if rng is not None else random.Random()
+        # Per-tile visibility cache — terrain is static for the Map's lifetime,
+        # so what a tile can see never changes within an episode.
+        self._visible_cache = {}
 
     def generate_map(self, map_type="basic"):
         """Generate a map with random terrain. Weights from config.toml."""
@@ -315,6 +318,20 @@ class Map:
             points.append((rr, int(rq) % self.m))
 
         return points
+
+    def visible_from(self, coordinates):
+        """Cached tiles visible from a position (terrain-static per episode).
+
+        First call for a tile computes get_visible_tiles once; afterwards a
+        player's whole visibility mask is just a union of cached sets over
+        its unit/city positions — no line-of-sight walks.
+        """
+        key = (coordinates[0], coordinates[1] % self.m)
+        cached = self._visible_cache.get(key)
+        if cached is None:
+            cached = tuple(self.get_visible_tiles(key))
+            self._visible_cache[key] = cached
+        return cached
 
     def get_visible_tiles(self, coordinates):
         """Get all tiles visible from a position. Returns list of (row, col)."""

@@ -33,7 +33,7 @@ One line per system built for reuse. If what you need is here, use it; if it alm
 | Unit system | `Unit` + data tables + `UNIT_SLOT` (`game/unit.py`); 4 stacking slots | Adding a unit type touches: the 5 tables + `UNIT_SLOT` (unit.py), `_create_unit` (city.py), `CLASS_INDEX` (state_encoders.py) — all three files, every time |
 | Combat | `Unit.attack` + `calculate_damage` (Civ6 formula) + `GameEnvironment._execute_attack` | All damage flows through this path |
 | City economy | `City.process_turn` / `assign_tiles` (`game/city.py`) | Food → growth → production logic lives here only |
-| Line of sight | `Map.check_line_of_sight` + `Terrain.LOS` | Obstacle/vantage levels come from config.toml |
+| Line of sight | Rules: `Map.check_line_of_sight` + `Terrain.LOS` (config.toml). Perception: `env.get_visibility_mask` / `get_explored_mask` / `update_exploration` (cached per-tile on `Map`) | One LoS system, two surfaces. Fog is applied by the ENCODER (`[training] fog_of_war`), never by the engine — the engine always knows the truth |
 | State encoding | `StateEncoder` ABC (`agents/state_encoders.py`): Basic (2N+1 ch), Enhanced (25 ch) | New representations subclass it; never fork an agent to change encoding |
 | Action masking | `get_valid_select_mask` / `get_valid_moves_mask` (`agents/networks.py`) | Agent masks AND human-tool click-highlighting must share these — anything else creates train/play skew |
 | DQN stack | `DQNAgent`, `ReplayMemory`, `BuildAgent` (`agents/`), `train_agents` (`training/trainer.py`) | One of each; experiments parameterize, don't fork |

@@ -92,6 +92,7 @@ epsilon_decay_episodes = 5000
 target_update_freq = 100 # Sync target network every N optimization steps
 encoder = "enhanced"     # "basic" (5ch) or "enhanced" (25ch)
 fully_conv = true        # Must be true for large maps (no FC layers)
+fog_of_war = false       # true: enhanced encoder applies visibility (27ch — hidden/explored/visible)
 
 [training.rewards]
 invalid_action = -1

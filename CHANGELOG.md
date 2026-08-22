@@ -5,6 +5,35 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
+## v0.5.0 — Fog of war + ranged targeting + fortify fix (2026-08-22)
+
+**Gameplay/training-affecting: training runs before and after this version are
+not comparable baselines** (fortify became reachable, ranged attacks became
+selectable; fog is opt-in).
+
+- **Fog of war** (design: Erik + Claude, 2026-08-22). Three knowledge states —
+  hidden / explored-but-fogged / visible. The engine owns perception:
+  `env.get_visibility_mask(p)`, `env.get_explored_mask(p)`,
+  `env.update_exploration(p)`; visibility unions unit AND city sight (cities
+  have eyes), with a per-tile visibility cache on `Map` (terrain is static per
+  episode, so after warm-up a mask is a union of cached sets — no LoS walks).
+  The `EnhancedStateEncoder` applies fog optionally via `[training] fog_of_war`
+  (default false → output bit-identical to v0.4.x, depth 25). With fog on
+  (depth 27): enemy units appear only where visible, enemy cities and terrain
+  where explored, plus visible+explored mask channels. C++ port of visibility
+  deliberately deferred until profiling shows it hot.
+- **Ranged targets in the action mask** (#30): `get_valid_moves_mask` now marks
+  enemy tiles within a ranged unit's range AND rules-line-of-sight as valid
+  targets — archers/catapults can finally shoot at range 2, for the agent and
+  the Order Recorder alike. Rules-LoS implies the shooter sees the target, so
+  the mask leaks nothing under fog.
+- **Fortify fix** (#29): the slot-aware select `(r, c, slot)` never matched the
+  `(r, c)` order, so the DQN agent could never fortify (always scored
+  invalid_action). Fixed by comparing positions only.
+- `civulator_core` C++ module now also built on the Home Desktop (cp311).
+
+---
+
 ## v0.4.1 — Engine correctness + reproducibility (2026-08-22)
 
 - Ranged attacks now use hex distance with cylindrical wrap, fixing incorrect
