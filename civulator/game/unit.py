@@ -399,9 +399,7 @@ class ArcherUnit(Unit):
 
     def attack(self, target, game_env):
         """Archers perform ranged attacks."""
-        distance = abs(target.coordinates[0] - self.coordinates[0]) + abs(
-            target.coordinates[1] - self.coordinates[1]
-        )
+        distance = game_env.map.distance_function(self.coordinates, target.coordinates)
         if distance > self.get_range():
             return 0, 0, False, False
 
@@ -441,9 +439,7 @@ class CatapultUnit(Unit):
 
     def attack(self, target, game_env):
         """Catapults perform bombard attacks."""
-        distance = abs(target.coordinates[0] - self.coordinates[0]) + abs(
-            target.coordinates[1] - self.coordinates[1]
-        )
+        distance = game_env.map.distance_function(self.coordinates, target.coordinates)
         if distance > self.get_range():
             return 0, 0, False, False
 
