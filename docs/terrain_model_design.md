@@ -13,7 +13,7 @@
 | E1 | **Kernel homes & lasting names.** Three critique lenses independently found the same wall: pure mapgen cannot import `game/`, yet hex math, yield composition, the `on`-constraint evaluator, and fresh-water queries are declared singular and live (or were drafted to live) on `Map`/`Tile`. Fix: pure leaf modules that both sides import. | Create **`civulator/hexmath.py`** (directions, wrap-aware distance, adjacency, axial↔Cartesian centers — pure functions parameterized by width; A* stays on `Map`) and **`civulator/terrain_model.py`** (the `compose()` function + `on`-constraint evaluator, config-fed, pure). `Map`/`Tile` delegate to both; mapgen imports both. Canonical hex-math row's "Where" is amended at implementation. |
 | E2 | **Scenario persistence & painter scope.** The doc told two stories (store tiles vs rebuild from seed). | Scenarios stay **seed + manifest-pinned mapgen params + entities** (§8 gate); the painter does **not** gain terrain editing in 0.6 — `ACCEPTED GAP`, revisit if authoring needs it. Tests/tools build controlled worlds through a sanctioned `Tile.set_layers(base, relief, feature, resource)` API (validates, recomposes, bumps the terrain epoch). A code-generated, manifest-stamped fixture scenario replaces `scenario_001.json` in tests. |
 | E3 | **A* and the river crossing cost.** Rivers' only gameplay effect (+1 crossing, hardcoded twice in `unit.py`) is invisible to A* (per-tile cost grids, C++ and Python) — live inconsistency the day rivers ship. | **Extend both A* implementations with per-edge river costs** (river edge flags passed alongside the cost grid; own oracle-gated patch P6; C++ signature change → `cpp/` in blast radius). |
-| E4 | **Renderer geometry.** `hex_render.hex_to_pixel` draws an odd-q offset layout while the game is axial — half the diagonal adjacencies render as non-adjacent. Your §8 inspection, isotropy eyeballing, and river polylines would all pass through a false lens; a recorder that can't show rivers means demonstrating against an invisible rule. | Fix `hex_to_pixel`/`pixel_to_hex` to the true axial embedding (one shared function; every tool inherits — the file's "do not fix" comment guarded consistency, which a single shared fix preserves) and add a river-edge drawing primitive to `hex_render`; painter/recorder/watch display rivers. Changes how all tools look. |
+| E4 | **Renderer geometry.** `hex_render.hex_to_pixel` draws an offset layout on axial indices without converting — measured: **~17% of neighbor pairs render non-adjacent**. Your §8 inspection, isotropy eyeballing, and river polylines would all pass through a false lens. | **Amended after focused research (Erik's skepticism of the first fix was correct): store axial, render a pointy-top brick RECTANGLE** — axial→odd-r offset column taken **mod W** (full spec §7.5). Supersedes the earlier "true axial embedding" (a parallelogram leaning H/2 columns). Verified: 0 broken adjacencies at 24×12 and 106×66. Orientation is *forced* pointy-top (no flat-top fix exists on a horizontal-wrap cylinder). River primitive unaffected; painter/recorder/watch display rivers. |
 | E5 | **Defaults for tools and tests.** `[map] type` is a dead key today; the constructor default silently decides what painter/recorder/tests get. Earthlike + starts is unanalyzed below Duel. | `[map] type` becomes a real, read key. **Earthlike minimum size = Duel (24×12)**; below it `generate` raises. Painter default board moves 16×16 basic → **Duel earthlike**. Tests keep explicit `map_type="basic"` at any size; engine-level golden runs **Duel earthlike**. Start failure after the retry ladder **raises deterministically** — no silent degradation. |
 | E6 | **Encoder semantics amendment.** "Frozen contract" was oversold: with composed costs, hills+woods (3) aliases impassable at the old clamp; defense re-pointing activates bonuses the engine never applied; masks gain terrain filtering for the first time. | Keep the **layout** frozen (25/27 ch) and document three value-semantics corrections: `MAX_TERRAIN_COST` 3→4 with impassable pinned to max (1.0 unique again, passable ≤ 0.75); defense from composed *current-tile* values (fixes the spawn-frozen-terrain skew, §9.7–8) with the normalizer clamped; masks add domain filtering (action-space change, §7). |
 
@@ -58,6 +58,7 @@ D1–D17 decided with Erik in the design session; D18–D23 added by the critiqu
 | D21 | Golden layer 1 fingerprints the **entire** `MapData` (SHA-256 over canonical serialization, including rivers with flow+flux, resources, fresh water, starts) with pinned in-test params |
 | D22 | The C++ mapgen twin, when it comes, is fingerprint-gated and **replaces** — never a silent fallback (unlike the A* pattern) |
 | D23 | River crossing cost becomes config (`[terrain.river] crossing_cost`), single-sourced; A* treatment per E3 |
+| D24 | Renderer projection (E4 amendment): axial storage, pointy-top brick-rectangle display (axial→odd-r offset mod W), exact O(1) picking, adjacency-render invariant as a permanent unit test; the P2b human gate folds into P8 — one human gate for the whole series |
 
 ## 3. The tile data model
 
@@ -252,6 +253,45 @@ Standard keeps 48×24; its **default player count changes 8 → 6** (max 8 prese
   3. **Mask filtering**: `get_valid_moves_mask` gains the domain check — the action space the agent sees shrinks (illegal → unofferable), changing exploration and the invalid-action reward stream. A representation-affecting change beyond "worlds changed", stated honestly.
 - **Consequence, consciously accepted**: 0.6 agents are blind to resources and rivers. The **richer encoder** (base one-hots, relief, feature, resource, river channels — a subclass, never a fork) is a separate measured experiment, landing before any serious milestone-B baseline.
 
+## 7.5 Renderer projection (E4 amendment — researched and numerically verified 2026-08-22)
+
+**Decision (D24)**: storage stays axial (unchanged); the screen shows a **pointy-top brick rectangle**: convert axial → odd-r offset and take the offset column **mod W**. Three research findings force this exact shape:
+
+1. **"Convert to offset" and "renormalize x mod W" are algebraically the same formula** — proper conversion alone reproduces the parallelogram; the rectangle is legal *only because q wraps* (the mod is the cylinder quotient's gauge freedom). Even rows land on integer columns, odd rows on half-integers: the classic brick pattern.
+2. **Orientation is forced to pointy-top.** A seamless horizontal wrap needs the q basis vector horizontal; flat-top has no horizontal edge step, so its wrap identification carries a vertical offset of W/2 rows (12 rows on the painter, 53 on Colossal — panning east would drift the world south forever). The current flat-top art rotates to vertex-up hexes; sprites are unrotated centered icons, so no art changes.
+3. **This mirrors Civ V's own architecture** (it stores the staggered rectangle and converts to axial for math; we store axial and convert to the rectangle for display) and Catlike Coding's hex-wrap treatment.
+
+**Verified** (script preserved as the basis of the P2b unit test): 0 broken adjacencies at 24×12 and 106×66 (current renderer: 17.6%/16.9% of neighbor pairs render non-adjacent); analytic picking error-free including jittered points; seam splits render strictly at opposite screen edges (2 pairs/row) — the feared diagonal tearing does not occur (the cut is a fixed vertical line on the cylinder; it drifts only in stored-q space, invisible on screen).
+
+**Drop-in formulas** (pointy-top; `S3 = √3`, `s` = hex size, `W` = columns):
+
+```python
+def hex_to_pixel(row, col, size, wrap_w):          # axial -> brick rectangle
+    col_off = (col + (row - (row & 1)) // 2) % wrap_w
+    x = S3 * size * (col_off + 0.5 * (row & 1)) + S3 * 0.5 * size
+    y = 1.5 * size * row + size
+    return x, y
+
+def pixel_to_hex(px, py, size, rows, cols):        # exact O(1) inverse
+    x = px - S3 * 0.5 * size;  y = py - size
+    qf = (S3/3 * x - y/3) / size;  rf = (2/3 * y) / size;  sf = -qf - rf
+    q, r, s_ = round(qf), round(rf), round(sf)
+    dq, dr, ds = abs(q-qf), abs(r-rf), abs(s_-sf)
+    if dq > dr and dq > ds: q = -r - s_
+    elif dr > ds:           r = -q - s_
+    return (r, q % cols) if 0 <= r < rows else (None, None)
+```
+
+The O(1) inverse (fractional axial + cube rounding) replaces the current per-frame O(rows·cols) nearest-center scan; `q % cols` resolves clicks on wrapped strips for free.
+
+**Camera/seam policy**: world pixel width P = √3·s·W. Painter/recorder (fully visible board): nothing special — the seam is the map edge, wrap-neighbor highlights appear on the opposite edge, Civ-familiar. Scrolling views (watch, preview CLI): wrap `camera.target.x` mod P after panning and draw each tile shifted by the k·P (k ∈ {−1,0,+1}) nearest the camera — a shared helper in `hex_render`; the preview CLI must support scrolling *across* the seam (the visual counterpart of §10's seam oracle).
+
+**Look change to expect at the P8 ceremony**: the board reads as Civ-style pointy-top rows — E/W is now the straight direction; same-q stored columns render as NW/SE staircases (half of the old "straight columns" were adjacency lies). A toggleable (r,q) label overlay in the painter aids debugging.
+
+**Permanent invariant test** (would have caught the original bug): every `Map.get_adjacent_coords` pair renders exactly √3·s apart (mod P in x).
+
+*Checked against the two critique findings that touched rendering (arch. M10, scope F8): both satisfied — the inspection gate now looks through correct geometry, and the river-edge primitive connects centers that render adjacent.*
+
 ## 8. Invalidation, versioning, re-baselining (D16, D21)
 
 **v0.6.0** + CHANGELOG (terrain model, water, resources, generator, rivers, starts, sizes, encoder corrections, latent fixes).
@@ -297,7 +337,7 @@ Standard keeps 48×24; its **default player count changes 8 → 6** (max 8 prese
 |---|---|---|---|---|---|---|
 | P1 | Pure kernels | `hexmath.py`, `terrain_model.py`, new config schema (§3.1); `Map` delegates hex math (behavior-identical); `Tile` gains layers + `set_layers` + composed properties + `terrain_epoch`/`map_uid`, legacy field still present | Full existing suite green (delegation is bit-identical) + new kernel unit tests (compose, `on` evaluator, hexmath ≡ old outputs) | subagent | Sonnet 5 · high | – |
 | P2a | Engine re-point | `terrain_type` dies; city/combat/unit/environment/LoS re-pointed at composed values; encoder corrections (E6); domain passability + `path_finder(domain)` + epoch-cached grids; mask domain filter + fallback-branch deletion; spawn/production checks; engine tests rewritten via `set_layers`; frozen-world goldens **temporarily xfail** (re-baselined P8) | Rewritten unit tests green; world-gen unchanged in this patch; semantics pinned by §3/§7 of this doc | subagent | **Opus 4.8 · high** (tests are rewritten in-patch → the spec is the real gate) | – |
-| P2b | Viz + tools | `hex_render`: true-axial projection (E4), base×relief×feature compositing, river-edge primitive; painter/recorder/watch updated | Tools launch and render; paint→save→reload E2E | subagent | Sonnet 5 · medium | **Erik eyeballs painter/recorder** |
+| P2b | Viz + tools | `hex_render`: §7.5 projection (pointy-top brick rectangle, exact O(1) picking, camera-wrap helper, (r,q) label overlay), base×relief×feature compositing, river-edge primitive; painter/recorder/watch updated | **Adjacency-render invariant test** (every engine-adjacent pair at √3·s mod P — §7.5); tools launch; paint→save→reload E2E | subagent | Sonnet 5 · medium | – (folded into P8, per D24) |
 | P3 | Mapgen core | `mapgen/` package: `noise.py` (periodic Perlin, lowbias32, fBm/ridged/warp under §4.2 discipline), `MapData`, elevation+climate+biome stages, rewritten basic, `stats.py` isotropy metric, preview CLI | Exact-periodicity property tests; isotropy oracle (fails a legacy-sampling fixture, passes earthlike); generate-twice identity; terrain-mix + climate-band distribution tests over seeds | subagent | Sonnet 5 · high | optional: Erik previews first earthlike worlds |
 | P4 | Rivers + placement | Junction graph, ε-PD sink fill, integer flux, river selection → `Map.rivers` (+flow, flux); fresh-water mask; features/floodplains/oasis/resources through the `on` evaluator; river moisture bonus | River connectivity/termination/monotone-flux/boundary oracles; zero constraint violations over N seeds; determinism | subagent | Sonnet 5 · high | – |
 | P5 | Starts + sizes | `starts.py` (fertility → regions → d_min → additive normalization); size presets + env resolution; reset consumes starts, spawns via domain check + ring-2 spillover, raises on violation; run-script fallbacks unified | Start oracles over seeds × presets × player counts (incl. max-density Standard×8); dead-key activation tests | subagent | Sonnet 5 · high | – |
@@ -305,7 +345,7 @@ Standard keeps 48×24; its **default player count changes 8 → 6** (max 8 prese
 | P7 | Version gate + archive | `meta.check_version`; manifest-pinned mapgen params on save, rebuild-from-manifest on load; **generated test fixture replaces the `scenario_001.json` dependency before** the archive move to `scenarios/archive_v0.5/`; painter numbering above archive; `manifest.md` epoch line; watch prints loaded version | Paint→save→reload world identity E2E; refusal matrix tests (mismatch / missing / override); suite green | subagent | Sonnet 5 · high | – |
 | P8 | Re-baseline + rules | CHANGELOG v0.6.0; freeze full-`MapData` SHA-256 + engine goldens; write Systems (b) rules into project CLAUDE.md (amend hex-math + unit-system rows, add PortableRNG row); archive `map_generator_prototype.py` + notes; issue updates (#36/#10/#13/#14 close, #35 bucket closure, #31 handoff) | **Erik inspects the seed-42 world in the corrected preview and pronounces it good — only then do fingerprints freeze** | inline (orchestrator, with Erik) | orchestrator · high | **yes — the inspection ceremony** |
 
-Sequence: P1 → P2a → P2b → P3 → P4 → (P5 ∥ P6) → P7 → P8. Suite-green is required at every boundary except the documented xfail window (P2a→P8) for the two frozen-world goldens.
+Sequence: P1 → P2a → P2b → P3 → P4 → (P5 ∥ P6) → P7 → P8. Suite-green is required at every boundary except the documented xfail window (P2a→P8) for the two frozen-world goldens. **One human gate in the whole series: P8's inspection ceremony** (D24 removed the mid-series gate); the optional P3 world-preview peek remains available but gates nothing.
 
 ## Systems
 
@@ -325,7 +365,7 @@ Per the rules lifecycle: existing canonical systems used, then new systems with 
 | `StateEncoder` ABC | Layout-frozen 25/27 with three documented corrections (E6); richer encoder later as a subclass |
 | Action masking | Gains the domain check (semantic change, §7); still the single surface shared with the recorder's highlighting |
 | DQN stack / networks | Training loop untouched; mask change covered by the masking row |
-| Hex renderer | Extended, not forked: true-axial projection (E4), base×relief×feature compositing, river-edge primitive; all tools inherit |
+| Hex renderer | Extended, not forked: brick-rectangle projection (§7.5), base×relief×feature compositing, river-edge primitive, camera-wrap helper; all tools inherit |
 | Artifact manifests (`meta.py`) | Grows `check_version` and carries the authoritative mapgen params for rebuild (§8) |
 | Painter / Recorder | Authoring path unchanged in role; placement through `Tile` (the `on` evaluator); version-gated on load; recorder displays rivers |
 | PortableRNG | *(row to be added to CLAUDE.md)* The only randomness in episode simulation; world synthesis takes exactly one documented master-seed draw from it |
