@@ -24,9 +24,8 @@ import random
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pyray as rl
-import numpy as np
 
-from civulator.game.map import Map
+from civulator.game.environment import GameEnvironment
 from civulator.meta import build_manifest
 from civulator.viz.hex_render import (
     TERRAIN_COLORS,
@@ -81,10 +80,16 @@ class PainterState:
         self.generate_terrain()
 
     def generate_terrain(self):
+        """Generate terrain the same way the Order Recorder reconstructs it.
+
+        Terrain must come from GameEnvironment(seed=...) — the engine's own
+        seeded RNG. (Before this was fixed the painter called np.random.seed()
+        and then Map(...) with no rng, but Map draws from its own
+        random.Random(); the saved seed reproduced nothing.)
+        """
         self.seed = random.randint(0, 99999)
-        np.random.seed(self.seed)
-        self.game_map = Map(MAP_ROWS, MAP_COLS)
-        self.game_map.generate_map()
+        env = GameEnvironment(MAP_ROWS, MAP_COLS, num_players=2, seed=self.seed)
+        self.game_map = env.map
         self.units = []
         self.cities = []
 
@@ -120,6 +125,10 @@ class PainterState:
 
         data = {
             "seed": self.seed,
+            # Marks terrain as reconstructible from `seed` via
+            # GameEnvironment(seed=...). Scenarios saved before that fix have
+            # no such marker and their terrain is lost.
+            "terrain_seeded": True,
             "map_rows": MAP_ROWS,
             "map_cols": MAP_COLS,
             "units": self.units,
