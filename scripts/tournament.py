@@ -25,6 +25,7 @@ from civulator.game import GameEnvironment
 from civulator.agents import DQNAgent
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.training import train_agents
+from civulator.meta import save_weights, load_weights
 
 
 # Model configurations: name -> (conv_channels, fc_hidden)
@@ -82,7 +83,7 @@ def train_model(model_name, conv_channels, fc_hidden, num_episodes, batch_size=3
     os.makedirs("weights/tournament", exist_ok=True)
     for i in range(NUM_PLAYERS):
         path = f"weights/tournament/{model_name}_agent_{i}.pth"
-        torch.save({
+        save_weights({
             "model_state_dict": agents[i].network.state_dict(),
             "optimizer_state_dict": agents[i].optimizer.state_dict(),
             "config": {"conv_channels": conv_channels, "fc_hidden": fc_hidden},
@@ -94,7 +95,7 @@ def train_model(model_name, conv_channels, fc_hidden, num_episodes, batch_size=3
 def load_agent(model_name, agent_idx):
     """Load a trained agent from tournament weights."""
     path = f"weights/tournament/{model_name}_agent_{agent_idx}.pth"
-    checkpoint = torch.load(path, weights_only=False)
+    checkpoint, _manifest = load_weights(path)
     cfg = checkpoint["config"]
 
     memory = ReplayMemory(100)

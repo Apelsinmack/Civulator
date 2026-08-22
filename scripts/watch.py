@@ -7,10 +7,10 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pyray as rl
-import torch
 import numpy as np
 
 from civulator.config import CFG
+from civulator.meta import load_weights
 from civulator.game import GameEnvironment
 from civulator.game.terrain import Terrain
 from civulator.agents import DQNAgent, BuildAgent, BasicStateEncoder, EnhancedStateEncoder
@@ -88,7 +88,7 @@ def run_viewer():
             # Find highest episode
             best = max(files, key=lambda f: int(f.split("episode_")[1].split(".")[0]))
             try:
-                checkpoint = torch.load(best, map_location=agent.device, weights_only=True)
+                checkpoint, _manifest = load_weights(best, map_location=agent.device)
                 agent.network.load_state_dict(checkpoint["model_state_dict"])
                 agent.target_network.load_state_dict(checkpoint["model_state_dict"])
                 ep = best.split("episode_")[1].split(".")[0]

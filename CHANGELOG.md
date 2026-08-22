@@ -5,6 +5,21 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
+## v0.4.1 — Engine correctness + reproducibility (2026-08-22)
+
+- Ranged attacks now use hex distance with cylindrical wrap, fixing incorrect
+  range checks near the map seam (#24, gameplay-affecting).
+- Combat/action rewards read from `config.toml` `[training.rewards]` instead of
+  hardcoded literals (#25).
+- Engine RNG is seedable via `reset(seed=...)`, enabling reproducible episodes (#26).
+- Hex rendering extracted into a shared `civulator/viz` module — one renderer for
+  the viewer and other visual tools instead of forked drawing code (#27).
+- Saved artifacts (trained weights, scenarios, stats) now carry an embedded
+  manifest (`civulator/meta.py`) recording the game version, git commit, full
+  config, and save date that produced them (#28).
+
+---
+
 ## v0.3.0 — Combat + City Production + Healing (2026-03-04)
 
 ### New Features

@@ -27,6 +27,7 @@ import pyray as rl
 import numpy as np
 
 from civulator.game.map import Map
+from civulator.meta import build_manifest
 from civulator.viz.hex_render import (
     TERRAIN_COLORS,
     hex_to_pixel,
@@ -123,6 +124,7 @@ class PainterState:
             "map_cols": MAP_COLS,
             "units": self.units,
             "cities": self.cities,
+            "manifest": build_manifest(),
         }
         with open(filepath, "w") as f:
             json.dump(data, f, indent=2)

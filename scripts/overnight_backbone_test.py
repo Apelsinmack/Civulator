@@ -28,6 +28,7 @@ from civulator.game import GameEnvironment
 from civulator.agents import DQNAgent, BuildAgent, EnhancedStateEncoder
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.training import train_agents
+from civulator.meta import save_weights, load_weights
 
 
 N, M = 4, 8
@@ -83,7 +84,7 @@ def train_separate_backbone():
     # Save final weights
     os.makedirs("weights/separate_backbone", exist_ok=True)
     for i, agent in enumerate(agents):
-        torch.save(
+        save_weights(
             {"model_state_dict": agent.network.state_dict(),
              "optimizer_state_dict": agent.optimizer.state_dict()},
             f"weights/separate_backbone/agent_{i}.pth",
@@ -133,7 +134,7 @@ def train_shared_backbone_continued():
 
     for i, agent in enumerate(agents):
         path = f"weights/agent_{i}_episode_{latest}.pth"
-        checkpoint = torch.load(path, map_location=agent.device)
+        checkpoint, _manifest = load_weights(path, map_location=agent.device)
         agent.network.load_state_dict(checkpoint["model_state_dict"])
         agent.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         print(f"  Loaded agent {i} from {path}")
@@ -153,7 +154,7 @@ def train_shared_backbone_continued():
     # Save final weights
     os.makedirs("weights/shared_backbone_1000", exist_ok=True)
     for i, agent in enumerate(agents):
-        torch.save(
+        save_weights(
             {"model_state_dict": agent.network.state_dict(),
              "optimizer_state_dict": agent.optimizer.state_dict()},
             f"weights/shared_backbone_1000/agent_{i}.pth",

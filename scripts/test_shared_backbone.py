@@ -30,6 +30,7 @@ from civulator.agents.state_encoders import EnhancedStateEncoder
 from civulator.agents.build_agent import BUILD_OPTIONS
 from civulator.game.city import City
 from civulator.training import train_agents
+from civulator.meta import save_weights
 
 N, M = 4, 8
 NUM_PLAYERS = 2
@@ -90,7 +91,7 @@ def train_variant(name, shared_backbone, num_episodes, batch_size=32):
     os.makedirs("weights/backbone_test", exist_ok=True)
     for i in range(NUM_PLAYERS):
         path = f"weights/backbone_test/{name}_agent_{i}.pth"
-        torch.save({
+        save_weights({
             "model_state_dict": agents[i].network.state_dict(),
             "optimizer_state_dict": agents[i].optimizer.state_dict(),
             "config": {

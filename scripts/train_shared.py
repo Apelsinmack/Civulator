@@ -24,6 +24,7 @@ from civulator.game import GameEnvironment
 from civulator.agents import DQNAgent, BuildAgent, BasicStateEncoder, EnhancedStateEncoder
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.training import train_agents
+from civulator.meta import load_weights
 
 _tcfg = CFG.get("training", {})
 _mcfg = CFG.get("map", {})
@@ -59,7 +60,7 @@ def main(num_episodes=1000, max_turns=200, batch_size=32):
     weight_path = "weights/agent_5_episode_35.pth"
     if os.path.exists(weight_path):
         print(f"Loading weights from {weight_path}")
-        checkpoint = torch.load(weight_path, weights_only=False)
+        checkpoint, _manifest = load_weights(weight_path)
         shared_agent.network.load_state_dict(checkpoint['model_state_dict'])
         shared_agent.target_network.load_state_dict(checkpoint['model_state_dict'])
         if 'optimizer_state_dict' in checkpoint:

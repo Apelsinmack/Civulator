@@ -15,6 +15,7 @@ from civulator.game import GameEnvironment
 from civulator.agents import DQNAgent
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.utils.ascii_display import display_map
+from civulator.meta import load_weights
 
 
 def find_latest_checkpoint():
@@ -37,7 +38,7 @@ def load_agents(n, m, d, num_players, episode):
 
     for i, agent in enumerate(agents):
         path = f"weights/agent_{i}_episode_{episode}.pth"
-        checkpoint = torch.load(path, weights_only=True)
+        checkpoint, _manifest = load_weights(path)
         agent.network.load_state_dict(checkpoint["model_state_dict"])
         agent.network.eval()
         print(f"Loaded agent {i} from episode {episode}")
@@ -48,7 +49,7 @@ def load_agents(n, m, d, num_players, episode):
 def load_tournament_agent(n, m, d, model_name):
     """Load a trained agent from tournament weights."""
     path = f"weights/tournament/{model_name}_agent_0.pth"
-    checkpoint = torch.load(path, weights_only=False)
+    checkpoint, _manifest = load_weights(path)
     cfg = checkpoint["config"]
 
     memory = ReplayMemory(100)

@@ -7,12 +7,12 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")  # Non-interactive backend — no GUI window
 import matplotlib.pyplot as plt
-import torch
 
 from ..agents.networks import get_valid_select_mask
 from ..agents.build_agent import BUILD_OPTIONS
 from ..game.city import City
 from ..game.unit import NUM_UNIT_SLOTS
+from ..meta import build_manifest, save_weights
 
 
 def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
@@ -245,7 +245,7 @@ def _save_checkpoints(agents, episode):
     os.makedirs("weights", exist_ok=True)
     for i, agent in enumerate(agents):
         save_path = f"weights/agent_{i}_episode_{episode}.pth"
-        torch.save(
+        save_weights(
             {
                 "model_state_dict": agent.network.state_dict(),
                 "optimizer_state_dict": agent.optimizer.state_dict(),
@@ -259,7 +259,11 @@ def save_win_history(win_history, num_episodes):
     os.makedirs("stats", exist_ok=True)
     timestamp = int(time.time())
 
-    np.save(f"stats/win_history_{timestamp}.npy", np.array(win_history))
+    np.save(
+        f"stats/win_history_{timestamp}.npy",
+        {"win_history": np.array(win_history), "manifest": build_manifest()},
+        allow_pickle=True,
+    )
 
     if len(win_history) >= 10:
         plt.figure(figsize=(10, 6))
@@ -341,7 +345,11 @@ def save_build_stats(build_orders, num_episodes):
                 print(f"  {opt:12s}: {count:5d} ({pct:5.1f}%)")
 
     # Save raw data
-    np.save(f"stats/build_orders_{timestamp}.npy", build_orders, allow_pickle=True)
+    np.save(
+        f"stats/build_orders_{timestamp}.npy",
+        {"build_orders": build_orders, "manifest": build_manifest()},
+        allow_pickle=True,
+    )
 
     # Plot: overall build frequency
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))

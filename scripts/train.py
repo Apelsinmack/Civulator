@@ -21,6 +21,7 @@ from civulator.game import GameEnvironment
 from civulator.agents import DQNAgent, BuildAgent, BasicStateEncoder, EnhancedStateEncoder
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.training import train_agents
+from civulator.meta import load_weights
 
 # Defaults from config.toml
 _tcfg = CFG.get("training", {})
@@ -135,7 +136,7 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
         if resume_training:
             for i, agent in enumerate(agents):
                 try:
-                    checkpoint = torch.load(checkpoint_paths[i])
+                    checkpoint, _manifest = load_weights(checkpoint_paths[i])
                     agent.network.load_state_dict(checkpoint["model_state_dict"])
                     agent.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
                     print(f"Loaded checkpoint for Agent {i}")

@@ -21,6 +21,7 @@ from civulator.game import GameEnvironment
 from civulator.agents import DQNAgent, BuildAgent
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.training import train_agents
+from civulator.meta import save_weights
 
 
 def set_seeds(seed=42):
@@ -74,7 +75,7 @@ def main():
 
     # Save final weights
     for i, agent in enumerate(agents):
-        torch.save(
+        save_weights(
             {
                 "model_state_dict": agent.network.state_dict(),
                 "optimizer_state_dict": agent.optimizer.state_dict(),

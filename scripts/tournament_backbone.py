@@ -25,6 +25,7 @@ from civulator.game import GameEnvironment
 from civulator.agents import DQNAgent, EnhancedStateEncoder
 from civulator.agents.networks import FullyConvNetwork, FullyConvSeparateNetwork
 from civulator.agents.replay_memory import ReplayMemory
+from civulator.meta import load_weights
 
 N, M = 4, 8
 NUM_PLAYERS = 2
@@ -62,7 +63,7 @@ def load_agent(model_cfg, agent_idx):
         fully_conv=model_cfg["fully_conv"],
         separate_backbone=model_cfg.get("separate_backbone", False),
     )
-    checkpoint = torch.load(path, map_location=agent.device, weights_only=False)
+    checkpoint, _manifest = load_weights(path, map_location=agent.device)
     agent.network.load_state_dict(checkpoint["model_state_dict"])
     agent.network.eval()
     return agent

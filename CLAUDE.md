@@ -16,10 +16,10 @@ Civulator is a **research project**: deep reinforcement learning in a simplified
 ## Rules (invariants)
 
 - **The engine is a pure simulation.** `civulator/game/` must never import torch, matplotlib, or anything from `civulator/agents/`. Agents read raw state through `GameEnvironment` and build their own tensors (`StateEncoder.encode`).
-- **Research method**: baseline first; one variable at a time; every change documented with training curves / win rates; fixed seeds and logged hyperparameters. (True engine reproducibility is blocked until seedable RNG lands — issue #26.)
+- **Research method**: baseline first; one variable at a time; every change documented with training curves / win rates; fixed seeds and logged hyperparameters. The engine is seedable: `env.reset(seed=N)` reproduces a world exactly — use it in every experiment.
 - **Axial (q, r) coordinates only**, stored as `(row=r, col=q)` in a 2D array, cylindrical wrap on q. Never write new adjacency/distance/path code — use the canonical hex math below (the ranged-attack bug #24 is what happens otherwise).
-- **All gameplay constants live in `config.toml`** — no hardcoded gameplay numbers in new code (known pre-existing drift: rewards, issue #25).
-- **Every training artifact gets recorded**: for now, hand-write new weights into `weights/trained/manifest.md` (naming: `{size}_{channels}_{episodes}ep.pth`); embedded machine-readable manifests are issue #28.
+- **All gameplay constants live in `config.toml`** — no hardcoded gameplay numbers in new code.
+- **Every training artifact gets recorded**: new weights/scenarios/stats carry an embedded machine-readable manifest via `civulator/meta.py` (issue #28); still hand-write new weights into `weights/trained/manifest.md` too (naming: `{size}_{channels}_{episodes}ep.pth`).
 
 ## Canonical systems — check this table before building anything new
 
@@ -38,7 +38,8 @@ One line per system built for reuse. If what you need is here, use it; if it alm
 | Action masking | `get_valid_select_mask` / `get_valid_moves_mask` (`agents/networks.py`) | Agent masks AND human-tool click-highlighting must share these — anything else creates train/play skew |
 | DQN stack | `DQNAgent`, `ReplayMemory`, `BuildAgent` (`agents/`), `train_agents` (`training/trainer.py`) | One of each; experiments parameterize, don't fork |
 | Networks | `SelectAndMove` / `SharedBackbone` / `FullyConv` / `FullyConvSeparate` (`agents/networks.py`) | FullyConv variants are map-size independent — required for large maps |
-| Hex renderer | `scripts/watch.py` (extraction into a shared module: issue #27) | Base for all visual tools; no more forked rendering code |
+| Hex renderer | `civulator/viz/hex_render.py` (hex↔pixel, drawing, terrain colors, camera, sprites) | All visual tools import it; no forked rendering code. `viz/` may use pyray/numpy, never torch; the engine never imports `viz/` |
+| Artifact manifests | `civulator/meta.py` (`build_manifest` / `save_weights` / `load_weights`) | Everyone saving or loading weights/scenarios/stats embeds and reads manifests through this module |
 
 ## Tech stack
 
