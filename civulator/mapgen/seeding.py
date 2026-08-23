@@ -104,10 +104,18 @@ STAGE_BASIC_BASE = 7          # the "basic" generator's own per-tile base pick
 STAGE_BASIC_FEATURES = 8      # the "basic" generator's own feature rolls
 STAGE_RIVERS = 9              # P4: corner-junction altitude jitter (design doc §5)
 STAGE_RESOURCES = 10          # P4: bonus resource placement (design doc §3.2, §11 P4)
-# Next free id for P5: 11 (starts). Floodplains carries no randomness at all
-# (design doc §5: "deterministic, no RNG") so it never needed a stage id;
-# Oasis reuses STAGE_FEATURES (see PURPOSE_OASIS below) rather than taking
-# a stage id of its own, per this table's own pre-existing reservation.
+STAGE_STARTS = 11             # P5: RESERVED, not consumed -- see below.
+# Next free id for a future stage: 12. Floodplains carries no randomness at
+# all (design doc §5: "deterministic, no RNG") so it never needed a stage
+# id; Oasis reuses STAGE_FEATURES (see PURPOSE_OASIS below) rather than
+# taking a stage id of its own, per this table's own pre-existing
+# reservation. STAGE_STARTS is reserved here for the ledger's own
+# completeness (every DAG stage in design doc §4.2 rule 2 gets an id) but
+# `mapgen/starts.py` never actually calls `stage_seed`/`tile_roll01` with
+# it -- fertility scoring, region bisection, d_min placement, and additive
+# normalization are all fully specified by explicit tie-breaks (design doc
+# §4.2 rule 6), needing no randomness at all (see starts.py's own module
+# docstring for the full reasoning).
 
 # Purpose ids for tile_roll01 within STAGE_FEATURES — permanent, same rule.
 PURPOSE_WOODS = 0

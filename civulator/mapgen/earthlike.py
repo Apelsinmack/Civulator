@@ -6,7 +6,8 @@ assembled into one `MapData`.
 Pinned DAG order (design doc §4.2 rule 2): elevation -> water/coast/lake ->
 relief -> raw moisture -> rivers (flux from RAW moisture) -> moisture +
 river bonus -> temperature -> biomes -> features -> floodplains/oasis ->
-resources -> [starts: P5, still skipped]. Relief is produced alongside
+resources -> starts (design doc §6, §11 P5: fertility -> regions -> d_min
+placement -> additive normalization; see mapgen/starts.py). Relief is produced alongside
 elevation's land classification here (both come from the same nearest-rank
 pass over the smoothed elevation field, design doc §4.3) rather than as a
 separate DAG node.
@@ -26,7 +27,7 @@ import math
 
 import numpy as np
 
-from . import climate, elevation, features, resources, rivers
+from . import climate, elevation, features, resources, rivers, starts
 from .data import MapData
 
 # Design doc E5: "minimum earthlike size is Duel (24x12) -- below it
@@ -186,6 +187,24 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
     # are finished (needs Oasis, just placed above) ---
     fresh_water = rivers.fresh_water_mask(river_edges, base_terrain, feature, rows, cols)
 
+    # --- starting locations (§6, §11 P5): fertility -> regions -> d_min
+    # placement -> additive normalization. Runs LAST (pinned DAG, §4.2 rule
+    # 2) against the finished grids -- normalization may add a FEW more
+    # bonus resources on top of what resources.place_resources() just
+    # placed, so `resource` is reassigned to the value generate_starts()
+    # returns, not the pre-normalization grid above.
+    #
+    # Read from the CALLER'S OWN `params` (not `p`, earthlike's own merged
+    # dict) -- "starts" is a foreign key as far as earthlike's own
+    # DEFAULT_PARAMS is concerned (design doc §6 is a different section
+    # from earthlike's §4.3/§4.4), so keeping it out of `p` avoids it
+    # echoing twice inside gen_params["earthlike"] below.
+    starts_params = (params or {}).get("starts")
+    start_list, resource = starts.generate_starts(
+        base_terrain, relief, feature, resource, fresh_water,
+        int(num_players), rows, cols, params=starts_params,
+    )
+
     gen_params = {
         "seed": master_seed,
         "rows": rows,
@@ -193,6 +212,7 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
         "num_players": int(num_players),
         "map_type": "earthlike",
         "earthlike": dict(p),
+        "starts": starts.merge_params(starts_params),
     }
 
     return MapData(
@@ -202,6 +222,6 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
         resource=resource,
         rivers=river_edges,
         fresh_water=fresh_water,
-        starts=[],
+        starts=start_list,
         params=gen_params,
     )

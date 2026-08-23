@@ -3,6 +3,8 @@
 import numpy as np
 
 from .map import Map
+from .. import mapgen
+from ..mapgen.starts import StartPlacementError
 from ..rng import PortableRNG
 from ..terrain_model import can_enter, matches
 from .player import Player
@@ -37,6 +39,39 @@ MIN_CITY_DISTANCE = _GAME_CFG.get("min_city_distance", 3)
 _MAP_CFG = CFG.get("map", {})
 DEFAULT_MAP_TYPE = _MAP_CFG.get("type", "earthlike")
 
+# Size presets (design doc D14/§6, §11 P5) — `[map.sizes.*]` is the only
+# source of dimensions and default player counts (project CLAUDE.md Systems
+# table row); `[map] size` selects among them.
+_SIZES_CFG = _MAP_CFG.get("sizes", {})
+DEFAULT_SIZE_NAME = _MAP_CFG.get("size", "standard")
+
+
+def resolve_size_and_players(size=None, num_players=None):
+    """(rows, cols, num_players) resolved through `[map.sizes.*]` (design
+    doc D14/§6, §11 P5 deliverable 3) — GameEnvironment's own "read config
+    once at the call boundary" moment, mirroring `Map.generate_map`'s and
+    the mapgen preview CLI's `_resolve_cli_size` (same table, same
+    `mapgen.resolve_size` lookup — one preset table, a few thin
+    call-boundary readers, never a second copy of the resolution logic).
+
+    Args:
+        size: a preset name (e.g. "duel"), or None -> `[map] size`
+            (config default "standard").
+        num_players: an explicit override, or None -> the resolved
+            preset's own `default_players`.
+
+    `GameEnvironment.__init__` calls this whenever n/m/num_players are
+    omitted; the five run scripts P5 repoints (watch/train/train_shared/
+    train_shared_large/replay) call it directly so their num_players
+    fallbacks stop diverging (today: 2 vs 8, design doc §6 table).
+    """
+    name = size if size is not None else DEFAULT_SIZE_NAME
+    rows, cols = mapgen.resolve_size(name, _SIZES_CFG)
+    if num_players is None:
+        num_players = _SIZES_CFG.get(name, {}).get("default_players", 2)
+    return rows, cols, int(num_players)
+
+
 # Improvement placement rules — the same `on` formalism as terrain layers
 # (design doc §3.1, §9.6), replacing the hardcoded terrain lists this file
 # used to carry. An improvement with no `on` entry is buildable nowhere.
@@ -51,10 +86,23 @@ class GameEnvironment:
         env.step(action) -> (raw_state, reward, done, info)
     """
 
-    def __init__(self, n, m, num_players=2, map_type=None, seed=None):
-        self.n = n
-        self.m = m
-        self.num_players = num_players
+    def __init__(self, n=None, m=None, num_players=None, map_type=None, seed=None, size=None):
+        """
+        Args:
+            n, m: Map rows/cols. Either may be omitted (None) to take the
+                `size` preset's dimension instead (design doc D14/§6, §11
+                P5) — explicit values always override the preset
+                (`resolve_size_and_players`'s own contract).
+            num_players: Player count, or None to take the resolved
+                preset's `default_players`.
+            size: A `[map.sizes.*]` preset name, or None for `[map] size`
+                (config default "standard"). Ignored for any dimension/
+                num_players given explicitly.
+        """
+        preset_rows, preset_cols, resolved_players = resolve_size_and_players(size, num_players)
+        self.n = n if n is not None else preset_rows
+        self.m = m if m is not None else preset_cols
+        self.num_players = resolved_players
         self.map_type = map_type if map_type is not None else DEFAULT_MAP_TYPE
         self.turn_counter = 1
         self.max_turns = 1000
@@ -68,10 +116,10 @@ class GameEnvironment:
         self.rng = PortableRNG(seed)
 
         # Initialize map and players
-        self.map = Map(n, m, rng=self.rng)
+        self.map = Map(self.n, self.m, rng=self.rng)
         self.map.generate_map(self.map_type, num_players=self.num_players)
 
-        for i in range(num_players):
+        for i in range(self.num_players):
             player = Player(f"Player {i+1}", i, self)
             self.players.append(player)
 
@@ -121,38 +169,48 @@ class GameEnvironment:
                 player.policies = []
                 player.explored = None
 
-        # Calculate starting locations and randomize assignment
-        starting_locations = self._calculate_starting_locations()
-        self.rng.shuffle(starting_locations)
+        # Starting locations come from mapgen (design doc §6, D13, §11 P5):
+        # `self.map.starts` is `MapData.starts`, verbatim — fertility-scored,
+        # region-balanced, d_min-spaced, and additively normalized already
+        # (mapgen/starts.py). Players are assigned to starts via the engine
+        # RNG shuffle (unchanged from before P5). reset() never re-rolls or
+        # searches for a placement itself (design doc §3.3/§9.10: "trust
+        # starts" — the old silent random-retry loop that could still leave
+        # a player capital-less, issue #1, is gone by construction: mapgen
+        # guarantees every delivered start is settleable before handing it
+        # over, so the only remaining failure mode is a contract violation,
+        # which raises instead of silently degrading).
+        starts = list(self.map.starts)
+        if len(starts) != self.num_players:
+            raise StartPlacementError(
+                f"mapgen delivered {len(starts)} start(s) for {self.num_players} "
+                f"player(s) — contract violation (design doc §6.5): "
+                f"MapData.starts must carry exactly one start per player"
+            )
+        self.rng.shuffle(starts)
 
-        # Place starting units and cities.
-        # found_city returns None on an invalid spot (an unsettleable tile, or
-        # within min city distance of an already-placed capital) — re-roll
-        # until every player actually has a capital (issue #1: silently
-        # city-less players were marked dead and wiped on their first turn).
+        warrior_domain = movement_domain("Warrior")
         for i, player in enumerate(self.players):
-            start_x, start_y = starting_locations[i]
+            start = starts[i]
 
-            city = self.found_city(player, (start_x, start_y), f"{player.name}'s Capital")
-            attempts = 0
-            while city is None and attempts < 1000:
-                start_x = self.rng.randint(0, self.n - 1)
-                start_y = self.rng.randint(0, self.m - 1)
-                city = self.found_city(player, (start_x, start_y), f"{player.name}'s Capital")
-                attempts += 1
+            city = self.found_city(player, start, f"{player.name}'s Capital")
             if city is None:
-                raise RuntimeError(
-                    f"Could not place a capital for {player.name} — map too "
-                    f"small/full for {self.num_players} players?"
+                raise StartPlacementError(
+                    f"delivered start {start} for {player.name} failed found_city "
+                    f"— contract violation (design doc §6.5): mapgen's own "
+                    f"settleability/min-distance guarantees should make this "
+                    f"unreachable"
                 )
 
-            # Place warriors around the city using hex adjacency. Every spot
-            # goes through the canonical terrain-domain check (§3.3, §9.10) —
-            # no more warriors spawning on mountains or in the sea.
-            warrior_domain = movement_domain("Warrior")
-            adj_coords = self.map.get_adjacent_coords((start_x, start_y))
+            # Place starting warriors through the canonical terrain-domain
+            # check (§3.3, §9.10), ring-1 first and spilling into ring-2 if
+            # ring-1 lacks room (design doc §6.5) — `is_start_eligible`'s
+            # own ">= 3 passable ring-1 tiles" guarantee (mapgen/starts.py)
+            # makes ring-2 spillover a defensive path in practice, not a
+            # routine one.
+            _, ring1, ring2 = self.map.get_ring_coords(start, 2)
             warriors_placed = 0
-            for pos in adj_coords:
+            for pos in ring1 + ring2:
                 if warriors_placed >= STARTING_WARRIORS:
                     break
                 if not can_enter(warrior_domain, self.map.get_tile(pos)):
@@ -171,23 +229,6 @@ class GameEnvironment:
             self.update_exploration(i)
 
         return self
-
-    def _calculate_starting_locations(self):
-        """Calculate starting locations for all players, spread across the map."""
-        if self.num_players == 2:
-            p1_x = self.rng.randint(0, self.n - 1)
-            p1_y = self.rng.randint(0, self.m // 2 - 1)
-            p2_x = self.rng.randint(0, self.n - 1)
-            p2_y = self.rng.randint(self.m // 2, self.m - 1)
-            return [(p1_x, p1_y), (p2_x, p2_y)]
-        else:
-            locations = []
-            partition = self.m // self.num_players
-            for i in range(self.num_players):
-                x = self.rng.randint(0, self.n - 1)
-                y = self.rng.randint(i * partition, (i + 1) * partition - 1)
-                locations.append((x, y))
-            return locations
 
     def step(self, action_matrix):
         """Execute an action in the game environment.

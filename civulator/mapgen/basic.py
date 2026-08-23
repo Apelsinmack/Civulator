@@ -10,9 +10,15 @@ instead of ad hoc `if` checks.
 
 Content changes as a result (different tiles for the same seed) — expected
 and documented (design doc §11 P3: "basic worlds change content; that is
-expected, the golden is xfail"). No water, no rivers, no resources, no
-starts: `basic` stays the deliberately simple option small tests reach for
-(design doc E5), same as it was pre-0.6.
+expected, the golden is xfail"). No water, no rivers, no regular-stage
+resources: `basic` stays the deliberately simple option small tests reach
+for (design doc E5), same as it was pre-0.6.
+
+Starts (design doc §6, §11 P5) are the one exception to "no resources":
+`civulator.mapgen` §4.1 explicitly gives basic "the same starts stage" as
+earthlike, and start normalization (§6.4) may place a FEW additive bonus
+resources near a weak start -- so a basic world can carry a handful of
+resources even though `resources.place_resources()` itself never runs here.
 """
 
 import numpy as np
@@ -27,6 +33,7 @@ from .seeding import (
     stage_seed,
     tile_roll01,
 )
+from . import starts
 
 # (base, relief, feature) per legacy weighted-terrain-category name — lifted
 # verbatim from the deleted `civulator.game.map._LEGACY_TERRAIN_LAYERS`.
@@ -128,6 +135,18 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
                     feature[r, c] = "Rainforest"
 
     resource = np.full((rows, cols), None, dtype=object)
+    fresh_water = np.zeros((rows, cols), dtype=bool)  # never true for basic -- no rivers/Lake/Oasis
+
+    # --- starting locations (design doc §6, §11 P5): "same starts stage" as
+    # earthlike (design doc §4.1) -- fertility/regions/placement are all
+    # domain-only, so an all-land basic board works unmodified; only the
+    # fresh-water/coastal fertility bonuses are structurally always 0 here.
+    starts_params = (params or {}).get("starts")
+    start_list, resource = starts.generate_starts(
+        base, relief, feature, resource, fresh_water,
+        int(num_players), rows, cols, params=starts_params,
+    )
+
     gen_params = {
         "seed": master_seed,
         "rows": rows,
@@ -135,6 +154,7 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
         "num_players": int(num_players),
         "map_type": "basic",
         "basic": dict(p),
+        "starts": starts.merge_params(starts_params),
     }
     return MapData(
         base_terrain=base,
@@ -142,7 +162,7 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
         feature=feature,
         resource=resource,
         rivers={},  # dict, matching earthlike's type (design doc §5, P4) -- never non-empty for basic
-        fresh_water=np.zeros((rows, cols), dtype=bool),
-        starts=[],
+        fresh_water=fresh_water,
+        starts=start_list,
         params=gen_params,
     )

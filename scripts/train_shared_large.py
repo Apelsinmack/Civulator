@@ -1,4 +1,5 @@
-"""Train Large (32,64) network with shared weights. 8 players, 1000 episodes."""
+"""Train Large (32,64) network with shared weights. Standard preset (6
+players by default, design doc D14/§6, §11 P5), 1000 episodes."""
 
 import os
 import sys
@@ -11,13 +12,10 @@ import torch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from civulator.config import CFG
-from civulator.game import GameEnvironment
+from civulator.game import GameEnvironment, resolve_size_and_players
 from civulator.agents import DQNAgent, BuildAgent, EnhancedStateEncoder
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.training import train_agents
-
-_mcfg = CFG.get("map", {})
-_gcfg = CFG.get("game", {})
 
 
 def main(num_episodes=1000, max_turns=200, batch_size=32):
@@ -25,9 +23,10 @@ def main(num_episodes=1000, max_turns=200, batch_size=32):
     np.random.seed(42)
     torch.manual_seed(42)
 
-    n = _mcfg.get("rows", 24)
-    m = _mcfg.get("columns", 48)
-    number_of_players = _gcfg.get("num_players", 8)
+    # Size preset (design doc D14/§6, §11 P5): one resolver shared with the
+    # engine and every other run script, instead of this file's own
+    # divergent rows/cols/num_players fallbacks.
+    n, m, number_of_players = resolve_size_and_players()
 
     d = EnhancedStateEncoder().get_depth(number_of_players)
     env = GameEnvironment(n, m, number_of_players)

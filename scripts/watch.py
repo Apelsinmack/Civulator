@@ -11,7 +11,7 @@ import numpy as np
 
 from civulator.config import CFG
 from civulator.meta import load_weights
-from civulator.game import GameEnvironment
+from civulator.game import GameEnvironment, resolve_size_and_players
 from civulator.agents import DQNAgent, BuildAgent, BasicStateEncoder, EnhancedStateEncoder
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.agents.build_agent import BUILD_OPTIONS
@@ -31,13 +31,13 @@ from civulator.viz.hex_render import (
 )
 
 # --- Config ---
-_mcfg = CFG.get("map", {})
 _gcfg = CFG.get("game", {})
 _tcfg = CFG.get("training", {})
 
-MAP_ROWS = _mcfg.get("rows", 24)
-MAP_COLS = _mcfg.get("columns", 48)
-NUM_PLAYERS = _gcfg.get("num_players", 8)
+# Size preset (design doc D14/§6, §11 P5): one resolver, shared with the
+# engine and every other run script — no more per-script divergent
+# num_players fallbacks (this file used to default to 8, others to 2).
+MAP_ROWS, MAP_COLS, NUM_PLAYERS = resolve_size_and_players()
 MAX_TURNS = _gcfg.get("max_turns", 200)
 
 # Hex rendering

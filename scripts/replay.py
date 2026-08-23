@@ -11,7 +11,7 @@ import torch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from civulator.game import GameEnvironment
+from civulator.game import GameEnvironment, resolve_size_and_players
 from civulator.agents import DQNAgent
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.utils.ascii_display import display_map
@@ -121,6 +121,9 @@ def main():
     parser.add_argument("--no-pause", action="store_true", help="Don't pause between turns")
     parser.add_argument("--match", nargs=2, metavar="MODEL",
                         help="Tournament match: --match Small XL")
+    parser.add_argument("--size", type=str, default=None,
+                        help="Named preset from [map.sizes.*] (default: [map] size, "
+                             "'standard'). --match always plays 2 players regardless.")
     args = parser.parse_args()
 
     if args.seed is not None:
@@ -128,18 +131,25 @@ def main():
         np.random.seed(args.seed)
         torch.manual_seed(args.seed)
 
-    n, m = 4, 8
-    num_players = 2
-    d = 2 * num_players + 1
+    # Size preset (design doc D14/§6, §11 P5): one resolver shared with the
+    # engine and every other run script, instead of this file's own
+    # hardcoded 4x8/2p board.
+    n, m, num_players = resolve_size_and_players(size=args.size)
 
     if args.match:
-        # Load two tournament models
+        # --match is inherently a 1-v-1 comparison between two NAMED
+        # models, independent of whatever the size preset's own default
+        # player count is -- always exactly 2, overriding the resolved
+        # value above.
+        num_players = 2
+        d = 2 * num_players + 1
         agents = [
             load_tournament_agent(n, m, d, args.match[0]),
             load_tournament_agent(n, m, d, args.match[1]),
         ]
         print(f"\n{args.match[0]} (P1) vs {args.match[1]} (P2)\n")
     else:
+        d = 2 * num_players + 1
         episode = args.episode or find_latest_checkpoint()
         if episode is None:
             print("No checkpoints found in weights/")

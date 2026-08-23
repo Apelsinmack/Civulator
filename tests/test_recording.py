@@ -76,6 +76,10 @@ def test_painter_and_recorder_build_the_same_terrain_from_one_seed():
         "seed": state.seed,
         "map_rows": painter.MAP_ROWS,
         "map_cols": painter.MAP_COLS,
+        # design doc E5 rider / §11 P5: the painter's default generator is
+        # no longer hardcoded "basic" -- read it back the same way a real
+        # saved scenario file would carry it (`recording.scenario_map_type`).
+        "map_type": painter.MAP_TYPE,
         "units": [],
         "cities": [],
     }

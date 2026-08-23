@@ -67,6 +67,48 @@ def adjacent_coords(coords, rows, width):
     return result
 
 
+def hex_rings(center, max_radius, rows, width):
+    """[ring_0, ring_1, ..., ring_max_radius] -- (row, col) coordinates at
+    EXACTLY hex distance k from `center`, for k = 0..max_radius. ring_0 is
+    always `[center]`. Honors row bounds (no wrap: a ring near the top/bottom
+    edge has fewer than the usual 6*k members) and column wrap (cylindrical,
+    via `adjacent_coords`) — design doc §6 (start fertility rings) and P5's
+    ring-2 warrior-spawn spillover both need exactly this shape.
+
+    Computed by BFS layer-by-layer from `center` using ONLY `adjacent_coords`
+    (never a hand-derived "6*k ring" formula, which would need its own
+    boundary-clipping logic to stay correct near row edges) -- in an
+    unweighted graph, BFS layer k IS the distance-k set, by construction, so
+    this is correct near edges/wrap for free. Each ring is returned sorted
+    by (row, col): a fixed, deterministic enumeration order (design doc
+    §4.2 rule 6 "total sort keys everywhere") that callers needing a stable
+    walk (fertility scoring, start normalization's fixed ring-1-then-ring-2
+    search) can rely on without re-sorting.
+
+    Args:
+        center: (row, col) coordinate pair.
+        max_radius: highest ring index to compute (>= 0).
+        rows: number of rows in the map (no wrap on this axis).
+        width: number of columns in the map (the wrap period).
+    """
+    rings = [[center]]
+    visited = {center}
+    frontier = [center]
+    for _ in range(max_radius):
+        next_frontier = []
+        seen_this_layer = set()
+        for tile in frontier:
+            for neighbor in adjacent_coords(tile, rows, width):
+                if neighbor not in visited and neighbor not in seen_this_layer:
+                    seen_this_layer.add(neighbor)
+                    next_frontier.append(neighbor)
+        next_frontier.sort()
+        rings.append(next_frontier)
+        visited.update(next_frontier)
+        frontier = next_frontier
+    return rings
+
+
 def hex_center(coords, width):
     """Axial-to-Cartesian center of a hex, for periodic-lattice sampling.
 

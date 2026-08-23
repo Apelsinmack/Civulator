@@ -1,18 +1,25 @@
 """E2E repro for issue #1: every player must actually get a capital on reset.
 
-reset() called found_city() and ignored its return value. found_city silently
-returns None when the start tile is Mountain/Ocean or within min_city_distance
-of an already-placed capital — that player then starts city-less, is marked
-dead by end_turn on turn one, and their units are deleted: the observed
-"city disappears near game start".
+Pre-0.6, reset() called found_city() and ignored its return value. found_city
+silently returns None when the start tile is Mountain/Ocean or within
+min_city_distance of an already-placed capital — that player then started
+city-less, was marked dead by end_turn on turn one, and their units were
+deleted: the observed "city disappears near game start". The original fix
+(v0.5.2) was a random-placement retry ladder.
 
-map_type="basic" explicit (design doc §11 P3): starts (design doc §6/D13,
-`MapData.starts`) are P5 scope — reset() still finds capitals via its
-pre-0.6 uniform-random retry ladder (§11 P3: "capitals: reset keeps its
-CURRENT random placement for now"), which was tuned against basic's
-land-heavy, water-free board. Pinning "basic" keeps THIS regression test
-about issue #1's retry logic, not about how much of an earthlike board
-happens to be ocean.
+design doc §6/D13, §11 P5: capitals now come from `MapData.starts`
+(`mapgen/starts.py`) — fertility-scored, region-balanced, d_min-spaced, and
+pre-validated settleable BEFORE `reset` ever calls `found_city`. There is no
+retry loop left to regress: every player gets exactly one capital BY
+CONSTRUCTION (a delivered start failing `found_city` would now raise
+`StartPlacementError`, a contract violation, rather than silently retrying
+or leaving a player city-less — see `GameEnvironment.reset`). These two
+tests stay as the permanent regression/oracle pair for that guarantee.
+
+map_type="basic" explicit (design doc §11 P3, still true post-P5: "same
+starts stage" for both generators, design doc §4.1) at num_players=8 on
+Standard's 24x48 — this is also the design doc §10/§11 P5 GATE's own
+"Standard/8p max-density" oracle case (Standard's max_players).
 """
 
 from civulator.game.environment import MIN_CITY_DISTANCE, GameEnvironment

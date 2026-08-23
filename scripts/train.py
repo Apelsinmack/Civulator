@@ -17,7 +17,7 @@ import torch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from civulator.config import CFG
-from civulator.game import GameEnvironment
+from civulator.game import GameEnvironment, resolve_size_and_players
 from civulator.agents import DQNAgent, BuildAgent, BasicStateEncoder, EnhancedStateEncoder
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.training import train_agents
@@ -25,8 +25,6 @@ from civulator.meta import load_weights
 
 # Defaults from config.toml
 _tcfg = CFG.get("training", {})
-_mcfg = CFG.get("map", {})
-_gcfg = CFG.get("game", {})
 
 
 def set_random_seeds(seed=42):
@@ -55,10 +53,10 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
     """
     set_random_seeds()
 
-    # Environment setup — from config.toml
-    n = _mcfg.get("rows", 4)
-    m = _mcfg.get("columns", 8)
-    number_of_players = _gcfg.get("num_players", 2)
+    # Environment setup — size preset (design doc D14/§6, §11 P5): one
+    # resolver shared with the engine and every other run script, instead
+    # of this file's own divergent rows/cols/num_players fallbacks.
+    n, m, number_of_players = resolve_size_and_players()
 
     # Get depth from encoder
     if encoder == "enhanced":

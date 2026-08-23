@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pyray as rl
 
-from civulator.game.environment import GameEnvironment
+from civulator.game.environment import GameEnvironment, resolve_size_and_players
 from civulator.meta import build_manifest
 from civulator.viz.hex_render import (
     draw_hex,
@@ -43,8 +43,17 @@ from civulator.viz.hex_render import (
 )
 
 # --- Config ---
-MAP_ROWS = 16
-MAP_COLS = 16
+# Default board (design doc E5 rider, owed since P3, closed by P5): Duel
+# earthlike, resolved through the SAME [map.sizes.*] preset table the
+# engine and every run script read (never a fourth hardcoded copy of
+# Duel's 12x24) -- num_players is explicit 2 below, independent of
+# whatever Duel's own default_players happens to be, since the painter's
+# whole data model is a fixed two-team (PLAYER_COLORS) affair. Explicit
+# dims still work: pass MAP_ROWS/MAP_COLS a different value by hand if a
+# tool board other than Duel is ever needed (design doc: "painter still
+# honors explicit dims if configured").
+MAP_ROWS, MAP_COLS, _DUEL_DEFAULT_PLAYERS = resolve_size_and_players(size="duel")
+MAP_TYPE = "earthlike"
 HEX_SIZE = 28
 SCREEN_W = 1200
 SCREEN_H = 800
@@ -91,17 +100,18 @@ class PainterState:
         and then Map(...) with no rng, but Map draws from its own
         random.Random(); the saved seed reproduced nothing.)
 
-        map_type="basic" explicit (design doc §11 P3): [map] type's live
-        default is now "earthlike", which raises below Duel size (24x12,
-        E5) — this painter's board (MAP_ROWS x MAP_COLS = 16x16) predates
-        that minimum. `civulator.tools.recording.build_env_from_scenario`
-        pins the same "basic" so painted terrain still reconstructs
-        identically from its saved seed (E5's "painter default board moves
-        to Duel earthlike" is a separate, not-yet-scheduled migration —
-        this patch only keeps the painter working under the new default).
+        map_type=MAP_TYPE ("earthlike") explicit (design doc E5 rider,
+        §11 P5 deliverable 4): the board is Duel-sized (MAP_ROWS x MAP_COLS
+        = 12x24, resolved from [map.sizes.duel] above), earthlike's own
+        minimum (E5) — no longer the pre-P5 16x16 basic board.
+        `civulator.tools.recording.build_env_from_scenario` reads `map_type`
+        back OUT of the saved scenario JSON (default "basic" for archived
+        pre-P5 files that predate the key), so painted terrain still
+        reconstructs identically from its saved seed regardless of which
+        generator painted it.
         """
         self.seed = random.randint(0, 99999)
-        env = GameEnvironment(MAP_ROWS, MAP_COLS, num_players=2, map_type="basic", seed=self.seed)
+        env = GameEnvironment(MAP_ROWS, MAP_COLS, num_players=2, map_type=MAP_TYPE, seed=self.seed)
         self.game_map = env.map
         self.units = []
         self.cities = []
@@ -146,6 +156,11 @@ class PainterState:
             "terrain_seeded": True,
             "map_rows": MAP_ROWS,
             "map_cols": MAP_COLS,
+            # design doc E5 rider / §11 P5 deliverable 4: recorded so
+            # civulator.tools.recording.build_env_from_scenario reconstructs
+            # with the SAME generator that painted this board, not a
+            # hardcoded guess.
+            "map_type": MAP_TYPE,
             "units": self.units,
             "cities": self.cities,
             "manifest": build_manifest(),

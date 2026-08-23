@@ -1,4 +1,4 @@
-from .environment import GameEnvironment
+from .environment import GameEnvironment, resolve_size_and_players
 from .map import Map
 from .tile import Tile
 from .unit import (

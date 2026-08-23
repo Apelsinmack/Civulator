@@ -77,6 +77,19 @@ def scenario_dims(scenario):
     return int(rows), int(cols)
 
 
+def scenario_map_type(scenario):
+    """The generator that painted a scenario's terrain (design doc E5
+    rider / §11 P5 deliverable 4): `"map_type"` if the scenario JSON
+    carries one (the painter has written this key since it moved its
+    default board to Duel earthlike), else `"basic"` -- every scenario
+    saved before that migration (archived 001-009, and any hand-built
+    synthetic scenario in the test suite) predates the key and WAS painted
+    "basic", so that remains the correct default for a missing key, not an
+    arbitrary fallback.
+    """
+    return scenario.get("map_type", "basic")
+
+
 def entry_coords(entry):
     """(row, col) of a scenario unit/city entry.
 
@@ -96,19 +109,20 @@ def build_env_from_scenario(scenario):
     the same terrain in both tools — do not replace this with a bare
     `Map(...)`, that reintroduces the unseeded-terrain bug (see the painter).
 
-    map_type="basic" explicit (design doc §11 P3): [map] type's live
-    default is now "earthlike", which raises below Duel size (24x12, E5);
-    painted scenarios (this tool's whole reason to exist) are typically
-    much smaller than that (e.g. the painter's own 16x16 board). The
-    Scenario Painter (`scripts/scenario_painter.py`) generates its terrain
-    the same "basic" way, so the two tools keep building identical worlds
-    from one seed (tests/test_recording.py::
-    test_painter_and_recorder_build_the_same_terrain_from_one_seed) — this
-    is not itself a P3-scope terrain-editing change (E2's painter gap is
-    unaffected), just keeping both call sites pointed at the same generator.
+    map_type comes from the scenario itself (`scenario_map_type`, design doc
+    E5 rider / §11 P5 deliverable 4) rather than a hardcoded literal: the
+    Scenario Painter now defaults to Duel earthlike but a scenario always
+    records the generator that actually painted it, so the two tools keep
+    building identical worlds from one seed regardless of which generator
+    that was (tests/test_recording.py::
+    test_painter_and_recorder_build_the_same_terrain_from_one_seed) —
+    archived pre-P5 scenarios (001-009) and hand-built synthetic ones in the
+    test suite carry no `map_type` key and correctly default to "basic",
+    the generator they were actually painted with.
     """
     rows, cols = scenario_dims(scenario)
-    env = GameEnvironment(rows, cols, num_players=2, map_type="basic", seed=scenario.get("seed"))
+    map_type = scenario_map_type(scenario)
+    env = GameEnvironment(rows, cols, num_players=2, map_type=map_type, seed=scenario.get("seed"))
 
     # The constructor places nothing today, but reset()/future changes might —
     # a scenario must contain only what the painter put in it.

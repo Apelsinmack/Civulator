@@ -1,10 +1,11 @@
-"""Train with shared weights — one Large-Patient agent, all 8 players update it.
+"""Train with shared weights — one Large-Patient agent, every player updates it.
 
 Usage:
     python scripts/train_shared.py --episodes 1000
 
 Loads Large-Patient (agent_5) weights from episode 35 as starting point.
-All 8 players share the same network and replay buffer.
+Every player shares the same network and replay buffer (Standard preset:
+6 players by default, design doc D14/§6, §11 P5 — pass --size for another).
 Memory-safe: ~2.3 GB instead of ~18 GB.
 """
 
@@ -20,15 +21,13 @@ import torch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from civulator.config import CFG
-from civulator.game import GameEnvironment
+from civulator.game import GameEnvironment, resolve_size_and_players
 from civulator.agents import DQNAgent, BuildAgent, BasicStateEncoder, EnhancedStateEncoder
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.training import train_agents
 from civulator.meta import load_weights
 
 _tcfg = CFG.get("training", {})
-_mcfg = CFG.get("map", {})
-_gcfg = CFG.get("game", {})
 
 
 def main(num_episodes=1000, max_turns=200, batch_size=32):
@@ -36,9 +35,10 @@ def main(num_episodes=1000, max_turns=200, batch_size=32):
     np.random.seed(42)
     torch.manual_seed(42)
 
-    n = _mcfg.get("rows", 24)
-    m = _mcfg.get("columns", 48)
-    number_of_players = _gcfg.get("num_players", 8)
+    # Size preset (design doc D14/§6, §11 P5): one resolver shared with the
+    # engine and every other run script, instead of this file's own
+    # divergent rows/cols/num_players fallbacks.
+    n, m, number_of_players = resolve_size_and_players()
 
     d = EnhancedStateEncoder().get_depth(number_of_players)
     env = GameEnvironment(n, m, number_of_players)

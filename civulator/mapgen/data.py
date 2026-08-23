@@ -35,9 +35,14 @@ class MapData:
             precondition, e.g. land_percent = 1.0).
         fresh_water: (rows, cols) bool array -- design doc §5/§3.4: adjacent
             to a river edge, adjacent to (or on) Lake, or carries Oasis.
-        starts: list of (row, col) candidate start positions, in player
-            order. Empty in P3 (starts are P5 scope; `reset` keeps its
-            current random placement until then, per design doc §11 P3).
+        starts: list of `num_players` (row, col) start positions (design doc
+            §6, D13, §11 P5), one per player, in the deterministic
+            region-processing order `mapgen.starts.divide_into_regions`
+            documents -- NOT the order players end up assigned to them
+            (`GameEnvironment.reset` shuffles that assignment via the
+            engine RNG, design doc §6.5). Produced by
+            `mapgen.starts.generate_starts`, the same for earthlike and
+            basic (design doc §4.1: "same starts stage").
         params: echo of the generation inputs (seed, rows, cols,
             num_players, map_type, and the resolved knob dict actually
             used) -- NOT the live config (design doc §8: world identity is

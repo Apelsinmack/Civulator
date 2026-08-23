@@ -15,7 +15,7 @@ module in this package allowed to import `civulator.viz` (design doc §11
 P3: "the CLI `__main__.py` is the sole exception").
 """
 
-from . import basic, earthlike, resources, rivers, stats
+from . import basic, earthlike, resources, rivers, starts, stats
 from .data import MapData, resolve_size
 
 _GENERATORS = {
@@ -43,5 +43,5 @@ def generate(seed, size, num_players=2, params=None, map_type="earthlike") -> Ma
 
 __all__ = [
     "generate", "MapData", "resolve_size", "MAP_TYPES",
-    "basic", "earthlike", "resources", "rivers", "stats",
+    "basic", "earthlike", "resources", "rivers", "starts", "stats",
 ]

@@ -315,15 +315,32 @@ class TestResourceValidity:
             f"deliverable 5's ~15-30 target, seeds: {totals})"
         )
 
-    def test_basic_generator_never_places_resources(self):
-        """basic.py's own docstring commitment (design doc §11 P3/P4:
-        "No water, no rivers, no resources, no starts"), still true now
-        that resources are real -- a regression guard against resources.py
-        ever getting wired into basic.py by accident.
+    def test_basic_generator_never_runs_the_regular_resource_stage(self):
+        """basic.py's original docstring commitment (design doc §11 P3/P4:
+        "No water, no rivers, no resources") still holds for the REGULAR
+        resource stage -- `resources.place_resources()` is never wired into
+        basic.py (a regression guard against that happening by accident).
+
+        Amended by design doc §11 P5 (basic.py's own updated module
+        docstring): starts.py's additive normalization (§6.4) DOES run on
+        basic worlds too ("same starts stage" as earthlike, design doc
+        §4.1) and may place a FEW bonus resources near a weak start -- at
+        most 2 per player (one food, one production). That is nowhere near
+        `resources.place_resources()`'s own target density (~15-30 on a
+        Standard-sized earthlike map, design doc §11 P4 deliverable 5), so
+        bounding the count well below that band still catches the regular
+        stage ever getting wired in by accident, without wrongly asserting
+        zero.
         """
+        num_players = 2
         for seed in range(5):
-            md = mapgen.generate(seed, (16, 32), map_type="basic")
-            assert not np.any(md.resource != None)  # noqa: E711 (elementwise is-not-None on an object array)
+            md = mapgen.generate(seed, (16, 32), num_players=num_players, map_type="basic")
+            count = int(np.sum(md.resource != None))  # noqa: E711 (elementwise is-not-None on an object array)
+            assert count <= 2 * num_players, (
+                f"seed {seed}: {count} resources on a basic world -- looks like the "
+                f"REGULAR resources.place_resources() stage ran, not just start "
+                f"normalization's additive bonuses"
+            )
 
 
 # --- (i) fresh water matches its definition ------------------------------------

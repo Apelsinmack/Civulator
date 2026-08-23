@@ -5,6 +5,15 @@
 rows = 24
 columns = 48
 type = "earthlike"       # "earthlike" (default, Duel-size minimum, E5) | "basic"
+# Size preset (design doc D14/§6, §11 P5): GameEnvironment resolves this
+# name through [map.sizes.*] below for rows/cols + a default player count
+# whenever the caller doesn't pass explicit ones (explicit constructor args
+# always override -- see civulator/game/environment.py:resolve_size_and_players).
+# `rows`/`columns` above stay in place as the OLDER flat keys a few
+# out-of-scope scripts still read directly; `size` is the new, single
+# source of truth for the five run scripts P5 repoints (watch/train/
+# train_shared/train_shared_large/replay) and for the engine itself.
+size = "standard"
 
 # =====================================================================
 # Earthlike world generation (v0.6, docs/terrain_model_design.md §4.3/§4.4,
@@ -110,6 +119,53 @@ rows = 66
 cols = 106
 default_players = 12
 max_players = 24
+
+# =====================================================================
+# Starting locations (design doc §6, D13, §11 P5) -- civulator/mapgen/starts.py
+# DEFAULT_PARAMS mirrors every key below (config overrides those code
+# defaults; mapgen itself never reads this file -- Map.generate_map reads it
+# once and passes the resolved dict down as params["starts"], same "read
+# config once at the call boundary" contract as [map.earthlike]).
+# =====================================================================
+[map.starts]
+# --- Fertility weights (§6.1) -- kept DYADIC (powers of two / halves) so
+# candidate score sums are exact and order-independent (design doc §4.2
+# rule 6). A typical candidate's ring 0-2 yield-only score lands roughly in
+# the 15-35 range (most base terrains sum to 0-2 food+production; ~18
+# ring-1/ring-2 tiles contribute) -- fresh_water_weight is chosen to be a
+# strong differentiator at that scale without dominating it outright.
+ring2_weight = 0.5          # design doc §6.1: "ring 2 at half weight"
+fresh_water_weight = 8.0    # "heavily weighted" -- dyadic (2**3)
+coastal_weight = 4.0        # "half of that" -- exactly fresh_water_weight / 2 (2**2)
+min_passable_ring1 = 3      # REJECT candidates with fewer passable ring-1 tiles (§6.1)
+
+# --- Placement (§6.3) ---
+d_min_players_factor = 3.5  # d_min = round(sqrt(tiles / (players * this)))
+d_min_floor = 3             # floor for BOTH the raw formula and the relax-and-retry ladder
+
+# --- Normalization thresholds (§6.4) -- scaled from Civ 6's own (food<7/
+# best<3, prod<5/best<2, both "over 6 tiles" i.e. the ring-1 neighborhood)
+# to OUR yield scale. Derivation (P5 implementation report has the full
+# walkthrough): our average per-BASE-terrain yield across the 8 entries in
+# [terrain.base.*] (5 land + 3 water -- a ring-1 tile can legitimately be
+# either) is food=1.0, production=0.125. Civ6's thresholds imply a per-tile
+# baseline of food=7/6, production=5/6 (its own totals spread over the same
+# 6-tile ring). scale = our_avg / civ6_avg_per_tile:
+#   food_scale = 1.0 / (7/6) = 6/7          prod_scale = 0.125 / (5/6) = 0.15
+#   food_total_min = 7 * food_scale = 6.0    (this always reduces to
+#                                              exactly 6 * our_avg_food --
+#                                              the Civ6 "7" cancels out)
+#   food_best_min  = 3 * food_scale = 18/7 ~= 2.5714
+#   prod_total_min = 5 * prod_scale = 0.75   (= 6 * our_avg_production)
+#   prod_best_min  = 2 * prod_scale = 0.30
+# Production ends up scarce here (as in Civ6, most production comes from
+# hills/woods/resources, not base terrain), so prod_total_min/prod_best_min
+# are small: a ring-1 with even ONE hill nearby already clears them, and
+# they only bind when literally zero ring-1 tiles carry any production.
+food_total_min = 6.0
+food_best_min = 2.5714285714285716   # 18/7 exactly
+prod_total_min = 0.75
+prod_best_min = 0.3
 
 # --- "basic" generator (design doc §4.1, §11 P3): iid per-tile terrain, the
 # deliberately simple option — same weight table pre-0.6 had, now consumed

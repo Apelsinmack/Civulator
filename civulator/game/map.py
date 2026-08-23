@@ -52,6 +52,10 @@ class Map:
         # the keys, which iterate/compare identically to the old set of
         # plain tile-pair tuples (see add_river/has_river_between below).
         self.rivers = {}
+        # MapData.starts, verbatim (design doc §6, §11 P5) -- empty until
+        # generate_map runs; a Map built but never generated (rare, mostly
+        # test fixtures) simply has no starts to offer.
+        self.starts = []
         # Terrain/feature randomness draws from here; pass the owning
         # GameEnvironment's rng for reproducible maps.
         self.rng = rng if rng is not None else PortableRNG()
@@ -97,7 +101,11 @@ class Map:
 
         map_cfg = CFG.get("map", {})
         if map_type == "earthlike":
-            params = map_cfg.get("earthlike", {})
+            # dict(...) copies -- map_cfg["earthlike"] is a reference into
+            # the process-wide CFG singleton; the "starts" key added below
+            # must never leak back into it (that would mutate global config
+            # as a side effect of generating one map).
+            params = dict(map_cfg.get("earthlike", {}))
         else:
             params = {}
             if map_cfg.get("terrain_weights"):
@@ -110,6 +118,12 @@ class Map:
                 feature_chance["rainforest"] = features_cfg["rainforest_chance"]
             if feature_chance:
                 params["feature_chance"] = feature_chance
+        # [map.starts] (design doc §6, §11 P5) applies to BOTH generators
+        # ("same starts stage", design doc §4.1) -- one config home, read
+        # once here, same as every other map.* table.
+        starts_cfg = map_cfg.get("starts")
+        if starts_cfg:
+            params["starts"] = starts_cfg
 
         master_seed = self.rng.next_uint64()
         map_data = mapgen.generate(
@@ -133,6 +147,12 @@ class Map:
         # skips the redundant pass over every tile.
         self._fresh_water_cache = map_data.fresh_water
         self._fresh_water_cache_epoch = self.terrain_epoch
+        # Starting locations (design doc §6, D13, §11 P5): mapgen's own
+        # `MapData.starts` is the only authority (Systems (b): "reset
+        # consumes its output and raises rather than patching over
+        # violations") -- GameEnvironment.reset reads this list directly,
+        # never recomputing or re-rolling placement itself.
+        self.starts = list(map_data.starts)
 
     def add_river(self, tile1_coords, tile2_coords, flux=0):
         """Add a river between two tiles (§7.5 item 4's hand-built-edge API).
@@ -225,6 +245,16 @@ class Map:
         implementation (design doc §11 P1; CLAUDE.md hex-math row).
         """
         return hexmath.distance(p1, p2, self.m)
+
+    def get_ring_coords(self, coordinates, max_radius):
+        """[ring_0, ring_1, ..., ring_max_radius] coordinate lists (design
+        doc §6/§11 P5: warrior-spawn ring-2 spillover).
+
+        Thin wrapper: delegates to civulator.hexmath, the canonical hex-math
+        implementation (design doc §11 P1; CLAUDE.md hex-math row) -- same
+        role as get_adjacent_coords/distance_function above.
+        """
+        return hexmath.hex_rings(coordinates, max_radius, self.n, self.m)
 
     def _build_cost_grid(self, domain):
         """2D movement-cost array for one movement domain, cached per terrain epoch.
