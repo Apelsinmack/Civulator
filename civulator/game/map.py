@@ -31,6 +31,57 @@ except ImportError:
 # two A* implementations read it — no gameplay code compares magic costs.
 BLOCKED_COST = 99.0
 
+# --- River-edge flag encoding for A* (design doc §11 P6, E3, D23) ----------
+#
+# A river's only gameplay effect is a per-edge movement surcharge
+# (RIVER_CROSSING_COST in unit.py); both A* implementations need to know,
+# for a candidate step between two adjacent tiles, whether that specific
+# edge is a river. Map.rivers is a dict keyed by tile pairs — fine for
+# unit.py's single has_river_between lookup per move, too indirect to hand
+# to C++ per search node. _river_flags_grid() compresses it once per
+# (map_uid, terrain_epoch) into a rows x cols uint8 grid, 3 bits per tile.
+#
+# Bit layout: a tile "owns" 3 of its 6 hex edges — RIVER_EDGE_DIRECTIONS
+# below, the first half of hexmath.HEX_DIRECTIONS. The other 3 directions
+# are each the exact opposite of one owned direction (hexmath.HEX_DIRECTIONS
+# is ordered so index i and i+3 are opposites), so every adjacent tile pair
+# has its shared edge owned by EXACTLY ONE of the two tiles — the encoding
+# is total and unambiguous. Bit k (value 1 << k) is set on tile (row, col)
+# iff a river edge crosses the border toward (row, col) + RIVER_EDGE_DIRECTIONS[k]:
+#   bit 0 (1): (+1,  0)    bit 1 (2): (+1, -1)    bit 2 (4): (0, -1)
+# To test the edge toward a NON-owned direction, look up the opposite bit on
+# the NEIGHBOR tile instead (_river_crossing_cost below does this).
+#
+# Shared verbatim with cpp/src/hex_astar.cpp (RIVER_OWNED_DIRECTIONS there —
+# same three (delta_row, delta_col) pairs, expressed as (delta_q, delta_r),
+# same bit order). Change one side, change both.
+RIVER_EDGE_DIRECTIONS = hexmath.HEX_DIRECTIONS[:3]
+_RIVER_DIRECTION_BITS = {d: (1 << i) for i, d in enumerate(RIVER_EDGE_DIRECTIONS)}
+
+
+def _river_crossing_cost(river_flags, current, neighbor, width, crossing_cost):
+    """Extra cost for stepping current -> neighbor if that edge is flagged as
+    a river crossing in `river_flags` (bit layout above); 0.0 otherwise.
+
+    `current`/`neighbor` must be adjacent (row, col) tiles, e.g. as produced
+    by Map.get_adjacent_coords — the reverse direction is then guaranteed to
+    be one of the 3 owned directions, so the fallback lookup cannot miss.
+    Resolves the same cylindrical column wrap as hexmath.distance /
+    Map._hex_line.
+    """
+    dr = neighbor[0] - current[0]
+    dc_direct = neighbor[1] - current[1]
+    dc_wrapped = dc_direct - width if dc_direct > 0 else dc_direct + width
+    dc = dc_direct if abs(dc_direct) <= abs(dc_wrapped) else dc_wrapped
+
+    bit = _RIVER_DIRECTION_BITS.get((dr, dc))
+    if bit is not None:
+        flagged = river_flags[current[0], current[1] % width] & bit
+    else:
+        bit = _RIVER_DIRECTION_BITS[(-dr, -dc)]
+        flagged = river_flags[neighbor[0], neighbor[1] % width] & bit
+    return crossing_cost if flagged else 0.0
+
 
 class Map:
     """Represents the game map composed of hex tiles."""
@@ -64,6 +115,11 @@ class Map:
         self._cost_grids = {}
         self._fresh_water_cache = None
         self._fresh_water_cache_epoch = None
+        # River-edge flags for A* (design doc §11 P6) — domain-independent,
+        # so cached separately from the per-domain cost grids; same
+        # invalidation trigger (terrain_epoch) as everything else in §3.4.
+        self._river_flags_cache = None
+        self._river_flags_cache_epoch = None
 
     def generate_map(self, map_type="basic", num_players=2):
         """Generate a map via `civulator.mapgen` (design doc §4.1, §11 P3).
@@ -145,7 +201,8 @@ class Map:
 
         Bumps terrain_epoch like Tile.set_layers does (design doc §3.4):
         river edges are terrain state, and the cost grids/fresh-water mask
-        become river-aware. A* stays river-blind until P6 (design doc E3).
+        AND the A* river-edge flags (design doc §11 P6) all become
+        river-aware on their next rebuild.
         """
         if tile1_coords < tile2_coords:
             edge = (tile1_coords, tile2_coords)
@@ -253,6 +310,36 @@ class Map:
         self._cost_grids[key] = cost
         return cost
 
+    def _river_flags_grid(self):
+        """Per-tile river-edge flags for A* (uint8, 3 bits — see
+        RIVER_EDGE_DIRECTIONS above), cached per (map_uid, terrain_epoch)
+        right alongside the cost grid (design doc §3.4/§11 P6): add_river
+        and Tile.set_layers both bump terrain_epoch, so this rebuilds
+        exactly when self.rivers could have changed.
+        """
+        if self._river_flags_cache is None or self._river_flags_cache_epoch != self.terrain_epoch:
+            flags = np.zeros((self.n, self.m), dtype=np.uint8)
+            for a, b in self.rivers:
+                dr = b[0] - a[0]
+                dc_direct = b[1] - a[1]
+                dc_wrapped = dc_direct - self.m if dc_direct > 0 else dc_direct + self.m
+                dc = dc_direct if abs(dc_direct) <= abs(dc_wrapped) else dc_wrapped
+
+                bit = _RIVER_DIRECTION_BITS.get((dr, dc))
+                owner = a
+                if bit is None:
+                    bit = _RIVER_DIRECTION_BITS.get((-dr, -dc))
+                    owner = b
+                if bit is None:
+                    # Not actually adjacent under the hex direction set — not
+                    # a real edge of the model (defensive; shouldn't happen
+                    # via mapgen or a correctly-used add_river).
+                    continue
+                flags[owner[0], owner[1] % self.m] |= bit
+            self._river_flags_cache = flags
+            self._river_flags_cache_epoch = self.terrain_epoch
+        return self._river_flags_cache
+
     def _build_occupied_grid(self, goal=None):
         """Build a 2D bool array of occupied tiles (for A* blocking)."""
         occupied = np.zeros((self.n, self.m), dtype=bool)
@@ -270,8 +357,10 @@ class Map:
         """A* pathfinding on the hex grid with terrain costs.
 
         Uses C++ civulator_core when available, falls back to Python A*.
-        River crossing costs are per-edge and stay invisible here until patch
-        P6 extends both A* implementations (design doc E3).
+        River crossings add [terrain.river] crossing_cost per edge (design
+        doc D23, E3, §11 P6) — the same per-edge surcharge unit.move charges
+        (RIVER_CROSSING_COST in unit.py), so a planned path's total cost
+        equals what executing it actually spends.
 
         Args:
             p1: Start coordinates as numpy array or tuple [row, col]
@@ -289,6 +378,13 @@ class Map:
 
         cost_grid = self._build_cost_grid(domain)
         occupied = self._build_occupied_grid(goal)
+        river_flags = self._river_flags_grid()
+
+        # Config read once here, at the path_finder call boundary — never
+        # inside the neighbor loop (design doc §11 P6 deliverable 2; D23
+        # single-sources this same value for unit.py's RIVER_CROSSING_COST).
+        from ..config import CFG
+        crossing_cost = float(CFG.get("terrain", {}).get("river", {}).get("crossing_cost", 1))
 
         if HAS_CPP_CORE:
             # C++ A*: coords are (q, r) but our arrays are [row][col] = [r][q]
@@ -296,7 +392,9 @@ class Map:
                 cost_grid,
                 start[1], start[0],  # q=col, r=row
                 goal[1], goal[0],
-                occupied
+                occupied,
+                river_flags,
+                crossing_cost,
             )
             if total_cost < 0:
                 return []  # No path found
@@ -304,9 +402,9 @@ class Map:
             return [np.array([r, q]) for q, r in path_tuples]
         else:
             # Python fallback A*
-            return self._python_astar(start, goal, cost_grid, occupied)
+            return self._python_astar(start, goal, cost_grid, occupied, river_flags, crossing_cost)
 
-    def _python_astar(self, start, goal, cost_grid, occupied):
+    def _python_astar(self, start, goal, cost_grid, occupied, river_flags, crossing_cost):
         """Pure Python A* fallback."""
         import heapq
 
@@ -339,7 +437,10 @@ class Map:
                 if occupied[r, q] and neighbor != goal:
                     continue
 
-                tentative_g = current_g + terrain_cost
+                step_cost = terrain_cost + _river_crossing_cost(
+                    river_flags, current, neighbor, self.m, crossing_cost
+                )
+                tentative_g = current_g + step_cost
                 if tentative_g < g_score.get(neighbor, float('inf')):
                     g_score[neighbor] = tentative_g
                     came_from[neighbor] = current

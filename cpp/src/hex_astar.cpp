@@ -1,7 +1,56 @@
 #include "hex_astar.h"
+#include <array>
 #include <queue>
 #include <unordered_map>
 #include <limits>
+
+namespace {
+
+// Same 3-of-6 canonical directions as civulator/game/map.py's
+// RIVER_EDGE_DIRECTIONS (there expressed as (delta_row, delta_col); here as
+// (delta_q, delta_r) — civulator/game/map.py bit k is (+1,0),(+1,-1),(0,-1)
+// in (row,col) form, which is (dq=0,dr=1),(dq=-1,dr=1),(dq=-1,dr=0) here).
+// The other 3 HEX_DIRECTIONS entries are each one of these negated, so
+// ownership is total and unambiguous — see map.py for the full writeup.
+// Bit k (1 << k) set on a tile means: a river edge crosses its border
+// toward RIVER_OWNED_DIRECTIONS[k]. Change one side, change both.
+constexpr std::array<HexCoord, 3> RIVER_OWNED_DIRECTIONS = {{
+    {0, 1}, {-1, 1}, {-1, 0}
+}};
+
+inline int river_bit_index(int dq, int dr) {
+    for (int i = 0; i < 3; ++i) {
+        if (RIVER_OWNED_DIRECTIONS[i].q == dq && RIVER_OWNED_DIRECTIONS[i].r == dr)
+            return i;
+    }
+    return -1;
+}
+
+// Extra cost for stepping current -> neighbor (already-wrapped, adjacent
+// tiles reached via direction (dq, dr)) if that edge is flagged as a river
+// crossing; 0 otherwise. dq/dr must be one of the 6 hex unit directions —
+// guaranteed by callers, which pass the HEX_DIRECTIONS entry they just used.
+inline float river_edge_cost(
+    const uint8_t* river_flags, int width,
+    HexCoord current, HexCoord neighbor,
+    int dq, int dr, float crossing_cost)
+{
+    if (!river_flags || crossing_cost == 0.0f)
+        return 0.0f;
+
+    int bit = river_bit_index(dq, dr);
+    if (bit >= 0) {
+        uint8_t flags = river_flags[current.r * width + current.q];
+        return (flags & (1 << bit)) ? crossing_cost : 0.0f;
+    }
+    // -dq/-dr is guaranteed to be one of the 3 owned directions (every hex
+    // direction is either owned or the exact opposite of an owned one).
+    bit = river_bit_index(-dq, -dr);
+    uint8_t flags = river_flags[neighbor.r * width + neighbor.q];
+    return (flags & (1 << bit)) ? crossing_cost : 0.0f;
+}
+
+}  // namespace
 
 AStarResult hex_astar(
     const float* cost_grid,
@@ -9,7 +58,9 @@ AStarResult hex_astar(
     int height,
     HexCoord start,
     HexCoord goal,
-    const bool* occupied)
+    const bool* occupied,
+    const uint8_t* river_flags,
+    float crossing_cost)
 {
     // Priority queue: (f_score, coord)
     using PQEntry = std::pair<float, HexCoord>;
@@ -77,7 +128,9 @@ AStarResult hex_astar(
             if (occupied && occupied[idx] && neighbor != goal)
                 continue;
 
-            float tentative_g = current_g + terrain_cost;
+            float step_cost = terrain_cost + river_edge_cost(
+                river_flags, width, current, neighbor, dir.q, dir.r, crossing_cost);
+            float tentative_g = current_g + step_cost;
 
             auto it = g_score.find(neighbor);
             if (it == g_score.end() || tentative_g < it->second) {
