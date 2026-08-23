@@ -34,6 +34,7 @@ from ..viz.hex_render import (
     draw_hex_outline,
     draw_resource_marker,
     draw_river_edges,
+    draw_start_marker,
     hex_to_pixel,
     make_camera,
     tile_color,
@@ -69,7 +70,7 @@ def _build_tiles(map_data):
     return tiles
 
 
-def _draw_frame(tiles, rivers, rows, cols, camera):
+def _draw_frame(tiles, rivers, starts, rows, cols, camera, show_starts=True):
     rl.begin_drawing()
     rl.clear_background(rl.Color(30, 30, 35, 255))
     rl.begin_mode_2d(camera)
@@ -86,6 +87,16 @@ def _draw_frame(tiles, rivers, rows, cols, camera):
     draw_river_edges(
         types.SimpleNamespace(rivers=rivers), HEX_SIZE, cols, camera_x=camera.target.x
     )
+
+    # Start-position markers (design doc §11 P7.5) — drawn last, on top of
+    # terrain/rivers/resources, so they read clearly at a glance; toggled
+    # with T, shown by default (Erik inspects start fairness at the P8
+    # ceremony without an extra keypress).
+    if show_starts:
+        for (r, c) in starts:
+            cx, cy = hex_to_pixel(r, c, HEX_SIZE, cols)
+            cx = wrapped_draw_x(cx, camera.target.x, HEX_SIZE, cols)
+            draw_start_marker(cx, cy, HEX_SIZE)
 
     rl.end_mode_2d()
     rl.end_drawing()
@@ -109,7 +120,7 @@ def _screenshot(path):
     shutil.move(tmp_name, path)
 
 
-def _draw_warmed_up_frame(tiles, rivers, rows, cols, camera, warmup_frames=3):
+def _draw_warmed_up_frame(tiles, rivers, starts, rows, cols, camera, show_starts=True, warmup_frames=3):
     """Draw `warmup_frames` throwaway frames, then the real one, and return
     right after — `rl.take_screenshot` reads back a buffer that (verified
     during the P3 smoke test) is still blank after only ONE `begin_drawing`/
@@ -117,8 +128,8 @@ def _draw_warmed_up_frame(tiles, rivers, rows, cols, camera, warmup_frames=3):
     presented frames before the one that matters reliably fixes it.
     """
     for _ in range(warmup_frames):
-        _draw_frame(tiles, rivers, rows, cols, camera)
-    _draw_frame(tiles, rivers, rows, cols, camera)
+        _draw_frame(tiles, rivers, starts, rows, cols, camera, show_starts)
+    _draw_frame(tiles, rivers, starts, rows, cols, camera, show_starts)
 
 
 def _resolve_cli_size(args):
@@ -172,16 +183,20 @@ def run_preview(argv=None):
 
     map_data = generate(seed, (rows, cols), params=params, map_type=args.map_type)
     tiles = _build_tiles(map_data)
+    # Shown by default (design doc §11 P7.5: Erik inspects start fairness at
+    # the P8 ceremony) — T toggles, in both the --png one-shot render and
+    # the interactive loop.
+    show_starts = True
 
     if args.png:
-        _draw_warmed_up_frame(tiles, map_data.rivers, rows, cols, camera)
+        _draw_warmed_up_frame(tiles, map_data.rivers, map_data.starts, rows, cols, camera, show_starts)
         _screenshot(args.png)
         rl.close_window()
         print(f"Saved {args.png} (seed={seed}, {rows}x{cols}, type={args.map_type})")
         return
 
     print(f"seed={seed} size={rows}x{cols} type={args.map_type} — "
-          f"N=new seed  S=screenshot  arrows/drag=pan  wheel=zoom  ESC=quit")
+          f"N=new seed  S=screenshot  T=toggle starts  arrows/drag=pan  wheel=zoom  ESC=quit")
 
     while not rl.window_should_close():
         if rl.is_key_pressed(rl.KEY_N):
@@ -190,9 +205,13 @@ def run_preview(argv=None):
             tiles = _build_tiles(map_data)
             print(f"seed={seed}")
 
+        if rl.is_key_pressed(rl.KEY_T):
+            show_starts = not show_starts
+            print(f"show_starts={show_starts}")
+
         if rl.is_key_pressed(rl.KEY_S):
             out = f"mapgen_seed{seed}_{rows}x{cols}.png"
-            _draw_frame(tiles, map_data.rivers, rows, cols, camera)
+            _draw_frame(tiles, map_data.rivers, map_data.starts, rows, cols, camera, show_starts)
             _screenshot(out)
             print(f"Saved {out}")
 
@@ -209,7 +228,7 @@ def run_preview(argv=None):
             camera.target.y += step
         wrap_camera_x(camera, HEX_SIZE, cols)
 
-        _draw_frame(tiles, map_data.rivers, rows, cols, camera)
+        _draw_frame(tiles, map_data.rivers, map_data.starts, rows, cols, camera, show_starts)
 
     rl.close_window()
 

@@ -130,6 +130,15 @@ class Map:
         # a manifest-pinned rebuild record (`meta.build_manifest(
         # mapgen_params=...)`); it is never read back into THIS map itself.
         self.mapgen_params = None
+        # This attempt's own master seed (design doc D26, §11 P7.5) — set
+        # by generate_map() the instant it draws one, BEFORE calling
+        # mapgen.generate(), so it survives even if that call raises
+        # StartPlacementError. GameEnvironment.reset's unseeded-resample
+        # retry loop reads this to log which seed a failed attempt tried;
+        # nothing in mapgen or the engine reads it back for anything else
+        # (mapgen_params["seed"] above is the post-success record of the
+        # same value).
+        self.last_master_seed = None
 
     def generate_map(self, map_type="basic", num_players=2, params=None):
         """Generate a map via `civulator.mapgen` (design doc §4.1, §11 P3).
@@ -214,6 +223,11 @@ class Map:
         # (design doc §8) -- live config.toml is not read at all this call.
 
         master_seed = self.rng.next_uint64()
+        # Captured immediately, before mapgen.generate() runs (design doc
+        # D26): if generation raises StartPlacementError, this attempt's
+        # seed is still readable off `self.map` for the unseeded-resample
+        # retry loop's log line (GameEnvironment.reset).
+        self.last_master_seed = master_seed
         map_data = mapgen.generate(
             master_seed, (self.n, self.m), num_players=num_players,
             params=params, map_type=map_type,

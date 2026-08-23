@@ -12,6 +12,16 @@ elevation's land classification here (both come from the same nearest-rank
 pass over the smoothed elevation field, design doc §4.3) rather than as a
 separate DAG node.
 
+**Split elevation (D25, §4.3 amendment, P7.5)**: "elevation" here is two
+talus-smoothed fields sharing one set of warp/continentalness/ridged/
+orogeny components (`elevation.compute_elevation_components` +
+`elevation.combine_elevation`, called once and twice respectively) rather
+than one — E_sea (land/sea/coast/lake) and E_relief (mountain/hill relief,
+river junction altitudes, temperature's lapse term). The pinned STAGE order
+above is unchanged; only what "the elevation stage" hands downstream
+stages changed. See the D25 comments at each call site below for exactly
+which field feeds what and why.
+
 Pure: numpy + stdlib + `civulator.hexmath`/`civulator.terrain_model` only
 (via elevation.py/climate.py/features.py/rivers.py/resources.py) — no
 `civulator.config` import. "params" are plain python values a caller
@@ -53,10 +63,33 @@ DEFAULT_PARAMS = {
     "octaves": "auto",
     "mountain_wavelength": 5,
     "mountain_belt_percent": 0.35,
-    "mountain_amp": 1.5,
+    # Split elevation (D25, docs/terrain_model_design.md §4.3): the single
+    # "mountain_amp" knob became two, one per elevation field
+    # (elevation.combine_elevation's `amp` argument) --
+    #   mountain_amp_coast: contributes to E_sea, the field that drives
+    #     is_land/sea_level/water_base (Coast/Lake/Ocean) ONLY. Default 0.0
+    #     degenerates E_sea to pure continentalness (floating-point-exact,
+    #     see elevation.combine_elevation) -- measured (P6 sweep) to turn
+    #     24-79 fragmented fingers into 3-5 round continents. >0.0 restores
+    #     the pre-D25 behavior of mountains also reshaping the coastline.
+    #   mountain_amp_relief: contributes to E_relief, the field that drives
+    #     ONLY the mountain/hill nearest-rank relief cuts (over E_sea's land
+    #     mask) plus river junction altitudes and temperature's lapse term
+    #     (both re-pointed to E_relief at their call sites in generate()
+    #     below -- see the comments there for why). 1.5 is the ORIGINAL
+    #     single-field mountain_amp value, unchanged.
+    "mountain_amp_coast": 0.0,
+    "mountain_amp_relief": 1.5,
     "warp_amp": 4.0,
     "warp_octaves": 3,
-    "land_percent": 0.35,
+    # D25: 0.35 -> 0.45 -- measured (P6 sweep, confirmed on the shipped P7.5
+    # split-elevation code) to cut start-placement failure from 27.7% to
+    # ~2% by producing fewer, larger, rounder landmasses. Only meaningful
+    # together with the split above: raising land_percent alone at the OLD
+    # single mountain_amp=1.5 does not fix the fragmentation (see the P7.5
+    # report's sweep table) -- it's the coastline field losing the ridged
+    # signal that actually rounds the continents out.
+    "land_percent": 0.45,
     "mountain_percent": 0.08,
     "hill_percent": 0.20,
     "smooth_iterations": 3,
@@ -145,25 +178,55 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
     master_seed = int(seed)
     x, y = _hex_coords(rows, cols)
 
-    # --- elevation -> water/coast/lake -> relief (design doc §4.3) ---
-    raw_elevation = elevation.compute_raw_elevation(x, y, cols, master_seed, p)
-    smoothed = elevation.talus_smooth(
-        raw_elevation, p["smooth_iterations"], p["talus_slope"], p["diffusion_coeff"]
+    # --- elevation: shared components ONCE, split combine TWICE (D25/§4.3
+    # amendment) ---------------------------------------------------------
+    # E_sea drives is_land/sea_level/water_base (Coast/Lake/Ocean) ONLY.
+    # E_relief drives the mountain/hill relief cut (over E_sea's own land
+    # mask) and is ALSO the field threaded to every other continuous-
+    # elevation consumer below (river junction altitudes, temperature's
+    # lapse term) -- see those call sites for why. Both are talus-smoothed
+    # independently (each is a real elevation field in its own right, not
+    # a derived overlay) from the SAME warp/continentalness/ridged/orogeny
+    # components, computed once here rather than twice.
+    continentalness, orogeny_mask, ridged = elevation.compute_elevation_components(
+        x, y, cols, master_seed, p
     )
+    raw_sea = elevation.combine_elevation(continentalness, orogeny_mask, ridged, p["mountain_amp_coast"])
+    E_sea = elevation.talus_smooth(raw_sea, p["smooth_iterations"], p["talus_slope"], p["diffusion_coeff"])
+
+    raw_relief = elevation.combine_elevation(continentalness, orogeny_mask, ridged, p["mountain_amp_relief"])
+    E_relief = elevation.talus_smooth(
+        raw_relief, p["smooth_iterations"], p["talus_slope"], p["diffusion_coeff"]
+    )
+
     is_land, relief, sea_level = elevation.classify_land_and_relief(
-        smoothed, p["land_percent"], p["mountain_percent"], p["hill_percent"]
+        E_sea, E_relief, p["land_percent"], p["mountain_percent"], p["hill_percent"]
     )
     water_base = elevation.classify_water(is_land, p["lake_max_size"])
 
     # --- raw moisture -> rivers (flux from RAW moisture, §5) -> river bonus -> temperature (§4.4) ---
     raw_moisture = climate.compute_raw_moisture(x, y, cols, master_seed, p)
-    river_edges = rivers.generate_rivers(smoothed, water_base, raw_moisture, master_seed, p, rows, cols)
+    # River junction altitudes read E_relief, not E_sea (D25 task brief:
+    # "rivers should source in the mountain belts" -- also the numerically
+    # consistent choice, since rivers.py's own module docstring calibrates
+    # river_pd_epsilon/river_altitude_jitter against "amp default 1.5"'s
+    # O(1) field magnitude, which IS E_relief, not E_sea).
+    river_edges = rivers.generate_rivers(E_relief, water_base, raw_moisture, master_seed, p, rows, cols)
     # river_touch: the narrower, EARLIER-available "river-adjacent" mask
     # (rivers.river_adjacent_mask docstring) -- NOT yet the full §5
     # fresh_water definition, which needs Oasis (placed much later below).
     river_touch = rivers.river_adjacent_mask(river_edges, rows, cols)
     moisture = climate.apply_river_moisture_bonus(raw_moisture, river_touch, p["river_moisture_bonus"])
-    temperature = climate.compute_temperature(x, y, cols, master_seed, smoothed, sea_level, p)
+    # Temperature's lapse term also reads E_relief, not E_sea -- a D25
+    # judgment call documented beyond the letter of the task brief (which
+    # names only rivers): E_sea carries no ridged signal at all under the
+    # default mountain_amp_coast=0.0, so leaving the lapse term on E_sea
+    # would make every mountain/hill tile's lapse near-zero -- relief that
+    # is visibly alpine but climatically indistinguishable from the plain
+    # beside it. `sea_level` itself stays E_sea's own single nearest-rank
+    # scalar threshold either way (never recomputed against E_relief) --
+    # only WHICH continuous field pairs with that one scalar changes.
+    temperature = climate.compute_temperature(x, y, cols, master_seed, E_relief, sea_level, p)
 
     # --- biomes -> majority filter (§4.4, §4.2 rule 5) ---
     land_base, temp_rank, moisture_rank = climate.classify_biomes(temperature, moisture, is_land, p)

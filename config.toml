@@ -14,6 +14,13 @@ type = "earthlike"       # "earthlike" (default, Duel-size minimum, E5) | "basic
 # source of truth for the five run scripts P5 repoints (watch/train/
 # train_shared/train_shared_large/replay) and for the engine itself.
 size = "standard"
+# Unseeded-reset resample policy (design doc D26, §11 P7.5): GameEnvironment
+# .reset() WITHOUT an explicit seed catches StartPlacementError, logs a
+# warning, and draws the next master seed from the engine's own RNG stream
+# to try again, up to this many attempts total before raising. reset(seed=N)
+# never resamples -- an explicit seed either works or fails loudly, always
+# (reproducibility: no seed is silently swapped for a different world).
+max_world_retries = 10
 
 # =====================================================================
 # Earthlike world generation (v0.6, docs/terrain_model_design.md §4.3/§4.4,
@@ -29,10 +36,25 @@ continent_wavelength = 3       # coarsest-octave period P_0 (m in P_k = m*2^k); 
 octaves = "auto"                # "auto" -> clamp(round(log2(width)) - 2, 3, 9); or an explicit int
 mountain_wavelength = 5         # orogeny-mask noise period
 mountain_belt_percent = 0.35    # nearest-rank fraction of the map that is mountain-belt-eligible
-mountain_amp = 1.5              # amp in E = continentalness + amp * orogeny_mask * ridged
+# Split elevation (design doc D25, §4.3 amendment, §11 P7.5): E_sea =
+# continentalness + mountain_amp_coast * orogeny_mask * ridged drives ONLY
+# is_land/sea_level/water_base; E_relief = continentalness +
+# mountain_amp_relief * orogeny_mask * ridged drives ONLY the mountain/hill
+# relief cut (over E_sea's land) plus river junction altitudes and
+# temperature's lapse term. mountain_amp_coast=0.0 degenerates E_sea to
+# pure continentalness (measured: 3-5 round continents instead of 24-79
+# fragments); set it > 0.0 to restore the pre-D25 single-field behavior of
+# mountains also reshaping the coastline itself. mountain_amp_relief=1.5 is
+# the ORIGINAL single-field mountain_amp value, unchanged.
+mountain_amp_coast = 0.0
+mountain_amp_relief = 1.5
 warp_amp = 4.0                  # domain-warp displacement, in hex-center units
 warp_octaves = 3
-land_percent = 0.35             # whole-map nearest-rank fraction that becomes land (sea level)
+# D25: 0.35 -> 0.45, measured (P6 sweep, reconfirmed on the shipped P7.5
+# split-elevation code, see the P7.5 report's sweep table) to cut start-
+# placement failure from 27.7% to ~2% -- only effective paired with the
+# mountain_amp split above (see mountain_amp_coast's comment).
+land_percent = 0.45             # whole-map nearest-rank fraction that becomes land (sea level)
 mountain_percent = 0.08         # fraction OF LAND that becomes mountain relief
 hill_percent = 0.20             # fraction OF LAND that becomes hill relief (cumulative with mountain)
 smooth_iterations = 3           # talus-smoothing Jacobi iteration count (design doc §4.2 rule 5)

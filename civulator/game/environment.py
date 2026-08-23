@@ -1,5 +1,7 @@
 """GameEnvironment -- the main game simulation interface."""
 
+import logging
+
 import numpy as np
 
 from .map import Map
@@ -11,6 +13,8 @@ from .player import Player
 from .city import City
 from .unit import WarriorUnit, movement_domain
 from ..config import CFG
+
+logger = logging.getLogger(__name__)
 
 # Reward values: config.toml [training.rewards] overrides these defaults
 # (same merge pattern as Terrain tables).
@@ -44,6 +48,12 @@ DEFAULT_MAP_TYPE = _MAP_CFG.get("type", "earthlike")
 # table row); `[map] size` selects among them.
 _SIZES_CFG = _MAP_CFG.get("sizes", {})
 DEFAULT_SIZE_NAME = _MAP_CFG.get("size", "standard")
+
+# Unseeded-reset resample policy (design doc D26, §11 P7.5): bound on how
+# many fresh worlds `reset()` (no explicit seed) will try before giving up
+# and raising. `reset(seed=N)` never consults this — an explicit seed always
+# propagates StartPlacementError unchanged, on the first and only attempt.
+MAX_WORLD_RETRIES = _MAP_CFG.get("max_world_retries", 10)
 
 
 def resolve_size_and_players(size=None, num_players=None):
@@ -145,6 +155,20 @@ class GameEnvironment:
 
         Returns:
             self: The reset game environment (agents extract what they need).
+
+        Unseeded-reset resample policy (design doc D26, §11 P7.5): a single
+        `_reset_attempt` builds one candidate world and seats every player on
+        it, raising `StartPlacementError` on any contract violation (mapgen's
+        own retry ladder exhausted, or — defensively — a delivered start that
+        somehow still fails downstream). `seed=N` runs that attempt exactly
+        ONCE and lets the exception propagate unchanged: reproducibility
+        means a specific seed either works or fails loudly, never silently
+        becomes a DIFFERENT world. Unseeded resets have no specific seed to
+        be loyal to, so a bad world is worth resampling — `reset()` retries
+        with the engine RNG's own continuing stream (each `_reset_attempt`
+        draws its own fresh master seed via `Map.generate_map`, design doc
+        §4.2.1), logging a warning per failure, bounded by
+        `MAX_WORLD_RETRIES` (config `[map] max_world_retries`).
         """
         if num_players is not None:
             self.num_players = num_players
@@ -153,13 +177,57 @@ class GameEnvironment:
 
         self.turn_counter = 1
         self.done = False
+        recreate_players = num_players is not None
 
+        if seed is not None:
+            self._reset_attempt(recreate_players)
+        else:
+            last_error = None
+            for attempt in range(1, MAX_WORLD_RETRIES + 1):
+                try:
+                    self._reset_attempt(recreate_players)
+                    last_error = None
+                    break
+                except StartPlacementError as exc:
+                    last_error = exc
+                    logger.warning(
+                        "unseeded reset: world generation failed start placement "
+                        "(master seed=%s, attempt %d/%d): %s",
+                        self.map.last_master_seed, attempt, MAX_WORLD_RETRIES, exc,
+                    )
+            if last_error is not None:
+                raise StartPlacementError(
+                    f"unseeded reset: exhausted {MAX_WORLD_RETRIES} world "
+                    f"retries (design doc D26, config [map] max_world_retries) "
+                    f"— every attempt failed start placement; last failure: "
+                    f"{last_error}"
+                ) from last_error
+
+        self.current_player_index = 0
+        self.current_player = self.players[self.current_player_index]
+
+        # Initial exploration: everyone knows their starting surroundings
+        for i in range(len(self.players)):
+            self.update_exploration(i)
+
+        return self
+
+    def _reset_attempt(self, recreate_players):
+        """One attempt at building a world and seating every player on a
+        capital + starting warriors (design doc §6.5/D26) — `reset()`'s
+        single retried unit of work. Raises `StartPlacementError` on any
+        contract violation and never partially commits across attempts: it
+        always starts by building a brand-new `Map` (and, when
+        `recreate_players`, brand-new `Player`s), so a raise here leaves
+        only THIS attempt's state behind for `reset()` to either propagate
+        (seeded) or discard by trying again from scratch (unseeded).
+        """
         # Regenerate map
         self.map = Map(self.n, self.m, rng=self.rng)
         self.map.generate_map(self.map_type, num_players=self.num_players)
 
         # Reset or recreate players
-        if num_players is not None:
+        if recreate_players:
             self.players = []
             for i in range(self.num_players):
                 player = Player(f"Player {i+1}", i, self)
@@ -187,7 +255,9 @@ class GameEnvironment:
         # a player capital-less, issue #1, is gone by construction: mapgen
         # guarantees every delivered start is settleable before handing it
         # over, so the only remaining failure mode is a contract violation,
-        # which raises instead of silently degrading).
+        # which raises instead of silently degrading). D26 amendment: that
+        # raise now optionally triggers a WHOLE-WORLD resample one level up
+        # in `reset()`, rather than always being fatal.
         starts = list(self.map.starts)
         if len(starts) != self.num_players:
             raise StartPlacementError(
@@ -228,15 +298,6 @@ class GameEnvironment:
                     player.units.append(unit)
                     self.add_unit_to_tile(unit, pos)
                     warriors_placed += 1
-
-        self.current_player_index = 0
-        self.current_player = self.players[self.current_player_index]
-
-        # Initial exploration: everyone knows their starting surroundings
-        for i in range(len(self.players)):
-            self.update_exploration(i)
-
-        return self
 
     def step(self, action_matrix):
         """Execute an action in the game environment.

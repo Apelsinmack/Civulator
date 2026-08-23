@@ -62,9 +62,32 @@ AStarResult hex_astar(
     const uint8_t* river_flags,
     float crossing_cost)
 {
-    // Priority queue: (f_score, coord)
+    // Priority queue: (f_score, coord). Tie-break on coord (r, then q) when
+    // f_score is equal — matching civulator/game/map.py's `_python_astar`
+    // fallback EXACTLY, which pushes `(f_score, neighbor)` python tuples
+    // onto a heapq: on an f_score tie, Python falls through to comparing
+    // `neighbor` as (row, col), i.e. (r, q). Before this fix, this
+    // comparator only ever looked at `.first` (f_score) — on a tie, both
+    // `cmp(a, b)` and `cmp(b, a)` returned false, so std::priority_queue
+    // treated tied entries as equivalent and popped them in whatever order
+    // its internal heap happened to leave them (insertion-order-dependent,
+    // not portable) instead of a deterministic rule. Two different-but-
+    // equal-cost paths could then come out of the C++ and Python
+    // implementations for the exact same query — found via
+    // tests/test_astar_rivers.py's C++-vs-Python parity oracle (design doc
+    // §11 P6 deliverable 5c), which the P7.5 terrain change (different
+    // worlds for the same seeds) was the first thing to actually exercise
+    // an f_score tie against. `(f, r, q)` is a total order (design doc
+    // §4.2 rule 6: "total sort keys everywhere" — the same discipline
+    // mapgen's own nearest-rank/junction/start tie-breaks already follow),
+    // so this makes the C++ and Python A* implementations agree on the
+    // exact path, not just its cost, whenever ties occur.
     using PQEntry = std::pair<float, HexCoord>;
-    auto cmp = [](const PQEntry& a, const PQEntry& b) { return a.first > b.first; };
+    auto cmp = [](const PQEntry& a, const PQEntry& b) {
+        if (a.first != b.first) return a.first > b.first;
+        if (a.second.r != b.second.r) return a.second.r > b.second.r;
+        return a.second.q > b.second.q;
+    };
     std::priority_queue<PQEntry, std::vector<PQEntry>, decltype(cmp)> open(cmp);
 
     std::unordered_map<HexCoord, float, HexCoordHash> g_score;

@@ -100,10 +100,19 @@ _AXIS_CUT_SEARCH_RADIUS = 150
 class StartPlacementError(RuntimeError):
     """Raised when the d_min relax-and-retry ladder is exhausted for some
     region (design doc §6.3/E5: exhausted ladder raises deterministically --
-    "no silent degradation"). Also the exception `GameEnvironment.reset`
-    raises (design doc §3.3/§9.10) if a delivered start somehow fails
-    `found_city` -- a contract violation this module's own guarantees
-    should make unreachable in practice.
+    "no silent degradation" -- this module ALWAYS raises here; it never
+    catches or resamples anything itself). Also the exception
+    `GameEnvironment._reset_attempt` raises (design doc §3.3/§9.10) if a
+    delivered start somehow fails `found_city` -- a contract violation this
+    module's own guarantees should make unreachable in practice.
+
+    D26 amendment (§11 P7.5): what happens to this exception once it leaves
+    mapgen is now `GameEnvironment.reset`'s decision, not automatically
+    fatal. `reset(seed=N)` still lets it propagate unchanged (a specific
+    seed either works or fails loudly). Unseeded `reset()` catches it, logs
+    a warning, and resamples a fresh world from the engine's own continuing
+    RNG stream, bounded by config `[map] max_world_retries` -- see
+    `GameEnvironment.reset`'s own docstring for the full policy.
     """
 
 

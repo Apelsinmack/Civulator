@@ -326,6 +326,51 @@ def draw_resource_marker(cx, cy, size, tile):
 
 
 # =====================================================================
+# Start-position markers (design doc §11 P7.5): the mapgen preview CLI's
+# own overlay for `MapData.starts` -- Erik inspects start fairness at the
+# P8 ceremony, so these need to read as clearly distinct from a resource
+# dot at a glance, not just on close inspection.
+# =====================================================================
+
+_START_RING_COLOR = rl.Color(255, 255, 255, 255)       # bold white ring
+_START_RING_HOLE_COLOR = rl.Color(20, 20, 20, 235)      # near-black hole -> crisp ring silhouette
+_START_FLAG_COLOR = rl.Color(230, 30, 40, 255)          # high-contrast red flag -- distinct from the gold resource dot
+
+
+def draw_start_marker(cx, cy, size):
+    """Bold ring + small flag marking one `MapData.starts` position (design
+    doc §11 P7.5 preview CLI: "distinct markers... clearly different from
+    the gold resource dots"). Deliberately much larger/bolder than
+    `draw_resource_marker`'s small dot: a ring (rendered as a large filled
+    circle with a near-black circle punched out of its center -- the same
+    two-circle idiom `draw_resource_marker` already uses, so this adds no
+    new draw_* primitive) plus a small flag on a pole above it.
+
+    Triangle vertex winding matters here (see `draw_hex`'s docstring:
+    raylib 5.5 silently culls the "wrong" winding instead of erroring) --
+    the order below was confirmed visible with a standalone smoke-test
+    render before landing here, the same way `draw_hex`'s own winding fix
+    was originally found.
+    """
+    outer = max(3.0, size * 0.62)
+    inner = max(1.5, size * 0.38)
+    rl.draw_circle(int(cx), int(cy), outer, _START_RING_COLOR)
+    rl.draw_circle(int(cx), int(cy), inner, _START_RING_HOLE_COLOR)
+
+    ring_top = cy - outer
+    flag_h = size * 0.9
+    pole_top = ring_top - flag_h
+    pole_bottom = ring_top - flag_h * 0.35
+    rl.draw_line_ex(rl.Vector2(cx, cy), rl.Vector2(cx, pole_bottom), 2.0, _START_FLAG_COLOR)
+    rl.draw_triangle(
+        rl.Vector2(cx, pole_top),
+        rl.Vector2(cx, pole_bottom),
+        rl.Vector2(cx + size * 0.55, ring_top - flag_h * 0.65),
+        _START_FLAG_COLOR,
+    )
+
+
+# =====================================================================
 # River-edge primitive (design doc §5, §7.5 item 4). Rivers don't generate
 # until patch P4 — this primitive is wired into painter/recorder/watch now
 # so P4's rivers appear automatically; tests hand-build edges via
