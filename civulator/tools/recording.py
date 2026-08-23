@@ -95,9 +95,20 @@ def build_env_from_scenario(scenario):
     Scenario Painter builds its map the same way, so the same seed reproduces
     the same terrain in both tools — do not replace this with a bare
     `Map(...)`, that reintroduces the unseeded-terrain bug (see the painter).
+
+    map_type="basic" explicit (design doc §11 P3): [map] type's live
+    default is now "earthlike", which raises below Duel size (24x12, E5);
+    painted scenarios (this tool's whole reason to exist) are typically
+    much smaller than that (e.g. the painter's own 16x16 board). The
+    Scenario Painter (`scripts/scenario_painter.py`) generates its terrain
+    the same "basic" way, so the two tools keep building identical worlds
+    from one seed (tests/test_recording.py::
+    test_painter_and_recorder_build_the_same_terrain_from_one_seed) — this
+    is not itself a P3-scope terrain-editing change (E2's painter gap is
+    unaffected), just keeping both call sites pointed at the same generator.
     """
     rows, cols = scenario_dims(scenario)
-    env = GameEnvironment(rows, cols, num_players=2, seed=scenario.get("seed"))
+    env = GameEnvironment(rows, cols, num_players=2, map_type="basic", seed=scenario.get("seed"))
 
     # The constructor places nothing today, but reset()/future changes might —
     # a scenario must contain only what the painter put in it.

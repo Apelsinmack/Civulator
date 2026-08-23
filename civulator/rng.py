@@ -19,6 +19,7 @@ The C++ twin must implement this file's *documented* derived draws too:
     uniform(a,b)  = a + (b - a) * random()
     shuffle       = Fisher-Yates from the top: for i in len-1..1: j=randint(0,i)
     choices       = r = random() * total_weight, linear cumulative scan
+    next_uint64() = (next_uint32() << 32) | next_uint32()   (two draws, high then low)
 
 tests/test_rng.py freezes golden output vectors — the C++ twin is correct when
 it reproduces them bit-for-bit.
@@ -58,6 +59,21 @@ class PortableRNG:
     def random(self):
         """Float in [0, 1) with 32-bit resolution."""
         return self._next_uint32() / 4294967296.0
+
+    def next_uint64(self):
+        """64-bit unsigned integer: two 32-bit draws, high bits first.
+
+        The engine's ONE documented draw for the mapgen master seed (design
+        doc §4.2.1, §11 P3): `Map.generate_map` calls this exactly once per
+        map built, handing the result to `civulator.mapgen.generate` as its
+        `seed` argument. Everything downstream of that point (stage seeds,
+        octave seeds, per-tile hash rolls) is pure `mapgen.seeding.mix64`
+        mixing of that one integer — PortableRNG is never touched again
+        during world synthesis.
+        """
+        high = self._next_uint32()
+        low = self._next_uint32()
+        return (high << 32) | low
 
     def uniform(self, a, b):
         return a + (b - a) * self.random()

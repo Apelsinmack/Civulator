@@ -4,8 +4,106 @@
 [map]
 rows = 24
 columns = 48
-type = "basic"           # "basic" = random terrain
+type = "earthlike"       # "earthlike" (default, Duel-size minimum, E5) | "basic"
 
+# =====================================================================
+# Earthlike world generation (v0.6, docs/terrain_model_design.md §4.3/§4.4,
+# §11 P3) — civulator/mapgen/earthlike.py DEFAULT_PARAMS mirrors every key
+# below (config overrides those code defaults; civulator.mapgen itself
+# never reads this file — Map.generate_map reads it once and passes the
+# resolved dict down, design doc §4.1). Values not pinned by the design doc
+# are this patch's own tuning, not claimed as "the" earthlike numbers — see
+# the P3 implementation report for the reasoning behind each one.
+# =====================================================================
+[map.earthlike]
+continent_wavelength = 3       # coarsest-octave period P_0 (m in P_k = m*2^k); "m ~ 3-4" per §4.3
+octaves = "auto"                # "auto" -> clamp(round(log2(width)) - 2, 3, 9); or an explicit int
+mountain_wavelength = 5         # orogeny-mask noise period
+mountain_belt_percent = 0.35    # nearest-rank fraction of the map that is mountain-belt-eligible
+mountain_amp = 1.5              # amp in E = continentalness + amp * orogeny_mask * ridged
+warp_amp = 4.0                  # domain-warp displacement, in hex-center units
+warp_octaves = 3
+land_percent = 0.35             # whole-map nearest-rank fraction that becomes land (sea level)
+mountain_percent = 0.08         # fraction OF LAND that becomes mountain relief
+hill_percent = 0.20             # fraction OF LAND that becomes hill relief (cumulative with mountain)
+smooth_iterations = 3           # talus-smoothing Jacobi iteration count (design doc §4.2 rule 5)
+talus_slope = 0.08              # max elevation delta between neighbors before diffusion
+diffusion_coeff = 0.4           # fraction of excess slope that diffuses per talus iteration
+lake_max_size = 12              # connected water components <= this many tiles become Lake
+temp_wobble_amp = 0.3           # coherent temperature-band-boundary wobble amplitude
+temp_wobble_wavelength = 4
+temp_lapse_rate = 0.8           # temperature lost per unit elevation above sea level
+temp_snow_percentile = 0.25     # PW3 starting number (§4.4): coldest 25% of land -> Snow
+temp_tundra_percentile = 0.30   # next up to 30th percentile -> Tundra
+moisture_wavelength = 5
+moisture_octaves = 4
+moisture_desert_percentile = 0.36  # PW3 starting number (§4.4): driest 36% of (warm) land -> Desert
+moisture_plains_percentile = 0.56  # next up to 56th percentile -> Plains; rest -> Grassland
+river_percent = 0.18            # P4 — inert until rivers generate
+river_moisture_bonus = 0.1      # P4 — inert until rivers generate
+
+[map.earthlike.feature_chance]
+# Per-tile hash-roll probability (design doc §4.2 rule 3), applied only to
+# tiles that already pass BOTH the structural `on` gate and this stage's
+# climate-band gate (civulator/mapgen/features.py).
+woods = 0.35
+rainforest = 0.50
+marsh = 0.15
+ice = 0.70
+reef = 0.30
+
+# =====================================================================
+# Map size presets (design doc §6, D14): rows/cols (never W x H — kills the
+# transposition ambiguity) + default/max players. GameEnvironment preset
+# RESOLUTION (selecting a size by name) is P5 scope; the mapgen preview CLI
+# (`python -m civulator.mapgen --size NAME`) already resolves through this
+# table (civulator/mapgen/data.py:resolve_size).
+# =====================================================================
+[map.sizes.duel]
+rows = 12
+cols = 24
+default_players = 2
+max_players = 3
+
+[map.sizes.tiny]
+rows = 16
+cols = 32
+default_players = 3
+max_players = 4
+
+[map.sizes.small]
+rows = 20
+cols = 40
+default_players = 4
+max_players = 6
+
+[map.sizes.standard]
+rows = 24
+cols = 48
+default_players = 6
+max_players = 8
+
+[map.sizes.large]
+rows = 32
+cols = 64
+default_players = 8
+max_players = 12
+
+[map.sizes.huge]
+rows = 42
+cols = 84
+default_players = 12
+max_players = 16
+
+[map.sizes.colossal]
+rows = 66
+cols = 106
+default_players = 12
+max_players = 24
+
+# --- "basic" generator (design doc §4.1, §11 P3): iid per-tile terrain, the
+# deliberately simple option — same weight table pre-0.6 had, now consumed
+# by civulator/mapgen/basic.py instead of the deleted engine-level shim. ---
 [map.terrain_weights]
 # Relative weights for terrain generation (will be normalized)
 Plains = 0.30

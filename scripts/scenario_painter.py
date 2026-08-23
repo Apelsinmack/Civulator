@@ -90,9 +90,18 @@ class PainterState:
         seeded RNG. (Before this was fixed the painter called np.random.seed()
         and then Map(...) with no rng, but Map draws from its own
         random.Random(); the saved seed reproduced nothing.)
+
+        map_type="basic" explicit (design doc §11 P3): [map] type's live
+        default is now "earthlike", which raises below Duel size (24x12,
+        E5) — this painter's board (MAP_ROWS x MAP_COLS = 16x16) predates
+        that minimum. `civulator.tools.recording.build_env_from_scenario`
+        pins the same "basic" so painted terrain still reconstructs
+        identically from its saved seed (E5's "painter default board moves
+        to Duel earthlike" is a separate, not-yet-scheduled migration —
+        this patch only keeps the painter working under the new default).
         """
         self.seed = random.randint(0, 99999)
-        env = GameEnvironment(MAP_ROWS, MAP_COLS, num_players=2, seed=self.seed)
+        env = GameEnvironment(MAP_ROWS, MAP_COLS, num_players=2, map_type="basic", seed=self.seed)
         self.game_map = env.map
         self.units = []
         self.cities = []

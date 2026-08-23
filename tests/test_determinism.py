@@ -3,6 +3,14 @@
 Determinism is required by the project's research methodology (fixed seeds,
 replicable experiments) and by demonstration recording (plays must be
 replayable against the identical world).
+
+map_type="basic" is explicit everywhere below (design doc §11 P3): these
+worlds are all 8x16, below earthlike's Duel-size minimum (24x12, E5) now
+that `[map] type`'s live default is "earthlike". Determinism itself is
+exercised for earthlike too, at Duel size, in
+tests/test_mapgen_earthlike.py — this file is about the reset(seed)/RNG-
+stream CONTRACT (world identity + the seeded-then-unseeded replay sequence),
+which is orthogonal to which generator produced the world.
 """
 
 from civulator.game.environment import GameEnvironment
@@ -39,14 +47,14 @@ def world_fingerprint(env):
 
 
 def test_same_seed_reproduces_identical_world():
-    env1 = GameEnvironment(8, 16, num_players=2).reset(seed=123)
-    env2 = GameEnvironment(8, 16, num_players=2).reset(seed=123)
+    env1 = GameEnvironment(8, 16, num_players=2, map_type="basic").reset(seed=123)
+    env2 = GameEnvironment(8, 16, num_players=2, map_type="basic").reset(seed=123)
     assert world_fingerprint(env1) == world_fingerprint(env2)
 
 
 def test_different_seeds_produce_different_worlds():
-    env1 = GameEnvironment(8, 16, num_players=2).reset(seed=123)
-    env2 = GameEnvironment(8, 16, num_players=2).reset(seed=456)
+    env1 = GameEnvironment(8, 16, num_players=2, map_type="basic").reset(seed=123)
+    env2 = GameEnvironment(8, 16, num_players=2, map_type="basic").reset(seed=456)
     # 128 tiles of weighted terrain — identical worlds are astronomically unlikely
     assert world_fingerprint(env1) != world_fingerprint(env2)
 
@@ -54,7 +62,7 @@ def test_different_seeds_produce_different_worlds():
 def test_seeded_reset_sequence_is_reproducible():
     """reset(seed) then unseeded resets: the episode SEQUENCE must replay exactly."""
     def three_worlds():
-        env = GameEnvironment(8, 16, num_players=2)
+        env = GameEnvironment(8, 16, num_players=2, map_type="basic")
         env.reset(seed=7)
         worlds = [world_fingerprint(env)]
         for _ in range(2):

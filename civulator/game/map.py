@@ -11,10 +11,10 @@ import sys
 
 import numpy as np
 
-from .. import hexmath
+from .. import hexmath, mapgen
 from ..hexmath import HEX_DIRECTIONS  # re-exported: civulator.agents.networks imports it from here
 from ..rng import PortableRNG
-from ..terrain_model import can_enter, check_on
+from ..terrain_model import can_enter
 
 from .tile import Tile
 
@@ -30,20 +30,6 @@ except ImportError:
 # blocked (design doc §3.3). Only the cost-grid builder writes it, and only the
 # two A* implementations read it — no gameplay code compares magic costs.
 BLOCKED_COST = 99.0
-
-# Interim world-gen shim (design doc §11 P2a): the pre-0.6 flat terrain names
-# in [map.terrain_weights] mapped onto layer triples (base, relief, feature).
-# Patch P3 deletes this together with generate_map's random draws, replacing
-# both with the mapgen package.
-_LEGACY_TERRAIN_LAYERS = {
-    "Plains": ("Plains", "flat", None),
-    "Grassland": ("Grassland", "flat", None),
-    "Desert": ("Desert", "flat", None),
-    "Tundra": ("Tundra", "flat", None),
-    "Hills": ("Plains", "hills", None),
-    "Woods": ("Grassland", "flat", "Woods"),
-    "Mountain": ("Plains", "mountain", None),
-}
 
 
 class Map:
@@ -72,58 +58,68 @@ class Map:
         self._visible_cache_epoch = 0
         self._cost_grids = {}
 
-    def generate_map(self, map_type="basic"):
-        """Generate a map with random terrain. Weights from config.toml.
+    def generate_map(self, map_type="basic", num_players=2):
+        """Generate a map via `civulator.mapgen` (design doc §4.1, §11 P3).
 
-        INTERIM SHIM (design doc §11 P2a): the draw ORDER is exactly the
-        pre-0.6 one — one weighted terrain choice per tile, then the feature
-        rolls — so a seed keeps producing the same sequence of draws; only the
-        resulting tiles are layered now (_LEGACY_TERRAIN_LAYERS). Two
-        consequences of the real validity matrix, both deliberate:
+        Draws exactly ONE master seed from `self.rng` (`civulator.rng.
+        PortableRNG`, shared with the owning `GameEnvironment` — design doc
+        §4.2.1: "reset(seed) makes ONE documented draw from PortableRNG").
+        Everything mapgen does with it from there is pure integer/coordinate
+        hashing (`mapgen.seeding.mix64`), never a further stream draw (D19)
+        — this is the only place `self.rng` is touched during world
+        synthesis. Unseeded resets keep working because `self.rng`'s stream
+        simply continues from wherever the previous episode left it (§4.2.1:
+        "unseeded resets draw the next master from the engine stream"),
+        which is exactly what `tests/test_determinism.py`'s seeded-then-
+        unseeded replay sequence exercises.
 
-        * legacy "Woods" tiles are Grassland + Woods, legacy "Hills" and
-          "Mountain" are Plains + that relief (§3: relief keeps its base);
-        * Rainforest is Plains-only in the new matrix, so where the old world
-          would have put it on Grassland the roll is still consumed (draw order
-          is preserved) but nothing is placed.
+        Reads config.toml ONCE here — the "call boundary" mapgen's own
+        purity contract expects (design doc §4.1: "generate must be pure
+        given its inputs — read config once at call boundary, pass down")
+        — and translates it into the explicit `params` dict each generator
+        expects; `civulator.mapgen` itself never imports `civulator.config`
+        (so tests can pin exact params without touching global config,
+        design doc §8/D21).
 
-        Patch P3 replaces this method wholesale with the mapgen package.
+        REPLACES the P2a interim shim wholesale (`_LEGACY_TERRAIN_LAYERS`
+        and this method's own `self.rng.choices`/`.random()` draws) —
+        `mapgen.basic` is its coordinate-hashed, `on`-constraint-respecting
+        successor (see its module docstring for the exact correspondence).
         """
         from ..config import CFG
 
-        cfg_weights = CFG.get("map", {}).get("terrain_weights", {})
-        cfg_features = CFG.get("map", {}).get("features", {})
-
-        if cfg_weights:
-            terrain_types = list(cfg_weights.keys())
-            raw_weights = [cfg_weights[t] for t in terrain_types]
-            total = sum(raw_weights)
-            weights = [w / total for w in raw_weights]
+        map_cfg = CFG.get("map", {})
+        if map_type == "earthlike":
+            params = map_cfg.get("earthlike", {})
         else:
-            terrain_types = [
-                "Plains", "Grassland", "Desert", "Tundra",
-                "Hills", "Woods", "Mountain",
-            ]
-            weights = [0.3, 0.3, 0.1, 0.1, 0.1, 0.05, 0.05]
+            params = {}
+            if map_cfg.get("terrain_weights"):
+                params["terrain_weights"] = map_cfg["terrain_weights"]
+            features_cfg = map_cfg.get("features", {})
+            feature_chance = {}
+            if "woods_chance" in features_cfg:
+                feature_chance["woods"] = features_cfg["woods_chance"]
+            if "rainforest_chance" in features_cfg:
+                feature_chance["rainforest"] = features_cfg["rainforest_chance"]
+            if feature_chance:
+                params["feature_chance"] = feature_chance
 
-        woods_chance = cfg_features.get("woods_chance", 0.2)
-        rainforest_chance = cfg_features.get("rainforest_chance", 0.1)
+        master_seed = self.rng.next_uint64()
+        map_data = mapgen.generate(
+            master_seed, (self.n, self.m), num_players=num_players,
+            params=params, map_type=map_type,
+        )
 
-        for i in range(self.n):
-            for j in range(self.m):
-                terrain = self.rng.choices(terrain_types, weights=weights, k=1)[0]
-                base, relief, feature = _LEGACY_TERRAIN_LAYERS.get(
-                    terrain, (terrain, "flat", None)
+        for r in range(self.n):
+            for c in range(self.m):
+                self.tiles[r, c] = Tile(
+                    r, c, map_data.base_terrain[r, c],
+                    relief=map_data.relief[r, c],
+                    feature=map_data.feature[r, c],
+                    resource=map_data.resource[r, c],
                 )
 
-                if terrain in ["Plains", "Grassland", "Tundra"] and self.rng.random() < woods_chance:
-                    if check_on("feature", "Woods", base, relief, None):
-                        feature = "Woods"
-                elif terrain in ["Plains", "Grassland"] and self.rng.random() < rainforest_chance:
-                    if check_on("feature", "Rainforest", base, relief, None):
-                        feature = "Rainforest"
-
-                self.tiles[i, j] = Tile(i, j, base, relief=relief, feature=feature)
+        self.rivers = set(map_data.rivers)
 
     def add_river(self, tile1_coords, tile2_coords):
         """Add a river between two tiles.

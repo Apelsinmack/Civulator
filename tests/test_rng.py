@@ -19,6 +19,21 @@ def test_uint32_matches_pcg32_reference():
     ]
 
 
+def test_next_uint64_combines_two_uint32_draws_high_first():
+    """next_uint64() (design doc §4.2.1, added P3 for the mapgen master-seed
+    draw) is exactly (first_uint32 << 32) | second_uint32 — derived from the
+    same frozen seed=42 vector `test_uint32_matches_pcg32_reference` pins."""
+    r = PortableRNG(42)
+    assert r.next_uint64() == (2707161783 << 32) | 2068313097
+
+    # And it really does consume two draws from the shared stream (a
+    # subsequent _next_uint32() continues where next_uint64() left off).
+    r2 = PortableRNG(42)
+    r2._next_uint32()
+    r2._next_uint32()
+    assert r2._next_uint32() == 3122475824
+
+
 def test_derived_draws_are_frozen():
     r = PortableRNG(42)
     assert [round(r.random(), 10) for _ in range(3)] == [
@@ -61,8 +76,16 @@ def test_engine_world_is_frozen_across_versions():
     """A seeded world's fingerprint must never change silently — scenario files
     depend on it (terrain is rebuilt from the stored seed). If this test fails,
     a CHANGELOG entry and version bump are REQUIRED, and existing scenario
-    terrain is invalidated."""
-    env = GameEnvironment(8, 16, num_players=2).reset(seed=42)
+    terrain is invalidated.
+
+    map_type="basic" explicit (design doc §11 P3): [map] type's live default
+    is now "earthlike" (E5), which raises below Duel size (24x12) — this
+    fixture's 8x16 board predates that minimum. Forcing "basic" keeps this
+    xfail's MEANING intact (the basic generator's content changed too, by
+    design — see mapgen/basic.py's docstring — so this still correctly xfails
+    on its frozen labels) instead of failing for an unrelated reason.
+    """
+    env = GameEnvironment(8, 16, num_players=2, map_type="basic").reset(seed=42)
     terrains = [env.map.tiles[i, j].label for i in range(2) for j in range(8)]
     assert terrains == [
         "Desert", "Grassland", "Tundra", "Tundra", "Hills", "Mountain", "Plains", "Woods",

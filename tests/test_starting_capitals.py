@@ -5,13 +5,21 @@ returns None when the start tile is Mountain/Ocean or within min_city_distance
 of an already-placed capital — that player then starts city-less, is marked
 dead by end_turn on turn one, and their units are deleted: the observed
 "city disappears near game start".
+
+map_type="basic" explicit (design doc §11 P3): starts (design doc §6/D13,
+`MapData.starts`) are P5 scope — reset() still finds capitals via its
+pre-0.6 uniform-random retry ladder (§11 P3: "capitals: reset keeps its
+CURRENT random placement for now"), which was tuned against basic's
+land-heavy, water-free board. Pinning "basic" keeps THIS regression test
+about issue #1's retry logic, not about how much of an earthlike board
+happens to be ocean.
 """
 
 from civulator.game.environment import MIN_CITY_DISTANCE, GameEnvironment
 
 
 def test_every_player_gets_exactly_one_capital():
-    env = GameEnvironment(24, 48, num_players=8)
+    env = GameEnvironment(24, 48, num_players=8, map_type="basic")
     for seed in range(40):
         env.reset(seed=seed)
         for player in env.players:
@@ -22,7 +30,7 @@ def test_every_player_gets_exactly_one_capital():
 
 
 def test_capitals_respect_min_distance_and_terrain():
-    env = GameEnvironment(24, 48, num_players=8)
+    env = GameEnvironment(24, 48, num_players=8, map_type="basic")
     for seed in range(10):
         env.reset(seed=seed)
         capitals = [p.cities[0].coordinates for p in env.players]

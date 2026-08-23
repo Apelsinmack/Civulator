@@ -28,6 +28,15 @@ _GAME_CFG = CFG.get("game", {})
 STARTING_WARRIORS = _GAME_CFG.get("starting_warriors", 3)
 MIN_CITY_DISTANCE = _GAME_CFG.get("min_city_distance", 3)
 
+# `[map] type` is now a real, read key (design doc E5) — the constructor's
+# `map_type=None` resolves to THIS, not a hardcoded literal, so config.toml
+# is what "silently decides what painter/recorder/tests get" (E5's own
+# framing of the pre-0.6 problem) rather than a value baked into this file.
+# Tests/tools that need a specific generator (most do, at sub-Duel sizes)
+# pass `map_type=` explicitly and are unaffected by this default.
+_MAP_CFG = CFG.get("map", {})
+DEFAULT_MAP_TYPE = _MAP_CFG.get("type", "earthlike")
+
 # Improvement placement rules — the same `on` formalism as terrain layers
 # (design doc §3.1, §9.6), replacing the hardcoded terrain lists this file
 # used to carry. An improvement with no `on` entry is buildable nowhere.
@@ -42,11 +51,11 @@ class GameEnvironment:
         env.step(action) -> (raw_state, reward, done, info)
     """
 
-    def __init__(self, n, m, num_players=2, map_type="basic", seed=None):
+    def __init__(self, n, m, num_players=2, map_type=None, seed=None):
         self.n = n
         self.m = m
         self.num_players = num_players
-        self.map_type = map_type
+        self.map_type = map_type if map_type is not None else DEFAULT_MAP_TYPE
         self.turn_counter = 1
         self.max_turns = 1000
         self.done = False
@@ -60,7 +69,7 @@ class GameEnvironment:
 
         # Initialize map and players
         self.map = Map(n, m, rng=self.rng)
-        self.map.generate_map(map_type)
+        self.map.generate_map(self.map_type, num_players=self.num_players)
 
         for i in range(num_players):
             player = Player(f"Player {i+1}", i, self)
@@ -91,7 +100,7 @@ class GameEnvironment:
 
         # Regenerate map
         self.map = Map(self.n, self.m, rng=self.rng)
-        self.map.generate_map(self.map_type)
+        self.map.generate_map(self.map_type, num_players=self.num_players)
 
         # Reset or recreate players
         if num_players is not None:

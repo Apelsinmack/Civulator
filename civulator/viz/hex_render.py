@@ -96,6 +96,19 @@ def draw_hex(cx, cy, size, color):
 
     Pointy-top vertices (§7.5: angle = 60*i + 30, was 60*i for the old
     flat-top art — sprites are unrotated centered icons, so no art changes).
+
+    Fan winding (design doc §11 P3 finding, discovered by the mapgen
+    preview CLI's smoke test): pyray/raylib 5.5's `draw_triangle` culls
+    triangles with a positive (center, p[i], p[j]) signed area in screen
+    pixel space (x right, y DOWN) — which every triangle in this fan has,
+    since `points` walks strictly increasing angles (p[j] is always 60
+    degrees further around than p[i]). The fill was silently invisible
+    (only `draw_hex_outline`'s lines ever showed) in every tool that calls
+    this — painter, recorder, watch, and the new mapgen preview — until the
+    mapgen CLI's screenshot smoke test actually inspected a rendered image
+    instead of only checking for "no exception". Passing (center, p[j],
+    p[i]) — the reverse order — flips the sign and renders correctly;
+    verified with a solid-fill screenshot before/after.
     """
     points = []
     for i in range(6):
@@ -104,13 +117,14 @@ def draw_hex(cx, cy, size, color):
         py = cy + size * math.sin(angle)
         points.append((px, py))
 
-    # Draw as triangles (fan from center)
+    # Draw as triangles (fan from center) — (center, p[j], p[i]) order, not
+    # (center, p[i], p[j]): see the winding note above.
     for i in range(6):
         j = (i + 1) % 6
         rl.draw_triangle(
             rl.Vector2(cx, cy),
-            rl.Vector2(points[i][0], points[i][1]),
             rl.Vector2(points[j][0], points[j][1]),
+            rl.Vector2(points[i][0], points[i][1]),
             color,
         )
 

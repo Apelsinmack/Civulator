@@ -12,8 +12,15 @@ from civulator.game.unit import ArcherUnit, CatapultUnit, WarriorUnit
 
 
 def make_flat_env(n=8, m=16):
-    """Environment with all-Plains terrain so LoS and occupancy can't interfere."""
-    env = GameEnvironment(n, m, num_players=2)
+    """Environment with all-Plains terrain so LoS and occupancy can't interfere.
+
+    map_type="basic" explicit (design doc §11 P3): [map] type's live
+    default is now "earthlike", which raises below Duel size (24x12, E5) —
+    this fixture's 8x16 board predates that minimum, and every tile gets
+    overwritten below anyway, so the generator that ran first is otherwise
+    irrelevant. Shared by test_fog.py and test_terrain_repoint.py too.
+    """
+    env = GameEnvironment(n, m, num_players=2, map_type="basic")
     for i in range(n):
         for j in range(m):
             env.map.tiles[i, j].set_layers("Plains", map_ref=env.map)
