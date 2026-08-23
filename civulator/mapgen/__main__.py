@@ -44,6 +44,7 @@ from ..viz.hex_render import (
 )
 from . import MAP_TYPES, generate
 from .data import resolve_size
+from .starts import StartPlacementError
 
 HEX_SIZE = 12
 SCREEN_W = 1400
@@ -132,11 +133,22 @@ def _draw_warmed_up_frame(tiles, rivers, starts, rows, cols, camera, show_starts
     _draw_frame(tiles, rivers, starts, rows, cols, camera, show_starts)
 
 
-def _resolve_cli_size(args):
+def _resolve_cli_size_and_players(args):
     sizes_table = CFG.get("map", {}).get("sizes", {})
     if args.rows is not None and args.cols is not None:
-        return int(args.rows), int(args.cols)
-    return resolve_size(args.size, sizes_table)
+        rows, cols = int(args.rows), int(args.cols)
+        preset = {}
+    else:
+        rows, cols = resolve_size(args.size, sizes_table)
+        preset = sizes_table.get(args.size, {})
+    if args.players is not None:
+        players = int(args.players)
+    else:
+        # Named preset -> its default_players; bare rows/cols fall back to
+        # generate()'s own default (2). The status line always shows the
+        # count, so a 2-capital world can't be mistaken for a preset default.
+        players = int(preset.get("default_players", 2))
+    return rows, cols, players
 
 
 def _resolve_cli_params(map_type):
@@ -170,10 +182,12 @@ def run_preview(argv=None):
     parser.add_argument("--rows", type=int, default=None, help="override: explicit row count")
     parser.add_argument("--cols", type=int, default=None, help="override: explicit column count")
     parser.add_argument("--type", dest="map_type", choices=MAP_TYPES, default="earthlike")
+    parser.add_argument("--players", type=int, default=None,
+                        help="number of players/starts (default: the size preset's default_players)")
     parser.add_argument("--png", type=str, default=None, help="render one frame, save it here, exit")
     args = parser.parse_args(argv)
 
-    rows, cols = _resolve_cli_size(args)
+    rows, cols, players = _resolve_cli_size_and_players(args)
     seed = args.seed if args.seed is not None else random.randint(0, 2**31 - 1)
     params = _resolve_cli_params(args.map_type)
 
@@ -181,7 +195,7 @@ def run_preview(argv=None):
     rl.set_target_fps(60)
     camera = make_camera(rows, cols, HEX_SIZE, SCREEN_W, SCREEN_H, zoom=0.6)
 
-    map_data = generate(seed, (rows, cols), params=params, map_type=args.map_type)
+    map_data = generate(seed, (rows, cols), num_players=players, params=params, map_type=args.map_type)
     tiles = _build_tiles(map_data)
     # Shown by default (design doc §11 P7.5: Erik inspects start fairness at
     # the P8 ceremony) — T toggles, in both the --png one-shot render and
@@ -192,16 +206,25 @@ def run_preview(argv=None):
         _draw_warmed_up_frame(tiles, map_data.rivers, map_data.starts, rows, cols, camera, show_starts)
         _screenshot(args.png)
         rl.close_window()
-        print(f"Saved {args.png} (seed={seed}, {rows}x{cols}, type={args.map_type})")
+        print(f"Saved {args.png} (seed={seed}, {rows}x{cols}, {players}p, type={args.map_type})")
         return
 
-    print(f"seed={seed} size={rows}x{cols} type={args.map_type} — "
+    print(f"seed={seed} size={rows}x{cols} players={players} type={args.map_type} — "
           f"N=new seed  S=screenshot  T=toggle starts  arrows/drag=pan  wheel=zoom  ESC=quit")
 
     while not rl.window_should_close():
         if rl.is_key_pressed(rl.KEY_N):
-            seed = random.randint(0, 2**31 - 1)
-            map_data = generate(seed, (rows, cols), params=params, map_type=args.map_type)
+            # A random reroll may hit a world where fair placement is
+            # impossible (D26: ~2% of seeds) — skip those with a note
+            # rather than crashing the preview.
+            for _ in range(20):
+                seed = random.randint(0, 2**31 - 1)
+                try:
+                    map_data = generate(seed, (rows, cols), num_players=players,
+                                        params=params, map_type=args.map_type)
+                    break
+                except StartPlacementError:
+                    print(f"seed={seed}: no fair start placement for {players}p, rerolling")
             tiles = _build_tiles(map_data)
             print(f"seed={seed}")
 
