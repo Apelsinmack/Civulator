@@ -186,7 +186,10 @@ class TestAllLandWorld:
         assert not np.any(np.isin(md.base_terrain, ["Coast", "Ocean", "Lake"]))
         frac = stats.terrain_mix_fractions(md)
         assert frac["land_fraction"] == 1.0
-        assert md.rivers == set()
+        # P4 (design doc §5): MapData.rivers is a dict (tile-pair -> RiverEdge,
+        # carrying flow+flux), never a set -- {} is the empty case, not set().
+        assert md.rivers == {}
+        assert not np.any(md.feature == "Floodplains")
 
 
 # --- (h) size guards --------------------------------------------------------

@@ -46,7 +46,12 @@ class Map:
         self.n = n_rows
         self.m = m_columns
         self.tiles = np.empty((self.n, self.m), dtype=object)
-        self.rivers = set()
+        # {(coords1, coords2): mapgen.rivers.RiverEdge} (design doc §5, P4)
+        # — a dict (not a set) so each edge carries flow direction + flux;
+        # has_river_between/draw_river_edges/add_river all only ever touch
+        # the keys, which iterate/compare identically to the old set of
+        # plain tile-pair tuples (see add_river/has_river_between below).
+        self.rivers = {}
         # Terrain/feature randomness draws from here; pass the owning
         # GameEnvironment's rng for reproducible maps.
         self.rng = rng if rng is not None else PortableRNG()
@@ -57,6 +62,8 @@ class Map:
         self._visible_cache = {}
         self._visible_cache_epoch = 0
         self._cost_grids = {}
+        self._fresh_water_cache = None
+        self._fresh_water_cache_epoch = None
 
     def generate_map(self, map_type="basic", num_players=2):
         """Generate a map via `civulator.mapgen` (design doc §4.1, §11 P3).
@@ -119,18 +126,32 @@ class Map:
                     resource=map_data.resource[r, c],
                 )
 
-        self.rivers = set(map_data.rivers)
+        self.rivers = dict(map_data.rivers)
+        # Seed the fresh-water cache directly from what mapgen already
+        # computed (design doc §5/§3.4) rather than recomputing it — same
+        # function, same inputs (is_fresh_water's docstring), this just
+        # skips the redundant pass over every tile.
+        self._fresh_water_cache = map_data.fresh_water
+        self._fresh_water_cache_epoch = self.terrain_epoch
 
-    def add_river(self, tile1_coords, tile2_coords):
-        """Add a river between two tiles.
+    def add_river(self, tile1_coords, tile2_coords, flux=0):
+        """Add a river between two tiles (§7.5 item 4's hand-built-edge API).
 
-        Bumps terrain_epoch like Tile.set_layers does (design doc §3.4): river
-        edges are terrain state, and the cost grids become river-aware in P6.
+        `flux` defaults to 0: this API only ever supplies a tile pair, not
+        the corner-junction flow data mapgen's own generator produces
+        (design doc §5) — a hand-built edge (tests, before/without real
+        generated data) gets a RiverEdge with `upstream=downstream=None`
+        rather than fabricated junction ids.
+
+        Bumps terrain_epoch like Tile.set_layers does (design doc §3.4):
+        river edges are terrain state, and the cost grids/fresh-water mask
+        become river-aware. A* stays river-blind until P6 (design doc E3).
         """
         if tile1_coords < tile2_coords:
-            self.rivers.add((tile1_coords, tile2_coords))
+            edge = (tile1_coords, tile2_coords)
         else:
-            self.rivers.add((tile2_coords, tile1_coords))
+            edge = (tile2_coords, tile1_coords)
+        self.rivers[edge] = mapgen.rivers.RiverEdge(upstream=None, downstream=None, flux=flux)
         self.terrain_epoch += 1
 
     def has_river_between(self, tile1_coords, tile2_coords):
@@ -139,6 +160,36 @@ class Map:
             return (tile1_coords, tile2_coords) in self.rivers
         else:
             return (tile2_coords, tile1_coords) in self.rivers
+
+    def is_fresh_water(self, coordinates):
+        """Whether this tile is fresh water (design doc §5, §3.4): adjacent
+        to a river edge, adjacent to (or on) Lake, or carries Oasis — the
+        engine's only fresh-water query. Cached per (map_uid, terrain_epoch)
+        like every other terrain-derived cache (§3.4); recomputed from
+        CURRENT tiles/rivers via the SAME function mapgen used to produce
+        MapData.fresh_water (`mapgen.rivers.fresh_water_mask`) whenever the
+        epoch has moved on, so there is one fresh-water definition, not two,
+        and it stays correct if rivers/terrain mutate after generation
+        (add_river, Tile.set_layers).
+        """
+        mask = self._fresh_water_grid()
+        row, col = coordinates
+        return bool(mask[row, col % self.m])
+
+    def _fresh_water_grid(self):
+        if self._fresh_water_cache is None or self._fresh_water_cache_epoch != self.terrain_epoch:
+            base_terrain = np.empty((self.n, self.m), dtype=object)
+            feature = np.empty((self.n, self.m), dtype=object)
+            for r in range(self.n):
+                for c in range(self.m):
+                    tile = self.tiles[r, c]
+                    base_terrain[r, c] = tile.base_terrain if tile is not None else None
+                    feature[r, c] = tile.feature if tile is not None else None
+            self._fresh_water_cache = mapgen.rivers.fresh_water_mask(
+                self.rivers, base_terrain, feature, self.n, self.m
+            )
+            self._fresh_water_cache_epoch = self.terrain_epoch
+        return self._fresh_water_cache
 
     def get_tile(self, coordinates):
         """Get the tile at the specified coordinates, handling horizontal wrapping."""

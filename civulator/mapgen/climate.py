@@ -77,16 +77,23 @@ def compute_raw_moisture(x: np.ndarray, y: np.ndarray, width: int, master_seed: 
     return fbm(x, y, width, moisture_seed, p["moisture_octaves"], p["moisture_wavelength"])
 
 
-def apply_river_moisture_bonus(moisture: np.ndarray, fresh_water: np.ndarray, bonus: float) -> np.ndarray:
-    """River-bonus DAG slot (design doc §5) -- INERT in P3: `fresh_water` is
-    always all-False (rivers are P4 scope, `MapData.fresh_water` is a clean
-    stub), so this is a documented no-op until P4 populates it. Written as
-    the real formula (not literally `return moisture`) so P4 only has to
-    stop passing an all-False mask, not touch this function.
+def apply_river_moisture_bonus(moisture: np.ndarray, river_adjacent: np.ndarray, bonus: float) -> np.ndarray:
+    """River-bonus DAG slot (design doc §5, §11 P4 deliverable 2): moisture
+    gets `+bonus` on every tile touching a river edge, before biome
+    classification consumes it.
+
+    `river_adjacent` (P3 named this parameter `fresh_water` when it was
+    always an all-False stub -- renamed now that it carries a real mask):
+    specifically `rivers.river_adjacent_mask(rivers, rows, cols)`, the
+    narrower "touches a river edge" condition, NOT the full §5 fresh-water
+    definition (which also includes Lake-adjacency and Oasis) -- the P4
+    deliverable text is explicit that the bonus applies "where
+    river-adjacent", and the full fresh_water mask isn't computable this
+    early in the DAG anyway (it needs Oasis, placed much later).
     """
-    if not np.any(fresh_water):
+    if not np.any(river_adjacent):
         return moisture
-    return moisture + bonus * fresh_water.astype(np.float64)
+    return moisture + bonus * river_adjacent.astype(np.float64)
 
 
 def classify_biomes(temperature: np.ndarray, moisture: np.ndarray, is_land: np.ndarray, p: dict):

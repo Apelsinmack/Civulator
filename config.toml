@@ -39,18 +39,28 @@ moisture_wavelength = 5
 moisture_octaves = 4
 moisture_desert_percentile = 0.36  # PW3 starting number (§4.4): driest 36% of (warm) land -> Desert
 moisture_plains_percentile = 0.56  # next up to 56th percentile -> Plains; rest -> Grassland
-river_percent = 0.18            # P4 — inert until rivers generate
-river_moisture_bonus = 0.1      # P4 — inert until rivers generate
+
+# --- Rivers (v0.6, design doc §5, §11 P4) — civulator/mapgen/rivers.py ---
+river_percent = 0.18               # nearest-rank UPSTREAM FLUX quantile that becomes river (§5: "~0.15-0.20")
+river_moisture_bonus = 0.1         # added to moisture where river-adjacent, before biome classification
+river_min_length = 2               # rivers (connected junction-edge components) shorter than this are dropped
+river_pd_epsilon = 0.0001          # ε: Planchon-Darboux sink-fill step (design doc §4.2 rule 5) — ε >> jitter
+river_altitude_jitter = 0.0000001  # δ: per-junction altitude jitter magnitude, δ << ε (breaks exact ties)
 
 [map.earthlike.feature_chance]
 # Per-tile hash-roll probability (design doc §4.2 rule 3), applied only to
 # tiles that already pass BOTH the structural `on` gate and this stage's
-# climate-band gate (civulator/mapgen/features.py).
+# eligibility gate (civulator/mapgen/features.py). Woods/rainforest/marsh/
+# ice/reef gate on climate bands (temp_rank/moisture_rank); oasis (§5) gates
+# on its own river/water/neighbor-Oasis eligibility instead — its number
+# here is the roll probability on already-ELIGIBLE tiles, not a fraction of
+# all land (design doc §5's "~1% of land" describes the resulting COUNT).
 woods = 0.35
 rainforest = 0.50
 marsh = 0.15
 ice = 0.70
 reef = 0.30
+oasis = 0.20
 
 # =====================================================================
 # Map size presets (design doc §6, D14): rows/cols (never W x H — kills the
@@ -269,9 +279,17 @@ on = { bases = ["Coast", "Ocean"] }
 # "polar" (§3) is a latitude condition, enforced by the generator (P3/P4).
 
 # --- Resources (bonus tier, §3.2; luxury/strategic ship schema-ready via `class`) ---
+# `chance` (added P4, design doc §11 P4 deliverable 5): per-tile hash-roll
+# probability (design doc §4.2 rule 3), applied only to tiles that already
+# pass this resource's `on` constraint AND don't already carry a resource —
+# civulator/mapgen/resources.py. Tuned so a Standard-size (48x24) earthlike
+# world carries roughly 15-30 total bonus resources across all 8 kinds
+# combined (see the P4 implementation report for the seed sweep this was
+# tuned against) — NOT independently "the" rate for any one resource.
 [terrain.resource.Wheat]
 class = "bonus"
 yields = [1, 0]
+chance = 0.05
 # Civ 6: Wheat sits on flat Plains, or on Desert Floodplains. The single
 # AND-of-ORs mapping the design doc sketched (bases=["Plains"],
 # features=["none","Floodplains"]) is unsatisfiable on its Floodplains branch —
@@ -284,26 +302,31 @@ on = [
 [terrain.resource.Rice]
 class = "bonus"
 yields = [1, 0]
+chance = 0.04
 on = { bases = ["Grassland"], relief = ["flat"], features = ["none", "Marsh"] }
 
 [terrain.resource.Cattle]
 class = "bonus"
 yields = [1, 0]
+chance = 0.04
 on = { bases = ["Grassland"], relief = ["flat"], features = ["none"] }
 
 [terrain.resource.Sheep]
 class = "bonus"
 yields = [0, 1]
+chance = 0.04
 on = { relief = ["hills"], features = ["none"] }
 
 [terrain.resource.Stone]
 class = "bonus"
 yields = [0, 1]
+chance = 0.04
 on = { bases = ["Grassland"], relief = ["flat", "hills"], features = ["none"] }
 
 [terrain.resource.Deer]
 class = "bonus"
 yields = [0, 1]
+chance = 0.04
 # "Woods or Tundra" (§3.2) is a disjunction across dimensions that a single
 # AND-of-ORs mapping cannot express — `on` as a list of mappings means valid
 # if ANY one matches (civulator/terrain_model.py check_on/_match).
@@ -315,11 +338,13 @@ on = [
 [terrain.resource.Bananas]
 class = "bonus"
 yields = [1, 0]
+chance = 0.35
 on = { features = ["Rainforest"] }
 
 [terrain.resource.Fish]
 class = "bonus"
 yields = [1, 0]
+chance = 0.008
 on = { bases = ["Coast", "Lake"] }
 
 [terrain.river]

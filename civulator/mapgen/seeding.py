@@ -102,7 +102,12 @@ STAGE_TEMPERATURE = 5
 STAGE_FEATURES = 6
 STAGE_BASIC_BASE = 7          # the "basic" generator's own per-tile base pick
 STAGE_BASIC_FEATURES = 8      # the "basic" generator's own feature rolls
-# Next free id for P4/P5: 9 (rivers, floodplains/oasis, resources, starts, ...)
+STAGE_RIVERS = 9              # P4: corner-junction altitude jitter (design doc §5)
+STAGE_RESOURCES = 10          # P4: bonus resource placement (design doc §3.2, §11 P4)
+# Next free id for P5: 11 (starts). Floodplains carries no randomness at all
+# (design doc §5: "deterministic, no RNG") so it never needed a stage id;
+# Oasis reuses STAGE_FEATURES (see PURPOSE_OASIS below) rather than taking
+# a stage id of its own, per this table's own pre-existing reservation.
 
 # Purpose ids for tile_roll01 within STAGE_FEATURES — permanent, same rule.
 PURPOSE_WOODS = 0
@@ -110,7 +115,29 @@ PURPOSE_RAINFOREST = 1
 PURPOSE_MARSH = 2
 PURPOSE_ICE = 3
 PURPOSE_REEF = 4
-# Next free id for P4/P5 (oasis, resources): 5
+PURPOSE_OASIS = 5             # P4: oasis is a feature (§3), so it rolls in this stage too
+# Next free id within STAGE_FEATURES: 6
+
+# Purpose ids for tile_roll01 within STAGE_RIVERS — permanent, same rule.
+# Two ids (not one): a junction's N-corner and S-corner jitter draws must be
+# independent rolls, or every tile's N and S corner would jitter identically
+# whenever they happened to share a (row, col) hash input coincidentally.
+PURPOSE_JUNCTION_JITTER_N = 0
+PURPOSE_JUNCTION_JITTER_S = 1
+# Next free id within STAGE_RIVERS: 2
+
+# Purpose ids for tile_roll01 within STAGE_RESOURCES — permanent, same rule.
+# Order mirrors design doc §3.2's table and mapgen/resources.py's
+# RESOURCE_ORDER exactly; append-only (see resources.py module docstring).
+PURPOSE_RESOURCE_WHEAT = 0
+PURPOSE_RESOURCE_RICE = 1
+PURPOSE_RESOURCE_CATTLE = 2
+PURPOSE_RESOURCE_SHEEP = 3
+PURPOSE_RESOURCE_STONE = 4
+PURPOSE_RESOURCE_DEER = 5
+PURPOSE_RESOURCE_BANANAS = 6
+PURPOSE_RESOURCE_FISH = 7
+# Next free id within STAGE_RESOURCES: 8
 
 # Purpose ids for tile_roll01 within STAGE_BASIC_FEATURES.
 PURPOSE_BASIC_WOODS = 0

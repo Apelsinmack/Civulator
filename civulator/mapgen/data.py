@@ -25,11 +25,16 @@ class MapData:
         feature: (rows, cols) object array of str-or-None (<=1 feature/tile).
         resource: (rows, cols) object array of str-or-None. Always all-None
             in 0.6's P3 (resources are P5 scope) -- a clean stub.
-        rivers: set of ((row1, col1), (row2, col2)) edges, each pair
-            ordered (a < b) the same way `Map.rivers` stores them. Empty in
-            P3 (rivers are P4 scope).
-        fresh_water: (rows, cols) bool array. All False in P3 (no rivers
-            yet to be fresh water adjacent to) -- a clean stub; P4 fills it.
+        rivers: dict of {(row1, col1), (row2, col2)): RiverEdge}, keys each
+            a tile-pair edge ordered (a < b) the same way `Map.rivers`
+            stores them, values a `rivers.RiverEdge` (upstream/downstream
+            corner junction + integer flux, design doc §5). Empty dict `{}`
+            (never a `set`) when there are no rivers -- the basic generator
+            always returns this; earthlike returns it too whenever there is
+            no ocean junction anywhere on the map (design doc §5
+            precondition, e.g. land_percent = 1.0).
+        fresh_water: (rows, cols) bool array -- design doc §5/§3.4: adjacent
+            to a river edge, adjacent to (or on) Lake, or carries Oasis.
         starts: list of (row, col) candidate start positions, in player
             order. Empty in P3 (starts are P5 scope; `reset` keeps its
             current random placement until then, per design doc §11 P3).
@@ -44,7 +49,7 @@ class MapData:
     relief: np.ndarray
     feature: np.ndarray
     resource: np.ndarray
-    rivers: set
+    rivers: dict
     fresh_water: np.ndarray
     starts: list
     params: dict = field(default_factory=dict)
@@ -70,9 +75,18 @@ class MapData:
         this avoids depending on numpy's `.tobytes()` layout for object
         arrays (not stable: it pickles), or on `repr()` (not guaranteed
         stable across numpy versions). `rivers`/`starts` are sorted before
-        joining so set/list iteration order never leaks into the hash.
-        `params` goes through `json.dumps(..., sort_keys=True, default=str)`
-        for the same reason.
+        joining so dict/list iteration order never leaks into the hash --
+        `rivers.items()` sorts safely by its `(tile_a, tile_b)` keys alone
+        (unique, so the `RiverEdge` values are never compared, design doc
+        §4.2 rule 6). `params` goes through
+        `json.dumps(..., sort_keys=True, default=str)` for the same reason.
+
+        P4 append: each river edge now also serializes its flux and
+        upstream/downstream corner junctions (design doc D21: "including
+        rivers with flow+flux") -- appended after the existing tile-pair
+        text, so this is still the same field in the same position, just a
+        longer per-edge string than P3's stub (which was always empty:
+        `MapData.rivers` was `set()` throughout P3).
         """
         parts = [
             _grid_bytes(self.base_terrain),
@@ -81,12 +95,22 @@ class MapData:
             _grid_bytes(self.resource),
             self.fresh_water.astype(np.uint8).tobytes(),
             "|".join(
-                f"{a[0]},{a[1]}-{b[0]},{b[1]}" for a, b in sorted(self.rivers)
+                f"{a[0]},{a[1]}-{b[0]},{b[1]}:{edge.flux}:"
+                f"{_junction_bytes(edge.upstream)}>{_junction_bytes(edge.downstream)}"
+                for (a, b), edge in sorted(self.rivers.items())
             ).encode("utf-8"),
             "|".join(f"{r},{c}" for r, c in self.starts).encode("utf-8"),
             json.dumps(self.params, sort_keys=True, default=str).encode("utf-8"),
         ]
         return b"\x00\x00".join(parts)
+
+
+def _junction_bytes(junction) -> str:
+    """One RiverEdge.upstream/.downstream corner junction -> stable text.
+    `"-"` for `None` (hand-built Map.add_river edges carry no junction
+    data) -- distinct from any real `"row,col,kind"` triple.
+    """
+    return "-" if junction is None else f"{junction[0]},{junction[1]},{junction[2]}"
 
 
 def _grid_bytes(grid: np.ndarray) -> bytes:

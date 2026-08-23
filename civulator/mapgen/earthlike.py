@@ -1,30 +1,32 @@
-"""Earthlike world generation (design doc §4, D10/D11, §11 P3): the full
-elevation -> water -> relief -> temperature -> moisture -> biome ->
-majority-filter -> feature pipeline, assembled into one `MapData`.
+"""Earthlike world generation (design doc §4, D10/D11, §11 P3/P4): the full
+elevation -> water -> relief -> temperature -> moisture -> rivers -> biome ->
+majority-filter -> feature -> floodplains/oasis -> resources pipeline,
+assembled into one `MapData`.
 
-Pinned DAG order (design doc §4.2 rule 2, P3's slice of it): elevation ->
-water/coast/lake -> relief -> raw moisture -> [rivers: P4, skipped] ->
-moisture + (inert) river bonus -> temperature -> biomes -> features ->
-[floodplains/oasis: P4, resources: P5, starts: P5 -- all skipped, clean
-stubs]. Relief is produced alongside elevation's land classification here
-(both come from the same nearest-rank pass over the smoothed elevation
-field, design doc §4.3) rather than as a separate DAG node.
+Pinned DAG order (design doc §4.2 rule 2): elevation -> water/coast/lake ->
+relief -> raw moisture -> rivers (flux from RAW moisture) -> moisture +
+river bonus -> temperature -> biomes -> features -> floodplains/oasis ->
+resources -> [starts: P5, still skipped]. Relief is produced alongside
+elevation's land classification here (both come from the same nearest-rank
+pass over the smoothed elevation field, design doc §4.3) rather than as a
+separate DAG node.
 
 Pure: numpy + stdlib + `civulator.hexmath`/`civulator.terrain_model` only
-(via elevation.py/climate.py/features.py) — no `civulator.config` import.
-"params" are plain python values a caller supplies explicitly (or omits,
-taking `DEFAULT_PARAMS`); `Map.generate_map` is what reads config.toml and
-passes the result in (design doc §4.1: "generate must be pure given its
-inputs — read config once at call boundary, pass down" — the call boundary
-being the engine, not this module, so tests can pin exact params without
-touching global config, design doc §8/D21).
+(via elevation.py/climate.py/features.py/rivers.py/resources.py) — no
+`civulator.config` import. "params" are plain python values a caller
+supplies explicitly (or omits, taking `DEFAULT_PARAMS`); `Map.generate_map`
+is what reads config.toml and passes the result in (design doc §4.1:
+"generate must be pure given its inputs — read config once at call
+boundary, pass down" — the call boundary being the engine, not this module,
+so tests can pin exact params without touching global config, design doc
+§8/D21).
 """
 
 import math
 
 import numpy as np
 
-from . import climate, elevation, features
+from . import climate, elevation, features, resources, rivers
 from .data import MapData
 
 # Design doc E5: "minimum earthlike size is Duel (24x12) -- below it
@@ -69,14 +71,20 @@ DEFAULT_PARAMS = {
     "moisture_octaves": 4,
     "moisture_desert_percentile": 0.36,
     "moisture_plains_percentile": 0.56,
-    "river_percent": 0.18,          # P4 -- inert (no rivers generate in P3)
-    "river_moisture_bonus": 0.1,    # P4 -- inert (fresh_water is all-False)
+    "river_percent": 0.18,           # nearest-rank flux quantile that becomes river (design doc §5: "~0.15-0.20")
+    "river_moisture_bonus": 0.1,     # added to moisture where river-adjacent, before biome classification
+    "river_min_length": 2,           # rivers (connected junction-edge components) shorter than this are dropped
+    "river_pd_epsilon": rivers.DEFAULT_PD_EPSILON,        # ε: Planchon-Darboux sink-fill step
+    "river_altitude_jitter": rivers.DEFAULT_ALTITUDE_JITTER,  # δ: per-junction altitude jitter, δ << ε
     "feature_chance": {
         "woods": 0.35,
         "rainforest": 0.50,
         "marsh": 0.15,
         "ice": 0.70,
         "reef": 0.30,
+        "oasis": 0.20,    # per-ELIGIBLE-tile roll (design doc §5: "~1% of land" is the resulting COUNT,
+                           # not this probability -- eligible tiles are already a small subset of land;
+                           # see the P4 report for the seed sweep this was tuned against)
     },
 }
 
@@ -120,9 +128,10 @@ def _hex_coords(rows: int, cols: int):
 
 
 def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapData:
-    """The earthlike generator (design doc §4, §11 P3). `size` = (rows, cols),
-    already resolved (see `data.resolve_size` for preset-name support at the
-    engine/CLI boundary). Raises ValueError below Duel size (E5).
+    """The earthlike generator (design doc §4, §11 P3/P4). `size` = (rows,
+    cols), already resolved (see `data.resolve_size` for preset-name
+    support at the engine/CLI boundary). Raises ValueError below Duel size
+    (E5).
     """
     rows, cols = int(size[0]), int(size[1])
     if rows < EARTHLIKE_MIN_ROWS or cols < EARTHLIKE_MIN_COLS:
@@ -145,10 +154,14 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
     )
     water_base = elevation.classify_water(is_land, p["lake_max_size"])
 
-    # --- raw moisture -> (inert) river bonus -> temperature (§4.4) ---
+    # --- raw moisture -> rivers (flux from RAW moisture, §5) -> river bonus -> temperature (§4.4) ---
     raw_moisture = climate.compute_raw_moisture(x, y, cols, master_seed, p)
-    fresh_water = np.zeros((rows, cols), dtype=bool)  # P4 stub (design doc §11 P3)
-    moisture = climate.apply_river_moisture_bonus(raw_moisture, fresh_water, p["river_moisture_bonus"])
+    river_edges = rivers.generate_rivers(smoothed, water_base, raw_moisture, master_seed, p, rows, cols)
+    # river_touch: the narrower, EARLIER-available "river-adjacent" mask
+    # (rivers.river_adjacent_mask docstring) -- NOT yet the full §5
+    # fresh_water definition, which needs Oasis (placed much later below).
+    river_touch = rivers.river_adjacent_mask(river_edges, rows, cols)
+    moisture = climate.apply_river_moisture_bonus(raw_moisture, river_touch, p["river_moisture_bonus"])
     temperature = climate.compute_temperature(x, y, cols, master_seed, smoothed, sea_level, p)
 
     # --- biomes -> majority filter (§4.4, §4.2 rule 5) ---
@@ -157,14 +170,21 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
 
     base_terrain = np.where(is_land, land_base, water_base)
 
-    # --- features WITHOUT river-dependent ones (§4.4, §11 P3) ---
+    # --- climate-gated features, then river-dependent floodplains/oasis (§4.4, §5) ---
     feature = features.place_features(
         base_terrain, relief, temp_rank, moisture_rank, master_seed, p["feature_chance"]
     )
+    feature = features.apply_floodplains(base_terrain, relief, feature, river_touch, rows, cols)
+    feature = features.place_oasis(
+        base_terrain, relief, feature, river_touch, master_seed, p["feature_chance"]["oasis"], rows, cols
+    )
 
-    # Floodplains/Oasis (P4, river-dependent) and resources (P5) are clean
-    # stubs: an all-None grid, never populated by this generator.
-    resource = np.full((rows, cols), None, dtype=object)
+    # --- bonus resources (§3.2) ---
+    resource = resources.place_resources(base_terrain, relief, feature, master_seed, rows, cols)
+
+    # --- fresh water: the FULL §5 definition, now that base_terrain/feature
+    # are finished (needs Oasis, just placed above) ---
+    fresh_water = rivers.fresh_water_mask(river_edges, base_terrain, feature, rows, cols)
 
     gen_params = {
         "seed": master_seed,
@@ -180,7 +200,7 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
         relief=relief,
         feature=feature,
         resource=resource,
-        rivers=set(),
+        rivers=river_edges,
         fresh_water=fresh_water,
         starts=[],
         params=gen_params,

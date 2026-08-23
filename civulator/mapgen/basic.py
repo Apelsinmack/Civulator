@@ -141,7 +141,7 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
         relief=relief,
         feature=feature,
         resource=resource,
-        rivers=set(),
+        rivers={},  # dict, matching earthlike's type (design doc §5, P4) -- never non-empty for basic
         fresh_water=np.zeros((rows, cols), dtype=bool),
         starts=[],
         params=gen_params,
