@@ -24,23 +24,25 @@
   ],
   "cities": [],
   "manifest": {
-    "game_version": "0.5.2",
-    "git_commit": "05b2ded",
+    "game_version": "0.6.0",
+    "git_commit": "9e3fed9",
     "config": {
       "map": {
         "rows": 24,
         "columns": 48,
         "type": "earthlike",
         "size": "standard",
+        "max_world_retries": 10,
         "earthlike": {
           "continent_wavelength": 3,
           "octaves": "auto",
           "mountain_wavelength": 5,
           "mountain_belt_percent": 0.35,
-          "mountain_amp": 1.5,
+          "mountain_amp_coast": 0.0,
+          "mountain_amp_relief": 1.5,
           "warp_amp": 4.0,
           "warp_octaves": 3,
-          "land_percent": 0.35,
+          "land_percent": 0.45,
           "mountain_percent": 0.08,
           "hill_percent": 0.2,
           "smooth_iterations": 3,
@@ -737,7 +739,7 @@
         }
       }
     },
-    "date": "2026-08-23T03:09:45.682199+00:00",
+    "date": "2026-08-23T08:43:27.019917+00:00",
     "mapgen_params": {
       "seed": 11986318432899689386,
       "rows": 10,

@@ -1,5 +1,6 @@
 # Terrain Model & World Generation Redesign — v0.6.0
 
+> **IMPLEMENTED**: v0.6.0, 2026-08-23 — series P1–P8 complete (plus D24–D26 amendments); fingerprints frozen on the Erik-inspected seed-42 worlds. Settings manual: `worldgen_settings.md`.
 > **Status**: **v3 — final, handover contract for implementation.** Adversarial critique passed (4 lenses: determinism/portability, architecture/contracts, scope/regression, systems-reuse; 2026-08-22); E1–E6 resolved with Erik same day, recommendations adopted verbatim. Patch plan in §11.
 > **Issues bundled**: #36 (terrain model), #10 (starting locations), #13 (Cartesian noise), #14 (latitude bias / rivers) — plus ten latent fixes found during orientation and critique (§9).
 > **Invalidation**: one deliberate event — every seeded world changes. Version bump to **0.6.0**, golden tests re-baselined, scenarios archived and re-painted (§8). Closes the #35 land-before-the-1k-baseline bucket.

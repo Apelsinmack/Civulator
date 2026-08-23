@@ -6,7 +6,6 @@ published pcg32 reference output for (initstate=42, initseq=54) — verified
 against the canonical pcg32-global-demo values 0xa15c02b7, 0x7b47f409, ...
 """
 
-import pytest
 
 from civulator.rng import PortableRNG
 from civulator.game.environment import GameEnvironment
@@ -71,23 +70,36 @@ def test_randint_bounds_and_shuffle_permutation():
     assert sorted(lst) == list(range(20))
 
 
-@pytest.mark.xfail(reason="0.6 world model — re-baseline at P8, design §8")
 def test_engine_world_is_frozen_across_versions():
     """A seeded world's fingerprint must never change silently — scenario files
-    depend on it (terrain is rebuilt from the stored seed). If this test fails,
-    a CHANGELOG entry and version bump are REQUIRED, and existing scenario
-    terrain is invalidated.
+    depend on it (terrain is rebuilt from the stored seed + pinned params). If
+    this test fails, a CHANGELOG entry and version bump are REQUIRED, and
+    existing scenario terrain is invalidated.
 
-    map_type="basic" explicit (design doc §11 P3): [map] type's live default
-    is now "earthlike" (E5), which raises below Duel size (24x12) — this
-    fixture's 8x16 board predates that minimum. Forcing "basic" keeps this
-    xfail's MEANING intact (the basic generator's content changed too, by
-    design — see mapgen/basic.py's docstring — so this still correctly xfails
-    on its frozen labels) instead of failing for an unrelated reason.
+    Re-baselined at the v0.6.0 P8 ceremony (Erik-inspected, 2026-08-23) onto
+    Duel earthlike — the engine-level wiring guard over the same contract the
+    MapData golden (tests/test_mapgen_golden.py) seals in full. Params are
+    passed pinned (P7's mapgen_params), so config knob tuning can never break
+    this test — only a genuine generator or engine-wiring change can.
     """
-    env = GameEnvironment(8, 16, num_players=2, map_type="basic").reset(seed=42)
-    terrains = [env.map.tiles[i, j].label for i in range(2) for j in range(8)]
-    assert terrains == [
-        "Desert", "Grassland", "Tundra", "Tundra", "Hills", "Mountain", "Plains", "Woods",
-        "Grassland", "Hills", "Hills", "Plains", "Desert", "Plains", "Grassland", "Grassland",
+    from test_mapgen_golden import PINNED_PARAMS
+
+    env = GameEnvironment(12, 24, num_players=2, map_type="earthlike",
+                          mapgen_params=PINNED_PARAMS).reset(seed=42)
+    m = env.map
+    assert [m.tiles[0, j].label for j in range(24)] == [
+        "Coast, Ice", "Snow", "Snow", "Snow", "Plains", "Snow", "Coast, Ice",
+        "Ocean, Ice", "Ocean, Ice", "Ocean", "Coast, Ice", "Coast, Ice",
+        "Desert", "Snow (Hills)", "Snow", "Coast", "Ocean", "Ocean, Ice",
+        "Ocean", "Ocean, Ice", "Ocean, Ice", "Ocean", "Ocean, Ice", "Ocean, Ice",
     ], "seeded world changed — scenario seeds are now invalid; bump version + CHANGELOG"
+    assert [m.tiles[6, j].label for j in range(24)] == [
+        "Grassland", "Grassland", "Snow (Hills)", "Desert (Hills)",
+        "Snow (Hills)", "Plains", "Grassland (Hills), Woods", "Plains",
+        "Tundra (Hills)", "Snow (Mountain)", "Coast, Ice", "Ocean", "Ocean",
+        "Ocean, Ice", "Coast, Ice", "Coast", "Ocean, Ice", "Ocean, Ice",
+        "Ocean", "Ocean, Ice", "Ocean, Ice", "Coast, Ice", "Grassland", "Grassland",
+    ]
+    assert sorted(m.starts) == [(7, 5), (7, 23)]
+    assert len(m.rivers) == 88
+    assert sum(1 for i in range(12) for j in range(24) if m.tiles[i, j].resource) == 14

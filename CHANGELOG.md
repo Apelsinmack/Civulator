@@ -5,6 +5,74 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
+## v0.6.0 — Terrain remodel: layered tiles, real worlds (2026-08-23)
+
+**Every seeded world changes.** All pre-0.6 scenario terrain is invalid; the
+nine painted scenarios moved to `scenarios/archive_v0.5/` (preserved, never
+deleted). Trained weights remain valid 0.5-epoch records, incomparable to 0.6
+results (epoch marker in `weights/trained/manifest.md`). Closes #36, #10,
+#13, #14 — and with them the #35 land-before-the-1k-baseline bucket: the
+world is now declared stable for baseline recording. Full design, adversarial
+critique, and measurements: `docs/terrain_model_design.md`.
+
+**The tile model** (#36): `terrain_type` is gone. A tile is base terrain
+(Grassland/Plains/Desert/Tundra/Snow/Coast/Lake/Ocean) × relief
+(flat/hills/mountain) × ≤1 feature (Woods/Rainforest/Marsh/Floodplains/
+Oasis/Reef/Ice) × ≤1 bonus resource (8 types). All gameplay numbers are
+additive compositions of per-layer `config.toml` tables interpreted by
+`civulator/terrain_model.py`; placement validity is declared per layer as
+`on` constraints — one evaluator for generator, painter, and Tile alike.
+Water exists for the first time and is impassable to the land movement
+domain (`unit.can_enter`; embarkation is a future domain value, not a
+rewrite). Rivers stay on edges, now with flow direction and flux, and cost
+`[terrain.river] crossing_cost` to cross — priced identically by movement
+execution and both A* implementations (C++ ≡ Python verified exactly).
+
+**World generation** (#13, #14): new pure package `civulator/mapgen/` —
+periodic-lattice Perlin gradient noise sampled at hex Cartesian centers
+(exact cylinder wrap, no seam handling, no trig; lowbias32 integer hashing,
+bit-portable for the future C++ twin), split-elevation pipeline
+(continentalness shapes coasts; ridged-multifractal orogeny shapes relief,
+rivers, and temperature lapse), latitude climate reaching the poles,
+Whittaker biomes, corner-junction flow-accumulation rivers, deterministic
+floodplains, oases, resources, and fertility-scored starting locations.
+Measured effects: directional-isotropy ratio 1.04–1.21 (the old axial
+sampling scores 1.68–2.75 — #13's streaks are dead, with a regression
+oracle); start-placement failure 27.7% → 2.0% over 900 seeds after the
+split-elevation fix; 3–5 continents per world at every size.
+
+**Starts & sizes** (#10, superseding its map-around-starts sketch): map
+first → equal-fertility regions → d_min placement → additive normalization
+with bonus resources. Named size presets Duel…Huge (+Colossal) carry
+dimensions and player counts; Standard stays 48×24 but defaults to 6
+players (max 8). Seeded `reset` raises on an unplaceable world
+(reproducibility); unseeded `reset` resamples with logged, bounded retries.
+
+**Reproducibility hardening**: scenario/recording manifests pin the mapgen
+params; loaders rebuild from the manifest, never live config — tuning knobs
+can no longer silently rewrite saved worlds (regression-tested). One version
+gate (`meta.check_version`) refuses missing/mismatched manifests. The frozen
+world is now sealed at two layers: full-MapData SHA-256 and an engine-level
+label fingerprint, both re-baselined this release onto worlds inspected in
+the live preview (`python -m civulator.mapgen`) and pronounced good by Erik.
+
+**Ten latent fixes** rode along, notably: unit terrain defense was frozen at
+the spawn tile (city-produced units had none, ever) — defense now reads the
+composed current tile; feature movement/defense/LoS bonuses existed but were
+consumed by nothing — now active; four eval/replay scripts used a
+terrain-blind mask fallback instead of the training masks; the C++ A* popped
+equal-cost paths in insertion order (nondeterministic ties) — now matches
+Python's (f, r, q) tie-break exactly; the renderer drew axial coordinates in
+an offset layout (~17% of adjacencies rendered wrong) — replaced by the
+brick-rectangle projection with a permanent adjacency-render invariant test.
+
+State encoding: channel layout unchanged (25/27), with three documented
+value corrections (cost scale 4.0 with impassable unique at 1.0; composed
+defense; masks now domain-filtered). 0.6 agents cannot yet see resources or
+rivers — the richer encoder is a separate measured experiment (design §7).
+
+---
+
 ## v0.5.2 — Every player gets a capital (2026-08-22)
 
 Fixes the long-standing "city disappears near game start" bug (#1): `reset()`
