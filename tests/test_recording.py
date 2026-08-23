@@ -11,6 +11,7 @@ import sys
 import numpy as np
 import pytest
 
+from civulator.meta import build_manifest
 from civulator.tools.recording import (
     RecordingSession,
     build_env_from_scenario,
@@ -21,7 +22,14 @@ from civulator.tools.recording import (
 SCENARIO_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scenarios"
 )
-SCENARIO_001 = os.path.join(SCENARIO_DIR, "scenario_001.json")
+# design doc §11 P7 deliverable 3 / E2: a code-generated, manifest-stamped
+# fixture (regenerate via `python scripts/make_fixture_scenario.py`) that
+# replaces the old `scenarios/scenario_001.json` dependency now that
+# 001-009 are archived to `scenarios/archive_v0.5/` (pre-0.6 files with no
+# usable pinned mapgen params — see test_version_gate.py for that path).
+SCENARIO_FIXTURE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "fixtures", "scenario_fixture.json"
+)
 
 
 def _layers(tile):
@@ -36,9 +44,9 @@ def _terrain_grid(env):
 # --- (a) scenario loading ---------------------------------------------------
 
 
-def test_scenario_001_units_land_on_their_painted_tiles():
-    scenario = load_scenario(SCENARIO_001)
-    env = build_env_from_scenario(scenario)
+def test_fixture_scenario_units_land_on_their_painted_tiles():
+    scenario = load_scenario(SCENARIO_FIXTURE)
+    env = build_env_from_scenario(scenario)  # no override -- real manifest-pinned rebuild
 
     assert (env.n, env.m) == (scenario["map_rows"], scenario["map_cols"])
     assert env.current_player is env.players[0]
@@ -59,8 +67,8 @@ def test_scenario_001_units_land_on_their_painted_tiles():
     assert sum(len(p.cities) for p in env.players) == len(scenario.get("cities", []))
 
 
-def test_scenario_terrain_is_reproducible_from_its_seed():
-    scenario = load_scenario(SCENARIO_001)
+def test_fixture_scenario_terrain_is_reproducible_from_its_seed():
+    scenario = load_scenario(SCENARIO_FIXTURE)
     first = build_env_from_scenario(scenario)
     second = build_env_from_scenario(scenario)
     assert _terrain_grid(first) == _terrain_grid(second)
@@ -83,7 +91,13 @@ def test_painter_and_recorder_build_the_same_terrain_from_one_seed():
         "units": [],
         "cities": [],
     }
-    env = build_env_from_scenario(scenario)
+    # No manifest yet at this point in a real painter session -- PainterState
+    # .save() is what attaches one (with pinned mapgen params). This test is
+    # specifically about the override/live-config fallback path (design doc
+    # §11 P7 deliverable 2) reproducing the SAME seed off the SAME live
+    # config.toml both tools are reading right now, so override=True is the
+    # correct choice here, not a workaround.
+    env = build_env_from_scenario(scenario, override=True)
     painted = [
         [_layers(state.game_map.tiles[r, c]) for c in range(painter.MAP_COLS)]
         for r in range(painter.MAP_ROWS)
@@ -141,10 +155,19 @@ def _mini_scenario(tmp_path, seed=7, rows=8, cols=8):
 
     Returns (path, start, step, enemy, keeper). The second own unit ("keeper")
     keeps the turn alive: the engine auto-ends a turn once every unit is spent.
+
+    The written scenario carries a real manifest with pinned mapgen params
+    (design doc §8), built from `env.map.mapgen_params` off the SAME env used
+    to find the attack line -- so every `RecordingSession(path)` /
+    `build_env_from_scenario(scenario)` call site below exercises the real,
+    default (override=False) manifest-pinned rebuild path, same as a
+    painter-saved file, not a hand-waved test-only shortcut. `override=True`
+    is needed only for THIS throwaway discovery call, whose `base` dict has
+    no manifest yet (nothing has saved it).
     """
     base = {"seed": seed, "terrain_seeded": True, "map_rows": rows, "map_cols": cols,
             "units": [], "cities": []}
-    env = build_env_from_scenario(base)
+    env = build_env_from_scenario(base, override=True)
     start, step, enemy = _find_attack_line(env)
     keeper = _far_tile(env, {start, step, enemy})
 
@@ -157,6 +180,7 @@ def _mini_scenario(tmp_path, seed=7, rows=8, cols=8):
         {"type": "Warrior", "team": 2, "row": enemy[0], "col": enemy[1],
          "fortified": False, "hp": 1},
     ]
+    scenario["manifest"] = build_manifest(mapgen_params=env.map.mapgen_params)
     path = tmp_path / "scenario_042.json"
     path.write_text(json.dumps(scenario))
     return str(path), start, step, enemy, keeper

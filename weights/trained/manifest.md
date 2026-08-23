@@ -41,3 +41,21 @@
 - **Date**: 2026-03-24 overnight
 - **Final win distribution**: P1=93, P2=106, P3=77, P4=97, P5=98, P6=110, P7=102, P8=100
 - **Build order**: Spearmen 19%, Warriors 18%, Archers 17%, Horsemen 16%, Catapults 15%, Granary 10%, Settler 5%
+
+---
+
+## Epoch marker — 2026-08-23: v0.6.0 terrain remodel (design doc §11 P7)
+
+Everything **above** this line was trained on a **v0.5 world**: the pre-remodel
+flat `terrain_type` tile model, the old (non-isotropic) world generator, and the
+pre-correction encoder value-semantics (`docs/terrain_model_design.md` §0/§7,
+D16). The 0.6.0 terrain redesign changed maps, passability, and several encoder
+channel semantics enough that **no result below this line is comparable to
+anything above it** — different worlds, different action spaces, different
+learned priors. Both entries stay recorded in place rather than deleted, per
+the project's scientific-record rule (CLAUDE.md: "Never delete previous
+results") — they are prior-epoch results, not superseded ones.
+
+`scripts/watch.py` prints each loaded weight file's manifest `game_version` (or
+`"pre-manifest/0.5 epoch"` for a bare state_dict with no manifest at all) so
+this boundary is visible at load time, not just here.

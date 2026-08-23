@@ -91,11 +91,15 @@ def run_viewer():
             # Find highest episode
             best = max(files, key=lambda f: int(f.split("episode_")[1].split(".")[0]))
             try:
-                checkpoint, _manifest = load_weights(best, map_location=agent.device)
+                checkpoint, manifest = load_weights(best, map_location=agent.device)
                 agent.network.load_state_dict(checkpoint["model_state_dict"])
                 agent.target_network.load_state_dict(checkpoint["model_state_dict"])
                 ep = best.split("episode_")[1].split(".")[0]
-                print(f"Agent {i}: loaded weights from episode {ep}")
+                # design doc §8, §11 P7 deliverable 5: weights are never
+                # version-gated (0.5-world weights stay usable, just
+                # labeled), but the version they came from is always shown.
+                version_label = manifest["game_version"] if manifest else "pre-manifest/0.5 epoch"
+                print(f"Agent {i}: loaded weights from episode {ep} (version: {version_label})")
             except Exception as e:
                 print(f"Agent {i}: could not load weights ({e})")
         else:

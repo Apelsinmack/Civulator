@@ -124,8 +124,14 @@ class Map:
         # invalidation trigger (terrain_epoch) as everything else in §3.4.
         self._river_flags_cache = None
         self._river_flags_cache_epoch = None
+        # The generator's own echo of exactly what it used (design doc §8,
+        # §11 P7) — None until generate_map() runs at least once. A save
+        # site (painter, tests) reads this right after generation to embed
+        # a manifest-pinned rebuild record (`meta.build_manifest(
+        # mapgen_params=...)`); it is never read back into THIS map itself.
+        self.mapgen_params = None
 
-    def generate_map(self, map_type="basic", num_players=2):
+    def generate_map(self, map_type="basic", num_players=2, params=None):
         """Generate a map via `civulator.mapgen` (design doc §4.1, §11 P3).
 
         Draws exactly ONE master seed from `self.rng` (`civulator.rng.
@@ -152,34 +158,60 @@ class Map:
         and this method's own `self.rng.choices`/`.random()` draws) —
         `mapgen.basic` is its coordinate-hashed, `on`-constraint-respecting
         successor (see its module docstring for the exact correspondence).
-        """
-        from ..config import CFG
 
-        map_cfg = CFG.get("map", {})
-        if map_type == "earthlike":
-            # dict(...) copies -- map_cfg["earthlike"] is a reference into
-            # the process-wide CFG singleton; the "starts" key added below
-            # must never leak back into it (that would mutate global config
-            # as a side effect of generating one map).
-            params = dict(map_cfg.get("earthlike", {}))
-        else:
-            params = {}
-            if map_cfg.get("terrain_weights"):
-                params["terrain_weights"] = map_cfg["terrain_weights"]
-            features_cfg = map_cfg.get("features", {})
-            feature_chance = {}
-            if "woods_chance" in features_cfg:
-                feature_chance["woods"] = features_cfg["woods_chance"]
-            if "rainforest_chance" in features_cfg:
-                feature_chance["rainforest"] = features_cfg["rainforest_chance"]
-            if feature_chance:
-                params["feature_chance"] = feature_chance
-        # [map.starts] (design doc §6, §11 P5) applies to BOTH generators
-        # ("same starts stage", design doc §4.1) -- one config home, read
-        # once here, same as every other map.* table.
-        starts_cfg = map_cfg.get("starts")
-        if starts_cfg:
-            params["starts"] = starts_cfg
+        `params`, when given, is a manifest-pinned flat knob dict in EXACTLY
+        the shape this method would otherwise build from live config.toml
+        below (design doc §8, D16: "World identity = manifest-pinned
+        params... live config.toml is used ONLY for brand-new worlds") —
+        passed straight to `mapgen.generate` and `civulator.config` is never
+        touched. `self.rng` still draws exactly one master seed either way
+        (unchanged draw site/position — this is NOT what makes a pinned
+        rebuild identical); identity instead comes from the CALLER re-
+        supplying the scenario's own original top-level `seed` to
+        `GameEnvironment(seed=...)`, which reproduces the same master seed
+        deterministically (`PortableRNG(seed).next_uint64()` is a pure
+        function of `seed` alone) without this method needing to store or
+        accept a master seed of its own
+        (`civulator.tools.recording.build_env_from_scenario` is the one
+        caller that supplies `params`).
+
+        `self.mapgen_params` always ends up holding `MapData.params`
+        afterwards — the generator's own echo of exactly what it used
+        (seed/rows/cols/num_players/map_type/resolved knobs/starts) —
+        regardless of whether `params` came from here or from the caller;
+        a save site reads it right after this method returns to embed a
+        pinned manifest.
+        """
+        if params is None:
+            from ..config import CFG
+
+            map_cfg = CFG.get("map", {})
+            if map_type == "earthlike":
+                # dict(...) copies -- map_cfg["earthlike"] is a reference into
+                # the process-wide CFG singleton; the "starts" key added below
+                # must never leak back into it (that would mutate global config
+                # as a side effect of generating one map).
+                params = dict(map_cfg.get("earthlike", {}))
+            else:
+                params = {}
+                if map_cfg.get("terrain_weights"):
+                    params["terrain_weights"] = map_cfg["terrain_weights"]
+                features_cfg = map_cfg.get("features", {})
+                feature_chance = {}
+                if "woods_chance" in features_cfg:
+                    feature_chance["woods"] = features_cfg["woods_chance"]
+                if "rainforest_chance" in features_cfg:
+                    feature_chance["rainforest"] = features_cfg["rainforest_chance"]
+                if feature_chance:
+                    params["feature_chance"] = feature_chance
+            # [map.starts] (design doc §6, §11 P5) applies to BOTH generators
+            # ("same starts stage", design doc §4.1) -- one config home, read
+            # once here, same as every other map.* table.
+            starts_cfg = map_cfg.get("starts")
+            if starts_cfg:
+                params["starts"] = starts_cfg
+        # else: manifest-pinned params supplied verbatim by the caller
+        # (design doc §8) -- live config.toml is not read at all this call.
 
         master_seed = self.rng.next_uint64()
         map_data = mapgen.generate(
@@ -209,6 +241,10 @@ class Map:
         # violations") -- GameEnvironment.reset reads this list directly,
         # never recomputing or re-rolling placement itself.
         self.starts = list(map_data.starts)
+        # Manifest-pinned rebuild support (design doc §8, §11 P7): the
+        # generator's own echo of exactly what it used, ready for a save
+        # site to embed verbatim via `meta.build_manifest(mapgen_params=...)`.
+        self.mapgen_params = map_data.params
 
     def add_river(self, tile1_coords, tile2_coords, flux=0):
         """Add a river between two tiles (§7.5 item 4's hand-built-edge API).

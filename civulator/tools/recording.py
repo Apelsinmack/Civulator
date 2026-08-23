@@ -38,7 +38,7 @@ from ..game.unit import (
     SwordsmanUnit,
     WarriorUnit,
 )
-from ..meta import build_manifest
+from ..meta import VersionGateError, build_manifest, check_version
 
 # The recorded human is always players[0] (scenario "team": 1).
 HUMAN_PLAYER_INDEX = 0
@@ -101,28 +101,96 @@ def entry_coords(entry):
     return int(entry["r"]), int(entry["q"])
 
 
-def build_env_from_scenario(scenario):
+def _pinned_mapgen_params(manifest):
+    """The manifest's own `Map.mapgen_params` echo (design doc §8, §11 P7),
+    or None if `manifest` carries none / an incomplete one.
+
+    Pre-0.6 scenario files fall through to None here for two different
+    reasons that both mean the same thing to the caller ("cannot pin"):
+    archived 001-004 have no manifest at all, and archived 005-009 have a
+    0.5-era manifest whose "config" snapshot predates this key entirely
+    (see `build_env_from_scenario`'s docstring) — either way,
+    `build_env_from_scenario` treats None as "needs override=True".
+    """
+    if not manifest:
+        return None
+    pinned = manifest.get("mapgen_params")
+    if not isinstance(pinned, dict):
+        return None
+    map_type = pinned.get("map_type")
+    if map_type not in ("earthlike", "basic") or map_type not in pinned:
+        return None
+    if not all(key in pinned for key in ("rows", "cols", "num_players")):
+        return None
+    return pinned
+
+
+def build_env_from_scenario(scenario, override=False):
     """Build a `GameEnvironment` holding exactly the scenario's units/cities.
 
-    Terrain comes from `GameEnvironment(..., seed=scenario["seed"])`. The
-    Scenario Painter builds its map the same way, so the same seed reproduces
-    the same terrain in both tools — do not replace this with a bare
-    `Map(...)`, that reintroduces the unseeded-terrain bug (see the painter).
+    World identity = manifest-pinned params (design doc §8, D16, §11 P7).
+    `meta.check_version` gates this first (missing manifest / major.minor
+    mismatch refused). Past that gate, when the manifest also carries a
+    complete `mapgen_params` echo (written by `meta.build_manifest(
+    mapgen_params=env.map.mapgen_params)` at save time — the Scenario
+    Painter does this), the world is rebuilt from THOSE exact resolved
+    knobs, never from live config.toml: a same-version config.toml
+    mapgen-knob tune can no longer silently rewrite an archived scenario's
+    terrain (the critique's central hole this design closes). The scenario's
+    own top-level `seed` is still what seeds the rebuild — reproducing the
+    same master seed deterministically (`PortableRNG(seed).next_uint64()`
+    is a pure function of `seed` alone, see `Map.generate_map`), so nothing
+    needs to store a master seed separately.
 
-    map_type comes from the scenario itself (`scenario_map_type`, design doc
-    E5 rider / §11 P5 deliverable 4) rather than a hardcoded literal: the
-    Scenario Painter now defaults to Duel earthlike but a scenario always
-    records the generator that actually painted it, so the two tools keep
-    building identical worlds from one seed regardless of which generator
-    that was (tests/test_recording.py::
-    test_painter_and_recorder_build_the_same_terrain_from_one_seed) —
-    archived pre-P5 scenarios (001-009) and hand-built synthetic ones in the
-    test suite carry no `map_type` key and correctly default to "basic",
-    the generator they were actually painted with.
+    A manifest that PASSES the version check but still lacks pinned params
+    (e.g. archived scenarios 005-009: real 0.5.1 manifests, saved before
+    this key existed) is refused through the SAME gate/exception —
+    "One gate implementation" (design doc Systems (b) "Version gate" row) —
+    not a second check with different semantics.
+
+    `override=True` bypasses BOTH refusal reasons (missing/mismatched
+    manifest, or a manifest with no pinned params) and falls back to the
+    pre-0.6 behavior: rebuild from LIVE config.toml using just the
+    scenario's own top-level seed/dims/map_type. Default off — pre-0.6
+    files and hand-built synthetic scenarios that don't care about pinning
+    must opt in explicitly (design doc §11 P7 deliverable 2: "explicit
+    override flag ... tools can expose it; default off").
+
+    map_type, when falling back to the override path, comes from the
+    scenario itself (`scenario_map_type`, design doc E5 rider / §11 P5
+    deliverable 4) rather than a hardcoded literal — archived pre-P5
+    scenarios and hand-built synthetic ones in the test suite carry no
+    `map_type` key and correctly default to "basic", the generator they
+    were actually painted with.
+
+    Do not replace either path with a bare `Map(...)`, that reintroduces
+    the unseeded-terrain bug (see the painter).
     """
-    rows, cols = scenario_dims(scenario)
-    map_type = scenario_map_type(scenario)
-    env = GameEnvironment(rows, cols, num_players=2, map_type=map_type, seed=scenario.get("seed"))
+    manifest = scenario.get("manifest")
+    check_version(manifest, override=override)
+
+    pinned = _pinned_mapgen_params(manifest)
+    if pinned is not None:
+        rows, cols = int(pinned["rows"]), int(pinned["cols"])
+        map_type = pinned["map_type"]
+        mapgen_params = dict(pinned.get(map_type, {}))
+        if "starts" in pinned:
+            mapgen_params["starts"] = pinned["starts"]
+        env = GameEnvironment(
+            rows, cols, num_players=int(pinned["num_players"]), map_type=map_type,
+            seed=scenario.get("seed"), mapgen_params=mapgen_params,
+        )
+    elif override:
+        rows, cols = scenario_dims(scenario)
+        map_type = scenario_map_type(scenario)
+        env = GameEnvironment(rows, cols, num_players=2, map_type=map_type, seed=scenario.get("seed"))
+    else:
+        raise VersionGateError(
+            "scenario manifest has no pinned mapgen params (pre-0.6 file, or "
+            "saved before design doc §11 P7) — world identity cannot be "
+            "guaranteed without reading live config.toml; pass override=True "
+            "to rebuild from live config.toml instead"
+        )
 
     # The constructor places nothing today, but reset()/future changes might —
     # a scenario must contain only what the painter put in it.
@@ -197,20 +265,30 @@ class RecordingSession:
 
     Typical UI loop::
 
-        session = RecordingSession("scenarios/scenario_001.json")
+        session = RecordingSession("scenarios/scenario_010.json")
         session.click((4, 8))       # select own unit -> "select"
         session.click((4, 9))       # order            -> "attack"
         path = session.end_turn()   # writes the demonstration
     """
 
-    def __init__(self, scenario_path, demo_dir=None, device=None):
+    def __init__(self, scenario_path, demo_dir=None, device=None, override=False):
+        """
+        Args:
+            scenario_path: path to a scenario JSON (`scripts/scenario_painter.py`).
+            demo_dir: where to write the demonstration; defaults to `demonstrations/`.
+            device: torch device for the recorded state tensors; defaults to CPU.
+            override: forwarded to `build_env_from_scenario` — bypass the
+                version/manifest-pinning gate (design doc §11 P7) for a
+                pre-0.6 or version-mismatched scenario, rebuilding its
+                terrain from live config.toml instead. Default off.
+        """
         self.scenario_path = os.path.abspath(scenario_path)
         self.scenario_file = os.path.basename(self.scenario_path)
         self.scenario = load_scenario(self.scenario_path)
         self.demo_dir = demo_dir or DEFAULT_DEMO_DIR
         self.device = device or torch.device("cpu")
 
-        self.env = build_env_from_scenario(self.scenario)
+        self.env = build_env_from_scenario(self.scenario, override=override)
         self.encoder = EnhancedStateEncoder()
 
         self.selected = None  # (row, col, slot) of the selected unit

@@ -86,7 +86,8 @@ class GameEnvironment:
         env.step(action) -> (raw_state, reward, done, info)
     """
 
-    def __init__(self, n=None, m=None, num_players=None, map_type=None, seed=None, size=None):
+    def __init__(self, n=None, m=None, num_players=None, map_type=None, seed=None, size=None,
+                 mapgen_params=None):
         """
         Args:
             n, m: Map rows/cols. Either may be omitted (None) to take the
@@ -98,6 +99,13 @@ class GameEnvironment:
             size: A `[map.sizes.*]` preset name, or None for `[map] size`
                 (config default "standard"). Ignored for any dimension/
                 num_players given explicitly.
+            mapgen_params: manifest-pinned flat generator params (design doc
+                §8, §11 P7) — passed straight through to `Map.generate_map`,
+                which then never reads live config.toml for this world. None
+                (default) generates an ordinary brand-new world from
+                config.toml, as always. `civulator.tools.recording.
+                build_env_from_scenario` is the one caller that supplies
+                this, extracted from a scenario's manifest.
         """
         preset_rows, preset_cols, resolved_players = resolve_size_and_players(size, num_players)
         self.n = n if n is not None else preset_rows
@@ -117,7 +125,7 @@ class GameEnvironment:
 
         # Initialize map and players
         self.map = Map(self.n, self.m, rng=self.rng)
-        self.map.generate_map(self.map_type, num_players=self.num_players)
+        self.map.generate_map(self.map_type, num_players=self.num_players, params=mapgen_params)
 
         for i in range(self.num_players):
             player = Player(f"Player {i+1}", i, self)

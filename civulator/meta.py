@@ -9,6 +9,7 @@ torch freely since it only deals with saving/loading artifacts, never simulation
 """
 
 import copy
+import logging
 import os
 import subprocess
 from datetime import datetime, timezone
@@ -17,6 +18,8 @@ import torch
 
 from . import __version__
 from .config import CFG
+
+logger = logging.getLogger(__name__)
 
 
 def _find_repo_root():
@@ -42,18 +45,109 @@ def _git_commit():
         return "unknown"
 
 
-def build_manifest():
+class VersionGateError(Exception):
+    """Raised by `check_version` — and reused verbatim by anything that shares
+    its refusal path (design doc §8, Systems (b) "Version gate" row: "the one
+    gate... every scenario/recording loader calls it") — when an artifact
+    cannot be trusted to rebuild identically under the current game version.
+    `civulator.tools.recording.build_env_from_scenario` also raises this
+    directly when a manifest passes the version check but still lacks the
+    pinned mapgen params needed for an identical rebuild (design doc §8's
+    central fix) — one exception type, one `override` escape hatch, no
+    matter which of the two reasons triggered it.
+    """
+
+
+def _major_minor(version_string):
+    """'0.6.1' -> '0.6' — the granularity `check_version` compares at (design
+    doc §8: "The version check (major.minor) remains as a secondary guard
+    for engine-logic drift").
+    """
+    parts = str(version_string).split(".")
+    return ".".join(parts[:2])
+
+
+def check_version(manifest, override=False):
+    """The ONE version gate (design doc §8, D16, Systems (b)): refuse to
+    trust `manifest` as version-compatible unless it carries a game_version
+    matching the CURRENT major.minor. Every scenario/demo/future loader that
+    cares about version compatibility calls this — do not hand-roll a second
+    check (design doc: "used by recording.load_scenario ... and every future
+    demo/scenario loader").
+
+    Does NOT bump/read a different version than `build_manifest` already
+    does (`civulator.__version__`) — P8 bumps that number; this gate just
+    compares against whatever it currently is.
+
+    Args:
+        manifest: the artifact's embedded manifest dict (`build_manifest`'s
+            shape), or None/missing entirely.
+        override: bypass the refusal, logging a warning instead of raising.
+            Never silent — the caller is explicitly choosing to accept a
+            possibly-inconsistent load (design doc §8: "the same override").
+
+    Raises:
+        VersionGateError: if `manifest` is None, has no "game_version", or
+            its major.minor differs from the current game_version's major.
+            minor — unless `override` is True.
+    """
+    current = _major_minor(__version__)
+
+    if not manifest or "game_version" not in manifest:
+        message = (
+            "artifact has no manifest (or no game_version in it) — cannot "
+            f"verify it was produced by a compatible version (current "
+            f"{__version__!r}); pass override=True to load it anyway"
+        )
+        if override:
+            logger.warning("check_version override: %s", message)
+            return
+        raise VersionGateError(message)
+
+    manifest_version = manifest["game_version"]
+    manifest_major_minor = _major_minor(manifest_version)
+    if manifest_major_minor != current:
+        message = (
+            f"artifact manifest game_version {manifest_version!r} (major.minor "
+            f"{manifest_major_minor}) does not match the current game_version "
+            f"{__version__!r} (major.minor {current}); pass override=True to "
+            f"load it anyway"
+        )
+        if override:
+            logger.warning("check_version override: %s", message)
+            return
+        raise VersionGateError(message)
+
+
+def build_manifest(mapgen_params=None):
     """Build a manifest recording the game version/config that produced an artifact.
 
+    Args:
+        mapgen_params: optional — a world-bearing save site's own
+            `Map.mapgen_params` (design doc §8, D16: "World identity =
+            manifest-pinned params"), i.e. the generator's own echo of
+            exactly what it used (seed/rows/cols/num_players/map_type/
+            resolved knobs/starts params). Omitted (None, the default) for
+            artifacts that carry no world of their own, e.g. trained
+            weights — their manifest keeps exactly the pre-0.6 four-key
+            shape (tests/test_meta.py pins this). When given, it is
+            embedded under "mapgen_params" so `civulator.tools.recording.
+            build_env_from_scenario` can rebuild the identical world
+            without ever reading live config.toml.
+
     Returns:
-        dict with keys: game_version, git_commit, config, date.
+        dict with keys: game_version, git_commit, config, date, and —
+        only when `mapgen_params` is given — mapgen_params.
     """
-    return {
+    manifest = {
         "game_version": __version__,
         "git_commit": _git_commit(),
         "config": copy.deepcopy(CFG),
         "date": datetime.now(timezone.utc).isoformat(),
     }
+    if mapgen_params is not None:
+        manifest["mapgen_params"] = mapgen_params
+    return manifest
 
 
 def save_weights(state_dict, path):

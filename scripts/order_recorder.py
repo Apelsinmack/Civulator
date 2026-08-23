@@ -5,7 +5,11 @@ civulator.tools.recording.RecordingSession; all hex math and drawing comes from
 civulator.viz.hex_render. This file is only the raylib front-end.
 
 Usage:
-    python scripts/order_recorder.py [scenarios/scenario_001.json]
+    python scripts/order_recorder.py [--override] [scenarios/scenario_010.json]
+
+    --override bypasses the design doc §11 P7 version/manifest-pinning gate
+    for a pre-0.6 or version-mismatched scenario, rebuilding its terrain
+    from live config.toml instead of refusing to load it.
 
 Controls:
   LEFT CLICK   — click own unit = select, valid tile = move,
@@ -163,8 +167,15 @@ def draw_hud(session, last_action):
                      10, 58, 12, rl.ORANGE)
 
 
-def run(scenario_path):
-    session = RecordingSession(scenario_path)
+def run(scenario_path, override=False):
+    """
+    Args:
+        override: forwarded to `RecordingSession` — bypass the design doc
+            §11 P7 version/manifest-pinning gate for a pre-0.6 or version-
+            mismatched scenario, rebuilding its terrain from live
+            config.toml instead of refusing. Default off.
+    """
+    session = RecordingSession(scenario_path, override=override)
     if not session.terrain_reproducible:
         print("WARNING: this scenario predates seeded terrain — the terrain shown is "
               "a fresh map from the stored seed, not the one it was painted on.")
@@ -209,4 +220,7 @@ def run(scenario_path):
 
 
 if __name__ == "__main__":
-    run(pick_scenario(sys.argv))
+    _args = sys.argv[1:]
+    _override = "--override" in _args
+    _args = [a for a in _args if a != "--override"]
+    run(pick_scenario([sys.argv[0], *_args]), override=_override)

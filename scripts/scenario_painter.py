@@ -58,6 +58,10 @@ HEX_SIZE = 28
 SCREEN_W = 1200
 SCREEN_H = 800
 SCENARIO_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scenarios")
+# Archived pre-0.6 scenarios (design doc §8, §11 P7 deliverable 4) — save()
+# must never reuse one of THEIR numbers either, even though they no longer
+# live in SCENARIO_DIR.
+ARCHIVE_DIR = os.path.join(SCENARIO_DIR, "archive_v0.5")
 
 UNIT_TYPES = ["Warrior", "Archer", "Spearman", "Horseman", "Catapult", "Swordsman"]
 
@@ -74,6 +78,31 @@ PLAYER_COLORS = [
     rl.Color(50, 100, 220, 255),   # Team 1: Blue
     rl.Color(220, 50, 50, 255),    # Team 2: Red
 ]
+
+
+def next_scenario_index(*dirs):
+    """Highest existing `scenario_NNN.json` index across `dirs`, plus one.
+
+    Design doc §11 P7 deliverable 4: "painter numbering continues above
+    archived numbers ... no collisions with archived names" — `save()`
+    calls this with BOTH `SCENARIO_DIR` and `ARCHIVE_DIR` every time (not a
+    once-at-startup cache) so it stays correct even if files are archived,
+    added, or removed between saves within one painter session. A missing
+    directory (e.g. no archive yet) is silently skipped, not an error.
+    """
+    best = 0
+    for d in dirs:
+        if not os.path.isdir(d):
+            continue
+        for name in os.listdir(d):
+            if not name.startswith("scenario_") or not name.endswith(".json"):
+                continue
+            try:
+                best = max(best, int(name.split("_")[1].split(".")[0]))
+            except (IndexError, ValueError):
+                pass
+    return best + 1
+
 
 # --- State ---
 
@@ -144,7 +173,10 @@ class PainterState:
 
     def save(self):
         os.makedirs(SCENARIO_DIR, exist_ok=True)
-        self.scenario_count += 1
+        # Scans BOTH scenarios/ and its archive_v0.5/ for the max index every
+        # save (design doc §11 P7 deliverable 4) — never a stale in-memory
+        # counter, never a collision with an archived name.
+        self.scenario_count = next_scenario_index(SCENARIO_DIR, ARCHIVE_DIR)
         filename = f"scenario_{self.scenario_count:03d}.json"
         filepath = os.path.join(SCENARIO_DIR, filename)
 
@@ -163,7 +195,12 @@ class PainterState:
             "map_type": MAP_TYPE,
             "units": self.units,
             "cities": self.cities,
-            "manifest": build_manifest(),
+            # design doc §8, §11 P7 deliverable 2: the generator's own echo
+            # of exactly what it used (seed/rows/cols/num_players/map_type/
+            # resolved knobs/starts params), embedded so a future reload
+            # rebuilds this exact world regardless of any later config.toml
+            # mapgen-knob tune ("World identity = manifest-pinned params").
+            "manifest": build_manifest(mapgen_params=self.game_map.mapgen_params),
         }
         with open(filepath, "w") as f:
             json.dump(data, f, indent=2)
@@ -189,18 +226,10 @@ def run_painter():
     state = PainterState()
     state.load_sprites()
 
-    # Find existing scenario count to not overwrite
-    if os.path.exists(SCENARIO_DIR):
-        existing = [f for f in os.listdir(SCENARIO_DIR) if f.endswith(".json")]
-        if existing:
-            nums = []
-            for f in existing:
-                try:
-                    nums.append(int(f.split("_")[1].split(".")[0]))
-                except (IndexError, ValueError):
-                    pass
-            if nums:
-                state.scenario_count = max(nums)
+    # No startup scan needed: PainterState.save() recomputes the next free
+    # index itself, fresh, from BOTH SCENARIO_DIR and ARCHIVE_DIR every time
+    # it runs (design doc §11 P7 deliverable 4) — never overwrites an
+    # existing or archived scenario.
 
     camera = make_camera(MAP_ROWS, MAP_COLS, HEX_SIZE, SCREEN_W, SCREEN_H, zoom=1.0)
 
