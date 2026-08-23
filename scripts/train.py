@@ -39,7 +39,7 @@ def set_random_seeds(seed=42):
 
 def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
          batch_size=32, max_turns=250, debug=True, encoder="basic",
-         fully_conv=False):
+         fully_conv=False, seed_base=None):
     """Main training function.
 
     Args:
@@ -50,6 +50,9 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
         max_turns: Maximum turns per game before forced end
         debug: Enable debug output (ASCII map display)
         encoder: State encoder type ("basic" or "enhanced")
+        seed_base: Optional int — enables train_agents's episode-indexed
+            seed schedule (issue #39). None (default, and config.toml's
+            own default) reproduces the original unseeded behavior.
     """
     set_random_seeds()
 
@@ -144,7 +147,7 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
     # Train
     win_counts, win_history = train_agents(
         env, agents, num_episodes=num_episodes, batch_size=batch_size, debug=debug,
-        build_agents=build_agents,
+        build_agents=build_agents, seed_base=seed_base,
     )
 
     print("\nTraining complete!")
@@ -196,6 +199,10 @@ if __name__ == "__main__":
                         help="State encoder type")
     parser.add_argument("--fully-conv", action="store_true",
                         help="Use fully convolutional network (map-size independent)")
+    parser.add_argument("--seed-base", type=int, default=_tcfg.get("seed_base"),
+                        help="Enable the episode-indexed seed schedule (issue #39), "
+                             "starting at this seed. Omit (config default: absent) "
+                             "for the original unseeded behavior.")
     args = parser.parse_args()
 
     main(
@@ -207,4 +214,5 @@ if __name__ == "__main__":
         debug=args.debug,
         encoder=args.encoder,
         fully_conv=args.fully_conv,
+        seed_base=args.seed_base,
     )

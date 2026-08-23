@@ -412,5 +412,10 @@ weights/
 !weights/trained/
 stats/
 
+# scripts/run_baseline.py --tag <non-default>: isolated smoke/scratch run
+# output (weights/, weights/trained/, stats/ mirrored per tag), never the
+# real scientific record -- see run_baseline.py's module docstring.
+runs/
+
 # Claude Code local settings
 .claude/

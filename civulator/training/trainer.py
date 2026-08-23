@@ -1,5 +1,6 @@
 """Training orchestration for multi-agent DQN training."""
 
+import logging
 import os
 import time
 
@@ -12,11 +13,85 @@ from ..agents.networks import get_valid_select_mask
 from ..agents.build_agent import BUILD_OPTIONS
 from ..game.city import City
 from ..game.unit import NUM_UNIT_SLOTS
+from ..mapgen.starts import StartPlacementError
 from ..meta import build_manifest, save_weights
+
+logger = logging.getLogger(__name__)
+
+# Infinite-loop guard for the episode-seed schedule below (issue #39): the
+# documented start-placement failure rate is ~2% of seeds (design doc D26),
+# so consuming this many CONSECUTIVE failures without a single success is
+# not "unlucky", it's pathological (e.g. a corrupt seed_base range or a
+# broken generator) — abort loudly instead of spinning forever.
+_MAX_CONSECUTIVE_SEED_SKIPS = 1000
+
+
+def _seeded_reset(env, seed_cursor, episode, seed_base):
+    """`env.reset(seed=seed_cursor)`, walking the cursor forward past any
+    seeds `GameEnvironment.reset` rejects with `StartPlacementError` (the
+    ~2% of seeds mapgen's start-placement ladder cannot place — `reset
+    (seed=N)` raises on these BY DESIGN, on the first and only attempt,
+    per that method's own docstring; it never silently resamples the way
+    an unseeded reset does).
+
+    Scheme — RUNNING SEED CURSOR, the simplest scheme that provably
+    matches across runs (issue #39 experiment-design requirement: every
+    follower experiment must train on literally the same sequence of
+    worlds as the baseline): a single cursor starts at `seed_base` for
+    episode 0. Each episode tries `env.reset(seed=cursor)`; on success
+    the returned seed is consumed and the cursor left one past it for the
+    NEXT episode. On `StartPlacementError` the failed seed is logged and
+    the cursor advances by 1 and retries, as many times as needed, before
+    the episode counts as started.
+
+    Determinism argument: `reset(seed=N)` starts by calling
+    `self.rng.seed(N)`, which fully re-seeds the engine RNG — so whether
+    seed N places successfully is a pure function of N and the current
+    code, never of prior episodes' history or which run is asking. Two
+    runs with the same seed_base and the same code therefore walk the
+    EXACT same cursor sequence and skip the EXACT same seeds: episode k
+    always maps to the same world in every run. In the common case (no
+    skips before episode k) that world's seed is `seed_base + k`; each
+    earlier skip permanently shifts every later episode's seed up by
+    one — this is why "episode k's seed" has no closed-form formula
+    exposed outside this function, only the reproducibility property
+    (same seed_base -> same episode->world sequence) is the public
+    contract callers rely on.
+
+    Returns:
+        (episode_seed, next_cursor): the seed that actually produced this
+        episode's world, and where the search for the NEXT episode should
+        resume.
+    """
+    cursor = seed_cursor
+    skips = 0
+    while True:
+        try:
+            env.reset(seed=cursor)
+            return cursor, cursor + 1
+        except StartPlacementError as exc:
+            logger.warning(
+                "episode seed schedule (seed_base=%d): episode %d seed %d "
+                "failed start placement, skipping to %d: %s",
+                seed_base, episode, cursor, cursor + 1, exc,
+            )
+            cursor += 1
+            skips += 1
+            if skips > _MAX_CONSECUTIVE_SEED_SKIPS:
+                raise RuntimeError(
+                    f"episode seed schedule (seed_base={seed_base}): "
+                    f"{_MAX_CONSECUTIVE_SEED_SKIPS} CONSECUTIVE seeds failed "
+                    f"start placement (last tried {cursor - 1}) while looking "
+                    f"for episode {episode}'s world — the documented failure "
+                    f"rate is ~2% of seeds (design doc D26), so this run looks "
+                    f"pathological rather than unlucky; aborting instead of "
+                    f"looping forever"
+                ) from exc
 
 
 def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
-                  save_checkpoints=True, build_agents=None):
+                  save_checkpoints=True, build_agents=None, seed_base=None,
+                  episode_callback=None):
     """Train multiple agents with proper state tracking and win counting.
 
     Args:
@@ -26,6 +101,27 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
         batch_size: Batch size for optimization
         debug: Whether to display debug information
         build_agents: Optional list of BuildAgent instances (one per player)
+        seed_base: Optional int. When given, episode k resets on a
+            deterministic world drawn from the episode-seed schedule (see
+            `_seeded_reset` above for the exact scheme and its
+            determinism argument) instead of an unseeded resample —
+            required whenever a follower experiment must train on
+            literally the same sequence of worlds as this run (issue
+            #39). Defaults to None: today's original, fully
+            backward-compatible behavior — every episode calls
+            `env.reset()` unseeded, and `GameEnvironment` resamples on
+            its own bounded retry policy (`[map] max_world_retries`).
+            There is no config.toml fallback read inside this function —
+            like every other run parameter here (num_episodes,
+            batch_size, ...), callers resolve their own value (CLI flag,
+            `[training] seed_base`, or a literal) and pass it in.
+        episode_callback: Optional callable `(episode, num_episodes,
+            win_counts)`, invoked once at the end of each completed
+            episode (after that episode's winner is recorded). Non-
+            invasive opt-in loop seam for callers that want progress
+            reporting (elapsed/ETA, periodic logging, ...) without
+            train_agents itself taking on that responsibility — it does
+            not compute or pass timing; the caller has its own clock.
 
     Returns:
         tuple: (win_counts dict, win_history list)
@@ -33,14 +129,19 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
     win_counts = {i: 0 for i in range(len(agents))}
     win_history = []
     use_build = build_agents is not None
+    seed_cursor = seed_base  # None => unseeded (unchanged original behavior)
 
     # Build order tracking: per-player list of build sequences per episode
     # build_orders[player_idx] = list of lists, one per episode
     build_orders = {i: [] for i in range(len(agents))} if use_build else None
 
     for episode in range(num_episodes):
-        print(f"Starting episode {episode}")
-        env.reset()
+        if seed_cursor is None:
+            print(f"Starting episode {episode}")
+            env.reset()
+        else:
+            episode_seed, seed_cursor = _seeded_reset(env, seed_cursor, episode, seed_base)
+            print(f"Starting episode {episode} (seed={episode_seed})")
         done = False
 
         # Track builds this episode
@@ -207,6 +308,10 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
         # Save checkpoints
         if save_checkpoints:
             _save_checkpoints(agents, episode)
+
+        # Opt-in progress-reporting seam (see episode_callback's docstring above)
+        if episode_callback is not None:
+            episode_callback(episode, num_episodes, win_counts)
 
     save_win_history(win_history, num_episodes)
     if use_build:

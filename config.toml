@@ -488,6 +488,14 @@ target_update_freq = 100 # Sync target network every N optimization steps
 encoder = "enhanced"     # "basic" (5ch) or "enhanced" (25ch)
 fully_conv = true        # Must be true for large maps (no FC layers)
 fog_of_war = false       # true: enhanced encoder applies visibility (27ch — hidden/explored/visible)
+# seed_base: episode-indexed seed schedule (issue #39, civulator/training/
+# trainer.py train_agents's `seed_base` param + `_seeded_reset` docstring
+# for the exact scheme). Absent (the default, as here) = unseeded episodes,
+# unchanged from before this key existed. scripts/train.py reads this as
+# its --seed-base default; scripts/run_baseline.py does NOT read it — the
+# #39 baseline pins its own seed_base=390000 in code, deliberately not
+# sourced from this mutable file.
+# seed_base = 12345
 
 [training.rewards]
 invalid_action = -1
