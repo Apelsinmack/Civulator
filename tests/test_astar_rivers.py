@@ -20,6 +20,7 @@ from civulator import hexmath
 from civulator.config import CFG
 from civulator.game.map import BLOCKED_COST, HAS_CPP_CORE, Map, _river_crossing_cost
 from civulator.game.unit import RIVER_CROSSING_COST, WarriorUnit
+from civulator.mapgen.starts import StartPlacementError
 from civulator.rng import PortableRNG
 
 from test_combat_range import make_flat_env, place
@@ -256,9 +257,19 @@ def test_cpp_matches_python_over_random_earthlike_worlds_with_rivers():
     total_rivers = 0
     river_crossings_exercised = 0
 
-    for seed in range(N_PARITY_WORLDS):
+    worlds = 0
+    seed = -1
+    while worlds < N_PARITY_WORLDS:
+        seed += 1
         m = Map(DUEL_ROWS, DUEL_COLS, rng=PortableRNG(seed))
-        m.generate_map(map_type="earthlike", num_players=2)
+        try:
+            m.generate_map(map_type="earthlike", num_players=2)
+        except StartPlacementError:
+            # World viability is orthogonal to pathfinding parity — the known
+            # small-map placement failure rate (P5 report) just costs a seed,
+            # deterministically, keeping the oracle at N_PARITY_WORLDS worlds.
+            continue
+        worlds += 1
         total_rivers += len(m.rivers)
 
         cost_grid = m._build_cost_grid("land")
