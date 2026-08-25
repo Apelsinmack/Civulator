@@ -8,6 +8,7 @@ Select action space: n*m*NUM_SLOTS + 1
 Move action space: n*m (unchanged — destination is a tile, not a slot)
 """
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,7 +21,17 @@ def horizontal_wrap_padding(state, padding_size=1):
     Pad a state tensor with horizontal wrapping to handle the cylindrical map.
 
     Copies edge columns to the opposite side so that the CNN correctly
-    perceives adjacency across the map boundary.
+    perceives adjacency across the map boundary. Rows (top/bottom) are
+    zero-padded, not wrapped -- the map is cylindrical horizontally only.
+
+    Implemented via two native F.pad calls (issue #42): a circular pad on
+    the width axis only, then a zero pad on the height axis only. This
+    replaces a hand-rolled Python loop that wrote each wrapped column with
+    an individual tensor assignment (217k calls/30 episodes in profiling --
+    the #1 engine-side hotspot). F.pad's circular mode pads the *last two*
+    dims of the input regardless of how many leading (batch/channel) dims
+    there are, so the same two-line body handles both the batched
+    [batch, d, n, m] and unbatched [d, n, m] shapes without a branch.
 
     Args:
         state: Input tensor, either [batch, d, n, m] or [d, n, m]
@@ -29,34 +40,8 @@ def horizontal_wrap_padding(state, padding_size=1):
     Returns:
         Padded tensor with horizontal wrapping and zero-padded top/bottom
     """
-    if len(state.shape) == 4:
-        batch_size, d, n, m = state.shape
-        device = state.device
-
-        padded = torch.zeros(
-            batch_size, d, n + padding_size * 2, m + padding_size * 2, device=device
-        )
-
-        # Copy original state to center
-        padded[:, :, padding_size : n + padding_size, padding_size : m + padding_size] = state
-
-        # Wrap left/right edges
-        for i in range(padding_size):
-            padded[:, :, padding_size : n + padding_size, i] = state[:, :, :, m - (padding_size - i)]
-            padded[:, :, padding_size : n + padding_size, m + padding_size + i] = state[:, :, :, i]
-
-    else:
-        d, n, m = state.shape
-        device = state.device
-
-        padded = torch.zeros(d, n + padding_size * 2, m + padding_size * 2, device=device)
-
-        padded[:, padding_size : n + padding_size, padding_size : m + padding_size] = state
-
-        for i in range(padding_size):
-            padded[:, padding_size : n + padding_size, i] = state[:, :, m - (padding_size - i)]
-            padded[:, padding_size : n + padding_size, m + padding_size + i] = state[:, :, i]
-
+    padded = F.pad(state, (padding_size, padding_size, 0, 0), mode="circular")
+    padded = F.pad(padded, (0, 0, padding_size, padding_size), mode="constant", value=0)
     return padded
 
 
@@ -443,18 +428,28 @@ def get_valid_select_mask(state, game_env):
     `game_env` is required: masking reads the actual unit data. (The old
     state-tensor fallback, which could not distinguish slots, was unreachable
     from live code and was deleted in P2a — design doc §3.3.)
+
+    Building the mask is a numpy operation on CPU, with a single transfer to
+    `state.device` at the end (issue #42) — the original wrote one scalar
+    into a freshly-allocated CUDA tensor per unit (64.7k calls/30 episodes),
+    each write its own GPU kernel launch/sync.
     """
     n, m = state.shape[1], state.shape[2]
     device = state.device
 
-    mask = torch.zeros(n * m * NUM_UNIT_SLOTS, device=device)
+    mask_np = np.zeros(n * m * NUM_UNIT_SLOTS, dtype=np.float32)
     current_player = game_env.current_player
-    for unit in current_player.units:
-        if unit.health > 0 and unit.movement_points > 0:
-            r, c = unit.coordinates
-            tile_idx = r * m + c
-            mask[tile_idx * NUM_UNIT_SLOTS + unit.slot] = 1.0
-    return mask
+    units = current_player.units
+    if units:
+        rows = np.fromiter((u.coordinates[0] for u in units), dtype=np.int64, count=len(units))
+        cols = np.fromiter((u.coordinates[1] for u in units), dtype=np.int64, count=len(units))
+        slots = np.fromiter((u.slot for u in units), dtype=np.int64, count=len(units))
+        valid = np.fromiter(
+            (u.health > 0 and u.movement_points > 0 for u in units), dtype=bool, count=len(units)
+        )
+        tile_idx = rows[valid] * m + cols[valid]
+        mask_np[tile_idx * NUM_UNIT_SLOTS + slots[valid]] = 1.0
+    return torch.from_numpy(mask_np).to(device)
 
 
 def adjust_mask_for_end_turn(original_mask):
@@ -476,6 +471,14 @@ def get_valid_moves_mask(state, selected_pos, game_env):
 
     `game_env` is required; the old state-tensor fallback branch (unreachable
     from live code) was deleted in P2a.
+
+    The mask is accumulated in a numpy array on CPU and transferred to
+    `state.device` once at the end (issue #42) — the original wrote each
+    entry (per hex direction, per ranged target) into a CUDA tensor
+    directly, each write its own GPU kernel launch/sync. The per-tile game
+    logic itself (terrain, slot occupancy, line of sight) is unchanged —
+    it calls back into `game_env`/`Unit` and can't be vectorized without
+    duplicating those rules.
     """
     _, n, m = state.shape
     device = state.device
@@ -490,13 +493,13 @@ def get_valid_moves_mask(state, selected_pos, game_env):
     row = tile_pos // m
     col = tile_pos % m
 
-    valid_move_mask = torch.zeros(n, m, device=device)
+    valid_move_mask = np.zeros((n, m), dtype=np.float32)
 
     selected_unit = game_env.get_unit_in_slot(
         (row, col), selected_slot, game_env.current_player
     )
     if selected_unit is None or selected_unit.movement_points <= 0:
-        return valid_move_mask.flatten()
+        return torch.from_numpy(valid_move_mask.flatten()).to(device)
 
     from ..game.map import HEX_DIRECTIONS
     for dr, dc in HEX_DIRECTIONS:
@@ -543,4 +546,4 @@ def get_valid_moves_mask(state, selected_pos, game_env):
     # Current tile is always valid (fortify / found city)
     valid_move_mask[row, col] = 1
 
-    return valid_move_mask.flatten()
+    return torch.from_numpy(valid_move_mask.flatten()).to(device)
