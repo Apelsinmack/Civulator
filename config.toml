@@ -485,7 +485,7 @@ epsilon_start = 1.0
 epsilon_end = 0.05
 epsilon_decay_episodes = 5000
 target_update_freq = 100 # Sync target network every N optimization steps
-encoder = "enhanced"     # "basic" (5ch) or "enhanced" (25ch)
+encoder = "enhanced"     # "basic" (5ch), "enhanced" (25ch/27ch fog), or "terrain_aware" (52ch/54ch fog, issue #40)
 fully_conv = true        # Must be true for large maps (no FC layers)
 fog_of_war = false       # true: enhanced encoder applies visibility (27ch — hidden/explored/visible)
 # seed_base: episode-indexed seed schedule (issue #39, civulator/training/

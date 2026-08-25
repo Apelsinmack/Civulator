@@ -15,8 +15,8 @@ Pinned configuration (NOT sourced from config.toml):
         players (its own default_players, not overridden here either --
         this file only pins the PRESET NAME).
     map_type:   "earthlike"
-    encoder:    EnhancedStateEncoder, 25 channels (fog_of_war=false)
-    fully_conv: True (FullyConvNetwork -- map-size independent)
+    fully_conv: True (FullyConvNetwork -- map-size independent, so it
+        accepts whichever encoder's channel count without modification)
     seed_base:  390000 -- THE #39 episode-seed schedule. See
         civulator.training.trainer.train_agents's `seed_base` parameter
         and `_seeded_reset`'s docstring for the exact running-cursor
@@ -24,9 +24,19 @@ Pinned configuration (NOT sourced from config.toml):
         that must train on literally the same world sequence reuses this
         exact constant.
 
+Encoder (issue #40 wiring -- this is the one knob this script is DESIGNED
+to vary between comparison runs): `--encoder`, default from config.toml
+[training].encoder (repo default "enhanced" -- the #39 baseline, 25
+channels, fog_of_war=false). Selected via `civulator.agents.get_encoder`
+(the encoder registry -- this script never instantiates an encoder class
+directly), so `--encoder terrain_aware` runs the SAME seed schedule against
+the 52-channel TerrainAwareStateEncoder (docs/terrain_encoder_design.md,
+#40) for a controlled comparison. Network depth and output filenames
+(`duel_{channels}ch_...`) follow the chosen encoder automatically.
+
 Agent architecture note (a judgment call -- issue #39's text pins the
-world/seed/encoder config but says nothing about network width or
-per-player hyperparameters): both players get IDENTICAL hyperparameters,
+world/seed config but says nothing about network width or per-player
+hyperparameters): both players get IDENTICAL hyperparameters,
 read from config.toml's [training] section (learning_rate, gamma; epsilon
 schedule and target_update_freq come from there automatically inside
 DQNAgent's own constructor). This is a deliberate departure from the
@@ -41,11 +51,13 @@ fully-documented prior entry (medium_16x32_1000ep.pth).
 Output layout:
     --tag baseline (the default -- the real run): writes into the repo's
         real weights/ (per-episode checkpoints, trainer's own existing,
-        already-gitignored behavior), weights/trained/duel_25ch_{episodes}
-        ep.pth (this script's own final combined save, WITH manifest, via
-        civulator.meta.save_weights), and stats/ (win-history + build-
-        order artifacts, trainer's own existing behavior; also this
-        script's own JSON run summary) -- the actual scientific record.
+        already-gitignored behavior), weights/trained/duel_{channels}ch_
+        {episodes}ep.pth (this script's own final combined save, WITH
+        manifest, via civulator.meta.save_weights -- {channels} is the
+        chosen encoder's channel count, e.g. 25 for the #39 baseline or 52
+        for --encoder terrain_aware), and stats/ (win-history + build-order
+        artifacts, trainer's own existing behavior; also this script's own
+        JSON run summary) -- the actual scientific record.
     any other --tag (e.g. "smoke"): every one of those paths is instead
         rooted under runs/{tag}/ (mirrored weights/, weights/trained/,
         stats/ subtree) so a smoke test can never pollute the real
@@ -53,7 +65,8 @@ Output layout:
         explicitly either way, for both the default tag and any other.
 
 Usage:
-    python scripts/run_baseline.py                          # real 1000-episode run
+    python scripts/run_baseline.py                          # real 1000-episode run (25ch)
+    python scripts/run_baseline.py --encoder terrain_aware   # #40 comparison run (52ch)
     python scripts/run_baseline.py --episodes 3 --tag smoke  # fast smoke test
     python scripts/run_baseline.py --outdir D:/scratch/run1  # explicit output root
 """
@@ -71,14 +84,13 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from civulator.config import CFG
 from civulator.game import GameEnvironment, resolve_size_and_players
-from civulator.agents import DQNAgent, BuildAgent, EnhancedStateEncoder, ReplayMemory
+from civulator.agents import DQNAgent, BuildAgent, ReplayMemory, get_encoder
 from civulator.training import train_agents
 from civulator.meta import save_weights
 
 # --- The #39 pinned configuration (see module docstring) -------------------
 SIZE_PRESET = "duel"
 MAP_TYPE = "earthlike"
-ENCODER = "enhanced"
 FULLY_CONV = True
 CONV_CHANNELS = (16, 32)
 SEED_BASE = 390000          # THE #39 schedule -- do not change per-run
@@ -87,6 +99,10 @@ DEFAULT_TAG = "baseline"
 PROGRESS_REPORT_EVERY = 100
 
 _tcfg = CFG.get("training", {})
+# Encoder default sourced from config.toml [training].encoder (issue #40
+# wiring) -- everything else above stays pinned in code, see module
+# docstring. Repo default is "enhanced" (the #39 baseline, unchanged).
+DEFAULT_ENCODER = _tcfg.get("encoder", "enhanced")
 
 
 @contextlib.contextmanager
@@ -139,13 +155,18 @@ def make_progress_callback(report_every=PROGRESS_REPORT_EVERY):
     return callback
 
 
-def build_training_objects(n, m, num_players, learning_rate, gamma):
+def build_training_objects(n, m, num_players, learning_rate, gamma, encoder):
     """Both players get IDENTICAL hyperparameters -- see module docstring
     'Agent architecture note'. Mirrors DQNAgent/BuildAgent construction in
     scripts/train.py and scripts/profile_training.py, minus their
     per-player AGENT_CONFIGS asymmetry.
+
+    `encoder` is a registry name (civulator.agents.get_encoder) -- this
+    script never instantiates an encoder class directly (issue #40 wiring).
+    FullyConvNetwork is channel-count agnostic, so `d` alone is enough to
+    make DQNAgent/BuildAgent match whichever encoder was selected.
     """
-    d = EnhancedStateEncoder().get_depth(num_players)
+    d = get_encoder(encoder).get_depth(num_players)
 
     env = GameEnvironment(n, m, num_players, map_type=MAP_TYPE)
 
@@ -154,7 +175,7 @@ def build_training_objects(n, m, num_players, learning_rate, gamma):
     for i in range(num_players):
         agent = DQNAgent(
             n, m, d, ReplayMemory(10000), gamma=gamma, learning_rate=learning_rate,
-            encoder=ENCODER, fully_conv=FULLY_CONV, conv_channels=CONV_CHANNELS,
+            encoder=encoder, fully_conv=FULLY_CONV, conv_channels=CONV_CHANNELS,
         )
         agent.config_name = f"Baseline-P{i + 1}"
         agents.append(agent)
@@ -200,25 +221,31 @@ def save_final_weights(agents, build_agents, path):
     save_weights(payload, path)
 
 
-def main(episodes, tag, outdir):
+def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER):
     n, m, num_players = resolve_size_and_players(size=SIZE_PRESET)
     max_turns = _tcfg.get("max_turns", 250)
     batch_size = _tcfg.get("batch_size", 32)
     learning_rate = _tcfg.get("learning_rate", 0.001)
     gamma = _tcfg.get("gamma", 0.9)
 
+    # Channel count drives both the output filename and (inside
+    # build_training_objects) the network depth -- get_encoder() is the one
+    # registry both go through (issue #40 wiring), never a hard-instantiated
+    # encoder class.
+    d = get_encoder(encoder).get_depth(num_players)
+
     if outdir is None:
         outdir = PROJECT_ROOT if tag == DEFAULT_TAG else os.path.join(PROJECT_ROOT, "runs", tag)
 
     suffix = "" if tag == DEFAULT_TAG else f"_{tag}"
-    weights_filename = f"duel_25ch_{episodes}ep{suffix}.pth"
+    weights_filename = f"duel_{d}ch_{episodes}ep{suffix}.pth"
 
     print("=" * 72)
     print("Civulator #39 baseline launcher (issue #39)")
     print("=" * 72)
     print(f"tag={tag!r}  outdir={outdir}")
     print(f"map: size={SIZE_PRESET} ({m}x{n}) players={num_players} map_type={MAP_TYPE}")
-    print(f"encoder={ENCODER} fully_conv={FULLY_CONV} conv_channels={CONV_CHANNELS}")
+    print(f"encoder={encoder} ({d}ch) fully_conv={FULLY_CONV} conv_channels={CONV_CHANNELS}")
     print(f"episodes={episodes} max_turns={max_turns} batch_size={batch_size}")
     print(f"learning_rate={learning_rate} gamma={gamma}")
     print(f"seed_base={SEED_BASE}  (episode-indexed seed schedule, issue #39 -- "
@@ -227,7 +254,9 @@ def main(episodes, tag, outdir):
     print("=" * 72)
 
     with _chdir(outdir):
-        env, agents, build_agents, d = build_training_objects(n, m, num_players, learning_rate, gamma)
+        env, agents, build_agents, d = build_training_objects(
+            n, m, num_players, learning_rate, gamma, encoder
+        )
         env.max_turns = max_turns
 
         t0 = time.perf_counter()
@@ -252,7 +281,7 @@ def main(episodes, tag, outdir):
             "map_dims": {"rows": n, "cols": m},
             "num_players": num_players,
             "map_type": MAP_TYPE,
-            "encoder": ENCODER,
+            "encoder": encoder,
             "encoder_channels": d,
             "fully_conv": FULLY_CONV,
             "conv_channels": list(CONV_CHANNELS),
@@ -294,6 +323,13 @@ if __name__ == "__main__":
     parser.add_argument("--outdir", type=str, default=None,
                         help="Explicit output root (weights/, weights/trained/, stats/ are created "
                              "under it). Overrides the --tag-based default either way.")
+    parser.add_argument("--encoder", type=str, default=DEFAULT_ENCODER,
+                        choices=["basic", "enhanced", "terrain_aware"],
+                        help=f"State encoder, selected via civulator.agents.get_encoder "
+                             f"(default: {DEFAULT_ENCODER!r}, from config.toml [training].encoder). "
+                             "'terrain_aware' (52ch/54ch fog, issue #40) runs the SAME seed schedule "
+                             "against the terrain-aware encoder for a controlled comparison against "
+                             "the #39 'enhanced' (25ch) baseline.")
     args = parser.parse_args()
 
-    main(episodes=args.episodes, tag=args.tag, outdir=args.outdir)
+    main(episodes=args.episodes, tag=args.tag, outdir=args.outdir, encoder=args.encoder)

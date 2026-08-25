@@ -16,7 +16,7 @@ from .networks import (
     get_valid_moves_mask,
 )
 from .replay_memory import ReplayMemory, Transition
-from .state_encoders import BasicStateEncoder, EnhancedStateEncoder
+from .state_encoders import get_encoder
 from ..game.unit import NUM_UNIT_SLOTS
 
 
@@ -67,10 +67,12 @@ class DQNAgent:
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=learning_rate)
         self.criterion = torch.nn.MSELoss()
         self.pending_transitions = []
-        if encoder == "enhanced":
-            self.state_encoder = EnhancedStateEncoder()
-        else:
-            self.state_encoder = BasicStateEncoder()
+        # Encoder registry (design doc `docs/terrain_encoder_design.md` #40):
+        # DQNAgent never instantiates encoder classes directly. fog_of_war is
+        # left as None here (unchanged from the pre-registry behavior) so
+        # "enhanced"/"terrain_aware" read config.toml [training] fog_of_war
+        # themselves; "basic" ignores it.
+        self.state_encoder = get_encoder(encoder)
 
         # Target network — frozen copy updated every target_update_freq optimizations
         self.target_network = copy.deepcopy(self.network).to(self.device)
