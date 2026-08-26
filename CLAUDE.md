@@ -51,6 +51,7 @@ One line per system built for reuse. If what you need is here, use it; if it alm
 | Hex renderer | `civulator/viz/hex_render.py` (brick-rectangle hex↔pixel with wrap, layer compositing, river edges, start markers, camera + seam wrap, sprites) | All visual tools import it; no forked rendering code. The adjacency-render invariant test pins it to engine adjacency. `viz/` may use pyray/numpy, never torch; the engine never imports `viz/` |
 | Artifact manifests | `civulator/meta.py` (`build_manifest` / `check_version` / `save_weights` / `load_weights`) | Everyone saving or loading weights/scenarios/stats embeds and reads manifests through this module; every scenario/recording loader calls `check_version` and rebuilds worlds from the manifest's pinned mapgen params |
 | Combat-training tools | Painter: `scripts/scenario_painter.py`. Recorder: `scripts/order_recorder.py` on `civulator/tools/recording.py` (`RecordingSession`) | The only authoring path for scenarios and demonstrations — recorded data stays in the agent's exact action space. Extend these; never build a second editor/recorder |
+| Evaluation harness | `scripts/evaluate.py` (protocol v1 — ratification pending; seeded paired-sides head-to-head, per-seat weights, own encoder per side) | The only way to measure agent-vs-agent strength in the v0.6 epoch; `tournament.py`'s play_match is pre-0.6 legacy. Extend this; never write a second eval loop |
 
 ## Tech stack
 
