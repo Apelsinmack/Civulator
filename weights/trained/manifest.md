@@ -78,3 +78,16 @@ this boundary is visible at load time, not just here.
 - **Build popularity**: agent A — Catapult 16.3%, Archer 15.4%, Settler 14.7%, Horseman 14.6%, Warrior 14.5%, Granary 12.7%, Spearman 11.9%; agent B — Settler 17.3%, Horseman 15.8%, Catapult 15.6%, Warrior 15.2%, Archer 14.8%, Spearman 12.6%, Granary 8.9%
 - **Role**: frozen reference opponent (#6 pool member #1); win-rate-vs-this is the standard evaluation metric; all followers train the same M=1000 with episodes-to-50%-vs-baseline as the secondary metric
 - **Stats**: `stats/baseline_baseline_1000ep_1787520197.json` + `win_history`/`win_rate_plot`/`build_orders_1787520197.*`
+
+### duel_52ch_1000ep.pth — the #40 terrain-aware follower
+
+- **Naming**: Duel preset (12×24), 52ch = TerrainAwareStateEncoder depth
+- **Payload**: both players' combat + build agents, `meta.save_weights`, manifest embedded (v0.6.0, run commit db1d12e)
+- **Architecture**: FullyConvNetwork, conv_channels=(16, 32), symmetric — identical to the baseline except the encoder
+- **Encoder**: TerrainAwareStateEncoder (52ch: Enhanced 25ch prefix bit-identical + 27ch terrain block — spec `docs/terrain_encoder_design.md`); the single changed variable vs the baseline
+- **Training**: 1000 episodes self-play, Duel 12×24, 2 players, earthlike worlds; lr 0.001, gamma 0.9, batch 32, max_turns 250, epsilon 1.0→0.05 — all as the baseline
+- **Seed schedule**: `seed_base=390000` — **but see #44**: on ERIK_LENOVO (Intel) 19 seeds are unplaceable where Home Desktop (AMD) skipped only 3 (its 3 ⊂ these 19), so the world sequence diverges from the baseline's from episode 16 (cursor shift). Distributional comparability intact; exact episode-pairing lost. Cross-machine mapgen float divergence, filed as #44 — not caused by this run's code (verified at b75dee2, both numpy 2.0.1/2.4.6, C++ and pure-Python A*).
+- **Date**: 2026-08-26 overnight on ERIK_LENOVO (RTX 1000 Ada) — 5h11m54s, 18.71 s/episode (mask vectorization #42 active)
+- **Final win distribution**: P0=482, P1=500, draws=18 — statistically even, as symmetric self-play should be
+- **Evaluation**: head-to-head vs duel_25ch_1000ep via `scripts/evaluate.py` (protocol v1) — results on #40
+- **Stats**: `stats/baseline_baseline_1000ep_1787713987.json` + `win_history`/`win_rate_plot`/`build_orders_1787713987.*`
