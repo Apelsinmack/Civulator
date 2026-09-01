@@ -65,3 +65,9 @@ def test_evaluate_harness_completes_and_is_deterministic():
     assert summary_1["totals"] == summary_2["totals"]
     assert summary_1["by_a_seat"] == summary_2["by_a_seat"]
     assert summary_1["game_length"] == summary_2["game_length"]
+    assert summary_1["build_distribution"] == summary_2["build_distribution"]
+    # Schema: both sides present. Counts are EMPTY at this tiny MAX_TURNS by
+    # design — capitals are founded with a Warrior (40 production) already
+    # queued, which never completes in 15 turns, so no new build decision
+    # arises; real 250-turn evals accumulate plenty.
+    assert set(summary_1["build_distribution"]) == {"a", "b"}

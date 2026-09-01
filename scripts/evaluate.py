@@ -203,14 +203,18 @@ def _play_game(env, agents_by_seat, build_agents_by_seat, epsilon):
             section).
 
     Returns:
-        (winner_seat, turns): winner_seat is a player_index or None (draw,
-        `determine_winner`'s own contract); turns is `env.turn_counter`
-        when the episode ended.
+        (winner_seat, turns, builds_by_seat): winner_seat is a player_index
+        or None (draw, `determine_winner`'s own contract); turns is
+        `env.turn_counter` when the episode ended; builds_by_seat maps each
+        player_index to {build_option: count} for this game (what each side
+        actually produced -- surfaced in the run summary's
+        build_distribution).
     """
     end_turn_idx = env.n * env.m * NUM_UNIT_SLOTS
     last_player_index = -1
     done = False
     step_counter = 0
+    builds_by_seat = {seat: {} for seat in agents_by_seat}
 
     while not done:
         step_counter += 1
@@ -232,6 +236,8 @@ def _play_game(env, agents_by_seat, build_agents_by_seat, epsilon):
                         combat_state, city, env, epsilon=epsilon
                     )
                     option = BUILD_OPTIONS[action_idx]
+                    counts = builds_by_seat[current_player_index]
+                    counts[option] = counts.get(option, 0) + 1
                     if option in City.BUILDING_COSTS:
                         city.produce_building(option)
                     else:
@@ -267,7 +273,7 @@ def _play_game(env, agents_by_seat, build_agents_by_seat, epsilon):
                 done = env.done
 
     winner = determine_winner(env)
-    return winner, env.turn_counter
+    return winner, env.turn_counter, builds_by_seat
 
 
 def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
@@ -317,6 +323,7 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
     }
     games_detail = []
     turns_list = []
+    build_totals = {"a": {}, "b": {}}
 
     for i in range(games):
         a_seat = 0 if i % 2 == 0 else 1
@@ -344,7 +351,12 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
         build_agents_by_seat = {a_seat: a_builds[a_seat], b_seat: b_builds[b_seat]}
 
         with torch.no_grad():
-            winner_seat, turns = _play_game(env, agents_by_seat, build_agents_by_seat, epsilon)
+            winner_seat, turns, builds_by_seat = _play_game(
+                env, agents_by_seat, build_agents_by_seat, epsilon)
+
+        for side, seat in (("a", a_seat), ("b", b_seat)):
+            for option, count in builds_by_seat[seat].items():
+                build_totals[side][option] = build_totals[side].get(option, 0) + count
 
         if winner_seat is None:
             outcome = "draw"
@@ -400,6 +412,10 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
             "mean_turns": (sum(turns_list) / len(turns_list)) if turns_list else 0.0,
             "min_turns": min(turns_list) if turns_list else 0,
             "max_turns_observed": max(turns_list) if turns_list else 0,
+        },
+        "build_distribution": {
+            side: dict(sorted(counts.items(), key=lambda kv: -kv[1]))
+            for side, counts in build_totals.items()
         },
         "games_detail": games_detail,
         "manifest_a": _manifest_summary(a_manifest),
@@ -462,6 +478,8 @@ def main():
     print(f"Totals: {summary['totals']}")
     print(f"By A's seat: {summary['by_a_seat']}")
     print(f"Game length (turns): {summary['game_length']}")
+    print(f"Builds A: {summary['build_distribution']['a']}")
+    print(f"Builds B: {summary['build_distribution']['b']}")
     print(f"Summary written to: {stats_path}")
     print("=" * 72)
 
