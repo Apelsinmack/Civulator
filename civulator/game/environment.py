@@ -145,9 +145,40 @@ class GameEnvironment:
         # reproduce the identical stream (issue #33).
         self.rng = PortableRNG(seed)
 
-        # Initialize map and players
+        # Initialize map and players. Construction follows the same
+        # unseeded-resample policy as reset (design doc D26, see reset's
+        # docstring): a pinned seed is loyal — it either works or raises
+        # unchanged — while an unseeded construction has no seed to be loyal
+        # to, so an unplaceable world (~2% of master seeds) is resampled
+        # with logged bounded retries instead of crashing the caller
+        # (evaluate.py / run_baseline.py both construct unseeded throwaway
+        # worlds that per-episode seeded resets immediately replace).
         self.map = Map(self.n, self.m, rng=self.rng)
-        self.map.generate_map(self.map_type, num_players=self.num_players, params=mapgen_params)
+        if seed is not None:
+            self.map.generate_map(self.map_type, num_players=self.num_players, params=mapgen_params)
+        else:
+            last_error = None
+            for attempt in range(1, MAX_WORLD_RETRIES + 1):
+                try:
+                    self.map.generate_map(
+                        self.map_type, num_players=self.num_players, params=mapgen_params
+                    )
+                    last_error = None
+                    break
+                except StartPlacementError as exc:
+                    last_error = exc
+                    logger.warning(
+                        "unseeded construction: world generation failed start "
+                        "placement (master seed=%s, attempt %d/%d): %s",
+                        self.map.last_master_seed, attempt, MAX_WORLD_RETRIES, exc,
+                    )
+            if last_error is not None:
+                raise StartPlacementError(
+                    f"unseeded construction: exhausted {MAX_WORLD_RETRIES} world "
+                    f"retries (design doc D26, config [map] max_world_retries) "
+                    f"— every attempt failed start placement; last failure: "
+                    f"{last_error}"
+                ) from last_error
 
         for i in range(self.num_players):
             player = Player(f"Player {i+1}", i, self)

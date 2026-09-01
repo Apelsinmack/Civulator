@@ -503,22 +503,21 @@ class CityDistanceStateEncoder(EnhancedStateEncoder):
     def _distance_field(self, game_env, enemy_city_coords):
         """Proximity field over the whole grid for the given city set.
 
-        Calls the canonical hexmath.distance per (tile, city) pair — the
-        hex-distance formula is never reimplemented here (the #24 lesson);
-        at <=(rows*cols*n_cities) O(1) calls behind a cache, cost is nil.
+        One vectorized call to the canonical hexmath.distance (which accepts
+        broadcastable arrays — the formula is never reimplemented here, the
+        #24 lesson): grid (n, m, 1) against cities (k,) broadcasts to
+        (n, m, k) distances, min over the city axis, no Python loops.
         """
         n, m = game_env.n, game_env.m
-        field = np.zeros((n, m), dtype=np.float32)
         if not enemy_city_coords:
-            return field
+            return np.zeros((n, m), dtype=np.float32)
         d_max = float(m // 2 + n - 1)
-        for i in range(n):
-            for j in range(m):
-                d = min(
-                    hexmath.distance((i, j), c, m) for c in enemy_city_coords
-                )
-                field[i, j] = 1.0 - d / d_max
-        return field
+        rows = np.arange(n)[:, None, None]
+        cols = np.arange(m)[None, :, None]
+        city_r = np.array([c[0] for c in enemy_city_coords])[None, None, :]
+        city_q = np.array([c[1] for c in enemy_city_coords])[None, None, :]
+        d = hexmath.distance((rows, cols), (city_r, city_q), m).min(axis=2)
+        return (1.0 - d / d_max).astype(np.float32)
 
     def _get_city_distance_layer(self, game_env, player_index, explored):
         current_player = game_env.players[player_index]

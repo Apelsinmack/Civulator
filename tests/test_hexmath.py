@@ -15,6 +15,7 @@ proves that lift is behavior-identical two ways:
 import math
 import random
 
+import numpy as np
 import pytest
 
 from civulator import hexmath
@@ -167,3 +168,50 @@ class TestHexCenter:
             coords = (rng.randrange(-50, 50), rng.randrange(-50, 50))
             x, _ = hexmath.hex_center(coords, width)
             assert 0 <= x < width
+
+
+class TestDistanceVectorized:
+    """The ndarray branch of hexmath.distance (issue #48) must be
+    elementwise-identical to the scalar path — proven against the same
+    verbatim pre-0.6 reference the scalar equivalence tests use."""
+
+    def test_grid_vs_point_matches_reference_exhaustively(self):
+        # Includes width/2 targets (the |direct| == |wrapped| tie, where the
+        # <= comparison's direction matters) and both odd and even widths.
+        for rows, width in [(8, 16), (12, 24), (5, 7)]:
+            r_idx = np.arange(rows)[:, None]
+            q_idx = np.arange(width)[None, :]
+            targets = [
+                (0, 0), (rows - 1, width - 1),
+                (rows // 2, width // 2), (3 % rows, width // 2),
+            ]
+            for target in targets:
+                grid = hexmath.distance((r_idx, q_idx), target, width)
+                assert grid.shape == (rows, width)
+                for i in range(rows):
+                    for j in range(width):
+                        assert grid[i, j] == _reference_distance(
+                            (i, j), target, width
+                        ), f"mismatch at ({i},{j}) vs {target}, width={width}"
+
+    def test_broadcasts_over_a_cities_axis(self):
+        # The CityDistanceStateEncoder call shape: grid (n, m, 1) x cities (k,).
+        n, m = 8, 16
+        cities = [(4, 8), (0, 1), (7, 15)]
+        rows = np.arange(n)[:, None, None]
+        cols = np.arange(m)[None, :, None]
+        city_r = np.array([c[0] for c in cities])[None, None, :]
+        city_q = np.array([c[1] for c in cities])[None, None, :]
+        d = hexmath.distance((rows, cols), (city_r, city_q), m)
+        assert d.shape == (n, m, len(cities))
+        nearest = d.min(axis=2)
+        for i in range(n):
+            for j in range(m):
+                expected = min(
+                    _reference_distance((i, j), c, m) for c in cities
+                )
+                assert nearest[i, j] == expected
+
+    def test_scalar_path_is_untouched_pure_python(self):
+        d = hexmath.distance((2, 3), (5, 9), 16)
+        assert type(d) is int  # no numpy scalar leaking into hot callers

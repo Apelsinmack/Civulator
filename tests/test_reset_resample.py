@@ -137,3 +137,40 @@ def test_unseeded_reset_exhausts_retries_and_raises(monkeypatch, caplog):
     assert str(MAX_WORLD_RETRIES) in str(excinfo.value)
     assert excinfo.value.__cause__ is not None
     assert isinstance(excinfo.value.__cause__, StartPlacementError)
+
+
+# --- The same D26 policy at CONSTRUCTION time (the evaluate.py flake fix) ---
+# GameEnvironment.__init__ builds a world too; unseeded construction must
+# resample like an unseeded reset, while a pinned seed stays loyal and raises.
+
+
+def test_unseeded_construction_survives_forced_failures(monkeypatch, caplog):
+    calls = _fail_then_succeed(monkeypatch, fail_count=2)
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+
+    env = GameEnvironment(*BASIC_SIZE, num_players=2, map_type="basic")
+
+    assert calls["n"] == 3  # 2 forced failures + 1 real success
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 2
+    assert all("unseeded construction" in r.getMessage() for r in warnings)
+    # World actually up: mapgen delivered one start per player (capitals are
+    # seated by reset(), not construction — see _reset_attempt).
+    assert len(env.map.starts) == 2
+
+
+def test_seeded_construction_with_forced_failure_raises(monkeypatch):
+    _always_fail(monkeypatch)
+    with pytest.raises(StartPlacementError, match="forced failure #1"):
+        GameEnvironment(*BASIC_SIZE, num_players=2, map_type="basic", seed=999)
+
+
+def test_unseeded_construction_exhausts_retries_and_raises(monkeypatch, caplog):
+    calls = _always_fail(monkeypatch)
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+
+    with pytest.raises(StartPlacementError, match="exhausted") as excinfo:
+        GameEnvironment(*BASIC_SIZE, num_players=2, map_type="basic")
+
+    assert calls["n"] == MAX_WORLD_RETRIES
+    assert isinstance(excinfo.value.__cause__, StartPlacementError)

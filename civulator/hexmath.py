@@ -19,6 +19,8 @@ formulas.
 
 import math
 
+import numpy as np
+
 # Axial hex directions — same for every tile, no even/odd branching.
 HEX_DIRECTIONS = [(1, 0), (1, -1), (0, -1), (-1, 0), (-1, 1), (0, 1)]
 
@@ -31,18 +33,37 @@ def distance(p1, p2, width):
     d = max(|dq|, |dr|, |dq + dr|), where dq picks whichever of the direct or
     wrapped column delta is shorter (the cylinder's q-axis wrap).
 
+    Accepts scalars OR numpy arrays: each of p1/p2 is a (row, col) pair whose
+    components may be ints or broadcastable ndarrays — e.g. a whole grid
+    against one point, or grid x cities via broadcasting — returning the
+    elementwise distances. The array branch mirrors the scalar comparisons
+    exactly (tests/test_hexmath.py pins elementwise equality), and the
+    scalar path is untouched pure Python so hot per-tile callers pay no
+    numpy overhead.
+
     Args:
-        p1, p2: (row, col) coordinate pairs.
+        p1, p2: (row, col) coordinate pairs (int or broadcastable ndarray
+            components).
         width: number of columns in the map (the wrap period).
     """
-    dq_direct = p2[1] - p1[1]
+    r1, q1 = p1[0], p1[1]
+    r2, q2 = p2[0], p2[1]
+
+    if any(isinstance(v, np.ndarray) for v in (r1, q1, r2, q2)):
+        dq_direct = np.asarray(q2) - np.asarray(q1)
+        dq_wrapped = np.where(dq_direct > 0, dq_direct - width, dq_direct + width)
+        dq = np.where(np.abs(dq_direct) <= np.abs(dq_wrapped), dq_direct, dq_wrapped)
+        dr = np.asarray(r2) - np.asarray(r1)
+        return np.maximum(np.abs(dq), np.maximum(np.abs(dr), np.abs(dq + dr)))
+
+    dq_direct = q2 - q1
     if dq_direct > 0:
         dq_wrapped = dq_direct - width
     else:
         dq_wrapped = dq_direct + width
     dq = dq_direct if abs(dq_direct) <= abs(dq_wrapped) else dq_wrapped
 
-    dr = p2[0] - p1[0]
+    dr = r2 - r1
     return max(abs(dq), abs(dr), abs(dq + dr))
 
 
