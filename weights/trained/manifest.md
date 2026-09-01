@@ -105,3 +105,12 @@ this boundary is visible at load time, not just here.
 - **Final win distribution**: P0=464, P1=522, draws=14
 - **Evaluation** (protocol v1, 200 games vs duel_25ch_1000ep): rw2 **85** / baseline **80** / **35 draws** — null on win rate; **all 200 games again hit the 250-turn cap, zero eliminations** (score tiebreak decided everything). Full analysis on #46
 - **Stats**: `stats/baseline_baseline_rw2_1000ep_1788264048.json` + `win_history`/`win_rate_plot`/`build_orders_1788264048.*` + `stats/eval_duel_25ch_rw2_1000ep_vs_duel_25ch_1000ep_1788276202.json`
+
+### duel_25ch_rw2eps800_1000ep.pth — the #46 epsilon-matched follower
+
+- **Naming**: as rw2, plus `eps800` = epsilon_decay_episodes 800 (the single changed variable vs rw2: schedule reaches 0.05 by episode 800 instead of stalling at ~0.81 — commit 0dcb113)
+- **Everything else**: identical to duel_25ch_rw2_1000ep (table v2, Enhanced 25ch, seed_base 390000 on Home Desktop — exact baseline world sequence)
+- **Date**: 2026-09-01/02 overnight on Home Desktop — 3h27m50s, **12.47 s/episode** (vs 23.7 at high epsilon: greedy games run far fewer random no-ops)
+- **Final win distribution**: P0=436, P1=496, draws=68 — draws climb as epsilon falls (3/2/11/16/36 per 200-episode block), self-play turtling visible at low epsilon
+- **Evaluation** (protocol v1, 200 games vs duel_25ch_1000ep): eps800 **84** / baseline **79** / **37 draws** — null; **all 200 games at the 250-turn cap, zero eliminations**. Epsilon schedule alone does not break turtling — consistent with the #48 receptive-field hypothesis (the network cannot see distant cities regardless of how much greedy experience it gets)
+- **Stats**: `stats/baseline_baseline_rw2eps800_1000ep_1788291341.json` + `win_history`/`win_rate_plot`/`build_orders_1788291341.*` + `stats/eval_duel_25ch_rw2eps800_1000ep_vs_duel_25ch_1000ep_1788291563.json`
