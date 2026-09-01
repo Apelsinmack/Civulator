@@ -483,7 +483,11 @@ learning_rate = 0.001
 gamma = 0.9
 epsilon_start = 1.0
 epsilon_end = 0.05
-epsilon_decay_episodes = 5000
+# 5000 was tuned for the old 8000-episode runs: a 1000-episode run only decayed
+# epsilon to ~0.81, so every v0.6 run so far trained on ~81-100% random actions
+# (the #46 eval's diagnostic finding). 800 reaches 0.05 by episode 800, leaving
+# ~200 episodes of near-greedy self-play experience in a 1000-episode run.
+epsilon_decay_episodes = 800
 target_update_freq = 100 # Sync target network every N optimization steps
 encoder = "enhanced"     # "basic" (5ch), "enhanced" (25ch/27ch fog), or "terrain_aware" (52ch/54ch fog, issue #40)
 fully_conv = true        # Must be true for large maps (no FC layers)
