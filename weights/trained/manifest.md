@@ -91,3 +91,17 @@ this boundary is visible at load time, not just here.
 - **Final win distribution**: P0=482, P1=500, draws=18 — statistically even, as symmetric self-play should be
 - **Evaluation**: head-to-head vs duel_25ch_1000ep via `scripts/evaluate.py` (protocol v1) — results on #40
 - **Stats**: `stats/baseline_baseline_1000ep_1787713987.json` + `win_history`/`win_rate_plot`/`build_orders_1787713987.*`
+
+### duel_25ch_rw2_1000ep.pth — the #46 reward-table-v2 follower
+
+- **Naming**: Duel preset (12×24), 25ch = EnhancedStateEncoder (the baseline's), `rw2` = reward table v2 (the single changed variable)
+- **Payload**: both players' combat + build agents, `meta.save_weights`, manifest embedded (v0.6.0, run commit e882c23 — the manifest's embedded config pins the exact reward table)
+- **Architecture**: FullyConvNetwork, conv_channels=(16, 32), symmetric — identical to the #39 baseline except `[training.rewards]`
+- **Rewards (issue #46)**: potential-based proximity shaping (w=0.5, R=cols//2+1, military-only, nearest enemy city), terminal win/loss/draw +100/−100/0 (with the trainer's lazy-pending fix so losers actually receive a done=True transition), unit_lost −5, found_city 40, capture_city 80; all else as baseline
+- **Training**: 1000 episodes self-play, Duel 12×24, 2 players, earthlike; lr 0.001, gamma 0.9, batch 32, max_turns 250, epsilon config schedule — all as the baseline
+- **Seed schedule**: `seed_base=390000` on Home Desktop (AMD) — the **same machine as the #39 baseline**, so unlike #40 (see #44) the exact world sequence matches the baseline's
+- **Mid-training checkpoints**: every 100 episodes under `weights/checkpoints/` (gitignored, local to Home Desktop) — first run with episodes-to-50% computable
+- **Date**: 2026-09-01 on Home Desktop (RTX 3070) — 6h35m08s, 23.71 s/episode
+- **Final win distribution**: P0=464, P1=522, draws=14
+- **Evaluation** (protocol v1, 200 games vs duel_25ch_1000ep): rw2 **85** / baseline **80** / **35 draws** — null on win rate; **all 200 games again hit the 250-turn cap, zero eliminations** (score tiebreak decided everything). Full analysis on #46
+- **Stats**: `stats/baseline_baseline_rw2_1000ep_1788264048.json` + `win_history`/`win_rate_plot`/`build_orders_1788264048.*` + `stats/eval_duel_25ch_rw2_1000ep_vs_duel_25ch_1000ep_1788276202.json`
