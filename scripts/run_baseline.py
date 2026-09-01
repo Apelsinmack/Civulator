@@ -179,7 +179,8 @@ def make_progress_callback(report_every=PROGRESS_REPORT_EVERY,
     return callback
 
 
-def build_training_objects(n, m, num_players, learning_rate, gamma, encoder):
+def build_training_objects(n, m, num_players, learning_rate, gamma, encoder,
+                           conv_channels=CONV_CHANNELS):
     """Both players get IDENTICAL hyperparameters -- see module docstring
     'Agent architecture note'. Mirrors DQNAgent/BuildAgent construction in
     scripts/train.py and scripts/profile_training.py, minus their
@@ -199,7 +200,7 @@ def build_training_objects(n, m, num_players, learning_rate, gamma, encoder):
     for i in range(num_players):
         agent = DQNAgent(
             n, m, d, ReplayMemory(10000), gamma=gamma, learning_rate=learning_rate,
-            encoder=encoder, fully_conv=FULLY_CONV, conv_channels=CONV_CHANNELS,
+            encoder=encoder, fully_conv=FULLY_CONV, conv_channels=conv_channels,
         )
         agent.config_name = f"Baseline-P{i + 1}"
         agents.append(agent)
@@ -246,7 +247,8 @@ def save_final_weights(agents, build_agents, path):
 
 
 def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
-         checkpoint_every=100):
+         checkpoint_every=100, conv_channels=CONV_CHANNELS):
+    conv_channels = tuple(conv_channels)
     n, m, num_players = resolve_size_and_players(size=SIZE_PRESET)
     max_turns = _tcfg.get("max_turns", 250)
     batch_size = _tcfg.get("batch_size", 32)
@@ -273,7 +275,7 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
     print(f"rewards={REWARDS}  (live [training.rewards] -- also pinned in the "
           f"run summary and the weights manifest)")
     print(f"map: size={SIZE_PRESET} ({m}x{n}) players={num_players} map_type={MAP_TYPE}")
-    print(f"encoder={encoder} ({d}ch) fully_conv={FULLY_CONV} conv_channels={CONV_CHANNELS}")
+    print(f"encoder={encoder} ({d}ch) fully_conv={FULLY_CONV} conv_channels={conv_channels}")
     print(f"episodes={episodes} max_turns={max_turns} batch_size={batch_size}")
     print(f"learning_rate={learning_rate} gamma={gamma}")
     print(f"seed_base={SEED_BASE}  (episode-indexed seed schedule, issue #39 -- "
@@ -283,7 +285,7 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
 
     with _chdir(outdir):
         env, agents, build_agents, d = build_training_objects(
-            n, m, num_players, learning_rate, gamma, encoder
+            n, m, num_players, learning_rate, gamma, encoder, conv_channels
         )
         env.max_turns = max_turns
 
@@ -328,7 +330,7 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
             "encoder": encoder,
             "encoder_channels": d,
             "fully_conv": FULLY_CONV,
-            "conv_channels": list(CONV_CHANNELS),
+            "conv_channels": list(conv_channels),
             "max_turns": max_turns,
             "batch_size": batch_size,
             "learning_rate": learning_rate,
@@ -383,7 +385,18 @@ if __name__ == "__main__":
                         help="Save a combined mid-training snapshot under weights/checkpoints/ "
                              "every N episodes (default 100; 0 disables) -- enables the "
                              "episodes-to-50%%-vs-baseline secondary metric.")
+    parser.add_argument("--conv-channels", type=str, default=None,
+                        help="Comma-separated per-layer channel counts for the FullyConv "
+                             "backbone (issue #48 capacity ladder), e.g. '32,64,64'. "
+                             f"Default: the pinned baseline {CONV_CHANNELS}. Deeper/wider "
+                             "runs should also pass --variant (encoder channel count alone "
+                             "no longer distinguishes the artifact name).")
     args = parser.parse_args()
 
+    conv_channels = (
+        tuple(int(c) for c in args.conv_channels.split(","))
+        if args.conv_channels else CONV_CHANNELS
+    )
     main(episodes=args.episodes, tag=args.tag, outdir=args.outdir, encoder=args.encoder,
-         variant=args.variant, checkpoint_every=args.checkpoint_every)
+         variant=args.variant, checkpoint_every=args.checkpoint_every,
+         conv_channels=conv_channels)

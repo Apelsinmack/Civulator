@@ -248,30 +248,44 @@ class FullyConvNetwork(nn.Module):
     Args:
         d: State tensor depth (channels)
         kernel_size: Convolution kernel size (default 3)
-        conv_channels: Tuple of (conv1_out, conv2_out) channel counts
+        conv_channels: Tuple of per-layer output channel counts. Any length
+            >= 1 (issue #48 capacity ladder): each entry adds one
+            wrap-padded conv+bn layer to the shared backbone, growing the
+            receptive field by kernel_size//2 per layer. The default
+            (16, 32) builds the EXACT historical two-layer network —
+            parameter names conv{i}/bn{i} are generated to match, so every
+            existing checkpoint loads unchanged (pinned by
+            tests/test_networks_depth.py).
     """
 
     def __init__(self, d, kernel_size=3, conv_channels=(16, 32), **kwargs):
         super().__init__()
 
         self.padding_size = kernel_size // 2
-        c1, c2 = conv_channels
+        if not conv_channels:
+            raise ValueError("conv_channels must have at least one layer")
+        self.num_conv_layers = len(conv_channels)
 
-        # Shared backbone — spatial size preserved via wrap padding before each layer
-        self.conv1 = nn.Conv2d(d, c1, kernel_size=kernel_size, padding=0)
-        self.bn1 = nn.BatchNorm2d(c1)
-        self.conv2 = nn.Conv2d(c1, c2, kernel_size=kernel_size, padding=0)
-        self.bn2 = nn.BatchNorm2d(c2)
+        # Shared backbone — spatial size preserved via wrap padding before
+        # each layer; attribute names conv1/bn1, conv2/bn2, ... keep the
+        # historical state_dict keys for the default depth.
+        in_channels = d
+        for i, out_channels in enumerate(conv_channels, start=1):
+            setattr(self, f"conv{i}",
+                    nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, padding=0))
+            setattr(self, f"bn{i}", nn.BatchNorm2d(out_channels))
+            in_channels = out_channels
+        c_last = in_channels
 
         # Select head: 1x1 conv → NUM_SLOTS Q-values per tile + learnable end-turn Q
-        self.select_conv = nn.Conv2d(c2, NUM_UNIT_SLOTS, kernel_size=1)
+        self.select_conv = nn.Conv2d(c_last, NUM_UNIT_SLOTS, kernel_size=1)
         self.end_turn_q = nn.Parameter(torch.zeros(1))
 
         # Move head: features + selected-position marker → 3x3 conv (spread marker)
         # → 1x1 conv → per-tile Q-value
-        self.move_spread = nn.Conv2d(c2 + 1, c2, kernel_size=kernel_size, padding=0)
-        self.move_bn = nn.BatchNorm2d(c2)
-        self.move_conv = nn.Conv2d(c2, 1, kernel_size=1)
+        self.move_spread = nn.Conv2d(c_last + 1, c_last, kernel_size=kernel_size, padding=0)
+        self.move_bn = nn.BatchNorm2d(c_last)
+        self.move_conv = nn.Conv2d(c_last, 1, kernel_size=1)
 
     def forward(self, state, selected_pos=None):
         """Forward pass.
@@ -284,12 +298,13 @@ class FullyConvNetwork(nn.Module):
             select_qvalues: [batch, n*m*NUM_SLOTS+1] Q-values for tile-slot selection + end turn
             move_qvalues: [batch, n*m] Q-values for move targets (None if no selected_pos)
         """
-        # Backbone: pad → conv → pad → conv (preserves spatial dims)
-        x = horizontal_wrap_padding(state, self.padding_size)
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = horizontal_wrap_padding(x, self.padding_size)
-        features = F.relu(self.bn2(self.conv2(x)))
-        # features: [batch, c2, n, m] — same spatial size as input
+        # Backbone: (pad → conv → bn → relu) per layer (preserves spatial dims)
+        x = state
+        for i in range(1, self.num_conv_layers + 1):
+            x = horizontal_wrap_padding(x, self.padding_size)
+            x = F.relu(getattr(self, f"bn{i}")(getattr(self, f"conv{i}")(x)))
+        features = x
+        # features: [batch, c_last, n, m] — same spatial size as input
 
         # Select head: spatial Q-values per slot + end-turn
         select_map = self.select_conv(features)  # [batch, NUM_SLOTS, n, m]
@@ -321,6 +336,27 @@ class FullyConvNetwork(nn.Module):
             return select_qvalues, move_qvalues
 
         return select_qvalues, None
+
+
+def conv_channels_from_state_dict(state_dict):
+    """Infer a FullyConvNetwork's conv_channels tuple from a saved
+    state_dict (the out-channel count of conv1.weight, conv2.weight, ...).
+
+    The canonical way for loaders (scripts/evaluate.py) to reconstruct the
+    right architecture for arbitrary-depth checkpoints (issue #48 capacity
+    ladder) — no side-channel metadata needed, the weights themselves are
+    the authority.
+    """
+    channels = []
+    i = 1
+    while f"conv{i}.weight" in state_dict:
+        channels.append(int(state_dict[f"conv{i}.weight"].shape[0]))
+        i += 1
+    if not channels:
+        raise ValueError(
+            "state_dict has no conv{i}.weight keys — not a FullyConvNetwork payload"
+        )
+    return tuple(channels)
 
 
 class FullyConvSeparateNetwork(nn.Module):

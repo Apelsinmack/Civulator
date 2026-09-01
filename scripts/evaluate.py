@@ -91,6 +91,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
 from civulator.agents import DQNAgent, BuildAgent, ReplayMemory, get_encoder
+from civulator.agents.networks import conv_channels_from_state_dict
 from civulator.agents.build_agent import BUILD_OPTIONS
 from civulator.config import CFG
 from civulator.game import GameEnvironment, resolve_size_and_players
@@ -107,7 +108,9 @@ from civulator.training.trainer import _seeded_reset, determine_winner
 SIZE_PRESET = "duel"
 MAP_TYPE = "earthlike"
 FULLY_CONV = True
-CONV_CHANNELS = (16, 32)
+# conv_channels is NOT pinned here: each side's architecture is inferred
+# from its checkpoint's weight shapes (conv_channels_from_state_dict), so
+# arbitrary-depth #48 capacity-ladder runs evaluate with no extra flags.
 
 DEFAULT_GAMES = 200
 DEFAULT_SEED_BASE = 990000
@@ -131,11 +134,23 @@ def _load_side(weights_path, encoder_name, n, m, num_players, device):
     d = get_encoder(encoder_name).get_depth(num_players)
 
     agents_by_seat = {}
+    side_conv_channels = None
     for entry in payload["agents"]:
         seat = entry["player_index"]
+        # Architecture comes from the checkpoint itself (issue #48 capacity
+        # ladder): conv_channels is inferred from the saved weight shapes,
+        # so deeper/wider runs evaluate without any extra CLI flags.
+        entry_channels = conv_channels_from_state_dict(entry["model_state_dict"])
+        if side_conv_channels is None:
+            side_conv_channels = entry_channels
+        elif side_conv_channels != entry_channels:
+            raise ValueError(
+                f"{weights_path!r}: seats disagree on conv_channels "
+                f"({side_conv_channels} vs {entry_channels})"
+            )
         agent = DQNAgent(
             n, m, d, ReplayMemory(1), encoder=encoder_name,
-            fully_conv=FULLY_CONV, conv_channels=CONV_CHANNELS,
+            fully_conv=FULLY_CONV, conv_channels=entry_channels,
         )
         agent.network.load_state_dict(entry["model_state_dict"])
         agent.network.eval()
@@ -162,7 +177,7 @@ def _load_side(weights_path, encoder_name, n, m, num_players, device):
             f"{sorted(missing)} (num_players={num_players})"
         )
 
-    return agents_by_seat, build_agents_by_seat, manifest
+    return agents_by_seat, build_agents_by_seat, manifest, side_conv_channels
 
 
 def _manifest_summary(manifest):
@@ -284,8 +299,10 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    a_agents, a_builds, a_manifest = _load_side(a_weights, a_encoder, n, m, num_players, device)
-    b_agents, b_builds, b_manifest = _load_side(b_weights, b_encoder, n, m, num_players, device)
+    a_agents, a_builds, a_manifest, a_channels = _load_side(
+        a_weights, a_encoder, n, m, num_players, device)
+    b_agents, b_builds, b_manifest, b_channels = _load_side(
+        b_weights, b_encoder, n, m, num_players, device)
 
     env = GameEnvironment(n, m, num_players, map_type=map_type)
     env.max_turns = max_turns
@@ -370,7 +387,8 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
         "num_players": num_players,
         "map_type": map_type,
         "max_turns": max_turns,
-        "conv_channels": list(CONV_CHANNELS),
+        "a_conv_channels": list(a_channels),
+        "b_conv_channels": list(b_channels),
         "fully_conv": FULLY_CONV,
         "a_weights": a_weights,
         "a_encoder": a_encoder,
