@@ -114,3 +114,12 @@ this boundary is visible at load time, not just here.
 - **Final win distribution**: P0=436, P1=496, draws=68 — draws climb as epsilon falls (3/2/11/16/36 per 200-episode block), self-play turtling visible at low epsilon
 - **Evaluation** (protocol v1, 200 games vs duel_25ch_1000ep): eps800 **84** / baseline **79** / **37 draws** — null; **all 200 games at the 250-turn cap, zero eliminations**. Epsilon schedule alone does not break turtling — consistent with the #48 receptive-field hypothesis (the network cannot see distant cities regardless of how much greedy experience it gets)
 - **Stats**: `stats/baseline_baseline_rw2eps800_1000ep_1788291341.json` + `win_history`/`win_rate_plot`/`build_orders_1788291341.*` + `stats/eval_duel_25ch_rw2eps800_1000ep_vs_duel_25ch_1000ep_1788291563.json`
+
+### duel_26ch_1000ep.pth — the #48 city-distance-encoder follower
+
+- **Naming**: Duel preset, 26ch = CityDistanceStateEncoder (Enhanced 25ch prefix + nearest-enemy-city proximity field — the single changed variable vs duel_25ch_rw2eps800)
+- **Config**: reward table v2 + epsilon decay 800 (as rw2eps800), conv (16,32), seed_base 390000 on Home Desktop (exact baseline world sequence)
+- **Date**: 2026-09-02 night on Home Desktop — 3h31m05s, 12.67 s/episode
+- **Final win distribution**: P0=443, P1=484, draws=73 (late-training draws 31/200 — same turtling shape as rw2eps800)
+- **Evaluation** (protocol v1, 200 games vs duel_25ch_1000ep): **84 / 83 / 33** — null; **all 200 games at the 250-turn cap, zero eliminations**. The proximity channel changed *production behavior* (flat military mix, Settler 200 vs the baseline's 482, first eval with build_distribution recorded) but not game outcomes — global direction input alone does not produce marching either
+- **Stats**: `stats/baseline_baseline_1000ep_1788304274.json` + `win_history`/`win_rate_plot`/`build_orders_1788304274.*` + `stats/eval_duel_26ch_1000ep_vs_duel_25ch_1000ep_1788304495.json`
