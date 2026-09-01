@@ -64,9 +64,23 @@ Output layout:
         weights/trained/ or stats/. --outdir overrides this default
         explicitly either way, for both the default tag and any other.
 
+Variant runs (issue #46 wiring): `--variant rw2` names a follower run that
+varies something OTHER than the encoder (e.g. the reward table) --
+weights/stats filenames gain the variant token (duel_25ch_rw2_1000ep.pth)
+so a same-encoder follower can never clobber the baseline artifact. The
+run summary also records the live [training.rewards] table, since that is
+exactly what such a variant varies (the weights manifest embeds the full
+config already).
+
+Mid-training checkpoints (`--checkpoint-every`, default 100): periodic
+combined snapshots under weights/checkpoints/ (gitignored side of
+weights/), so episodes-to-50%-vs-baseline is computable after the fact --
+the #40 eval's secondary metric that its run couldn't provide.
+
 Usage:
     python scripts/run_baseline.py                          # real 1000-episode run (25ch)
     python scripts/run_baseline.py --encoder terrain_aware   # #40 comparison run (52ch)
+    python scripts/run_baseline.py --variant rw2             # #46 reward-v2 follower run
     python scripts/run_baseline.py --episodes 3 --tag smoke  # fast smoke test
     python scripts/run_baseline.py --outdir D:/scratch/run1  # explicit output root
 """
@@ -84,6 +98,7 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from civulator.config import CFG
 from civulator.game import GameEnvironment, resolve_size_and_players
+from civulator.game.environment import REWARDS
 from civulator.agents import DQNAgent, BuildAgent, ReplayMemory, get_encoder
 from civulator.training import train_agents
 from civulator.meta import save_weights
@@ -128,16 +143,25 @@ def _format_hms(seconds):
     return f"{h}h{m:02d}m{s:02d}s"
 
 
-def make_progress_callback(report_every=PROGRESS_REPORT_EVERY):
+def make_progress_callback(report_every=PROGRESS_REPORT_EVERY,
+                           checkpoint_every=0, checkpoint_saver=None):
     """episode_callback for train_agents (civulator/training/trainer.py):
     prints one elapsed/ETA line every `report_every` episodes, plus
     always on the final episode. train_agents does not compute timing
     itself (see its docstring) -- this closure keeps its own clock.
+
+    checkpoint_saver(completed_episodes), when given, is additionally
+    called every `checkpoint_every` episodes (never on the final episode
+    -- the run's own final save covers that) for mid-training snapshots.
     """
     start = time.perf_counter()
 
     def callback(episode, num_episodes, win_counts):
         completed = episode + 1
+        if (checkpoint_saver is not None and checkpoint_every
+                and completed % checkpoint_every == 0
+                and completed != num_episodes):
+            checkpoint_saver(completed)
         if completed % report_every != 0 and completed != num_episodes:
             return
         elapsed = time.perf_counter() - start
@@ -221,7 +245,8 @@ def save_final_weights(agents, build_agents, path):
     save_weights(payload, path)
 
 
-def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER):
+def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
+         checkpoint_every=100):
     n, m, num_players = resolve_size_and_players(size=SIZE_PRESET)
     max_turns = _tcfg.get("max_turns", 250)
     batch_size = _tcfg.get("batch_size", 32)
@@ -238,12 +263,15 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER):
         outdir = PROJECT_ROOT if tag == DEFAULT_TAG else os.path.join(PROJECT_ROOT, "runs", tag)
 
     suffix = "" if tag == DEFAULT_TAG else f"_{tag}"
-    weights_filename = f"duel_{d}ch_{episodes}ep{suffix}.pth"
+    variant_token = f"{variant}_" if variant else ""
+    weights_filename = f"duel_{d}ch_{variant_token}{episodes}ep{suffix}.pth"
 
     print("=" * 72)
     print("Civulator #39 baseline launcher (issue #39)")
     print("=" * 72)
-    print(f"tag={tag!r}  outdir={outdir}")
+    print(f"tag={tag!r}  variant={variant!r}  outdir={outdir}")
+    print(f"rewards={REWARDS}  (live [training.rewards] -- also pinned in the "
+          f"run summary and the weights manifest)")
     print(f"map: size={SIZE_PRESET} ({m}x{n}) players={num_players} map_type={MAP_TYPE}")
     print(f"encoder={encoder} ({d}ch) fully_conv={FULLY_CONV} conv_channels={CONV_CHANNELS}")
     print(f"episodes={episodes} max_turns={max_turns} batch_size={batch_size}")
@@ -259,22 +287,38 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER):
         )
         env.max_turns = max_turns
 
+        def checkpoint_saver(completed):
+            ck_path = os.path.join(
+                "weights", "checkpoints",
+                weights_filename.replace(".pth", f"_ck{completed}.pth"),
+            )
+            save_final_weights(agents, build_agents, ck_path)
+            print(f"[checkpoint] episode {completed} -> {ck_path}")
+
         t0 = time.perf_counter()
         win_counts, win_history = train_agents(
             env, agents, num_episodes=episodes, batch_size=batch_size, debug=False,
             build_agents=build_agents, seed_base=SEED_BASE,
-            episode_callback=make_progress_callback(),
+            episode_callback=make_progress_callback(
+                checkpoint_every=checkpoint_every,
+                checkpoint_saver=checkpoint_saver,
+            ),
         )
         elapsed = time.perf_counter() - t0
 
         weights_path = os.path.join("weights", "trained", weights_filename)
         save_final_weights(agents, build_agents, weights_path)
 
-        stats_path = os.path.join("stats", f"baseline_{tag}_{episodes}ep_{int(time.time())}.json")
+        stats_path = os.path.join(
+            "stats",
+            f"baseline_{tag}_{variant_token}{episodes}ep_{int(time.time())}.json",
+        )
         os.makedirs("stats", exist_ok=True)
         summary = {
             "issue": 39,
             "tag": tag,
+            "variant": variant,
+            "rewards": dict(REWARDS),
             "episodes": episodes,
             "seed_base": SEED_BASE,
             "size_preset": SIZE_PRESET,
@@ -330,6 +374,16 @@ if __name__ == "__main__":
                              "'terrain_aware' (52ch/54ch fog, issue #40) runs the SAME seed schedule "
                              "against the terrain-aware encoder for a controlled comparison against "
                              "the #39 'enhanced' (25ch) baseline.")
+    parser.add_argument("--variant", type=str, default=None,
+                        help="Name token for a follower run varying something other than the "
+                             "encoder (e.g. 'rw2' for the #46 reward table): filenames become "
+                             "duel_{ch}ch_{variant}_{episodes}ep.* so a same-encoder follower "
+                             "never clobbers the baseline artifact.")
+    parser.add_argument("--checkpoint-every", type=int, default=100,
+                        help="Save a combined mid-training snapshot under weights/checkpoints/ "
+                             "every N episodes (default 100; 0 disables) -- enables the "
+                             "episodes-to-50%%-vs-baseline secondary metric.")
     args = parser.parse_args()
 
-    main(episodes=args.episodes, tag=args.tag, outdir=args.outdir, encoder=args.encoder)
+    main(episodes=args.episodes, tag=args.tag, outdir=args.outdir, encoder=args.encoder,
+         variant=args.variant, checkpoint_every=args.checkpoint_every)

@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from ..agents.networks import get_valid_select_mask
 from ..agents.build_agent import BUILD_OPTIONS
 from ..game.city import City
+from ..game.environment import REWARDS
 from ..game.unit import NUM_UNIT_SLOTS
 from ..mapgen.starts import StartPlacementError
 from ..meta import build_manifest, save_weights
@@ -159,6 +160,12 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
         last_player_index = -1
         turn_reward_accum = {i: 0.0 for i in range(len(agents))}
 
+        # Terminal win/loss/draw rewards (issue #46): computed once when the
+        # game ends; terminal_paid tracks which agents already received
+        # theirs in-loop so the post-loop pending resolution never pays twice.
+        terminal_by_agent = None
+        terminal_paid = set()
+
         step_counter = 0
 
         while not done:
@@ -204,6 +211,16 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
             state = next_state
             last_state_by_agent[current_player_index] = state
 
+            # Lazy pending completion (issue #46): an agent's previous
+            # transition is completed here, at its own next action, with the
+            # state it actually acts from — not at player-switch time. This
+            # keeps the agent's FINAL transition pending until episode end,
+            # where it gets done=True plus its terminal reward (previously a
+            # decisive game's loser never received a done=True transition
+            # and bootstrapped past the game end).
+            if current_agent.pending_transitions:
+                current_agent.complete_pending_transition(state, False)
+
             epsilon = current_agent.get_epsilon()
             action = current_agent.select_action(state, epsilon=epsilon, game_env=env)
             last_action_by_agent[current_player_index] = action
@@ -239,6 +256,17 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
                     reward = 0
                     done = env.done
 
+            # Deliver the acting player's terminal reward (issue #46) so it
+            # lands in the final transition stored below (and in the build
+            # accumulator). The other agents' terminal rewards are delivered
+            # post-loop through their still-pending final transitions.
+            if done and terminal_by_agent is None:
+                terminal_by_agent = _terminal_rewards(
+                    determine_winner(env), len(agents)
+                )
+                reward += terminal_by_agent[current_player_index]
+                terminal_paid.add(current_player_index)
+
             # Accumulate reward for build agent
             if use_build:
                 turn_reward_accum[current_player_index] += reward
@@ -252,27 +280,47 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
             else:
                 current_agent.store_pending_transition(state, action, reward)
 
-            # Complete pending transitions for the next player
+            # On player switch, rebuild next_state from the incoming player's
+            # perspective — it becomes their acting state next iteration.
+            # (Their pending transition is NOT completed here anymore: lazy
+            # completion above handles it at their next action, or the
+            # post-loop resolution at episode end — issue #46.)
             if env.current_player.player_index != current_player_index:
                 next_player_index = env.current_player.player_index
                 next_player_agent = agents[next_player_index]
                 next_state = next_player_agent.build_state_tensor(env)
 
-                if next_player_agent.pending_transitions:
-                    next_player_agent.complete_pending_transition(next_state, done)
-
             # Optimize
             if len(current_agent.memory) > batch_size:
                 current_agent.optimize(batch_size)
 
-        # Resolve remaining pending transitions
-        for agent in agents:
+        # Resolve remaining pending transitions with done=True and each
+        # agent's terminal reward (issue #46). terminal_by_agent is None only
+        # on the abnormal step-limit break — treat that as a draw-equivalent
+        # terminal here. An agent that already got its terminal in-loop
+        # (terminal_paid) is completed without extra reward.
+        if terminal_by_agent is None:
+            terminal_by_agent = _terminal_rewards(determine_winner(env), len(agents))
+        # Agents paid in-loop got their terminal through the shared `reward`,
+        # which also reached their build accumulator — snapshot before the
+        # combat resolution below marks everyone as paid.
+        build_terminal_paid = set(terminal_paid)
+        for i, agent in enumerate(agents):
+            extra = 0.0 if i in terminal_paid else terminal_by_agent[i]
+            terminal_paid.add(i)
             while agent.pending_transitions:
-                agent.complete_pending_transition(agent.pending_transitions[0][0], True)
+                final_state = agent.build_state_tensor(env)
+                agent.complete_pending_transition(final_state, True, extra_reward=extra)
+                extra = 0.0
 
-        # Resolve remaining build transitions
+        # Resolve remaining build transitions (terminal rewards flow into the
+        # build accumulators too; the in-loop actor's accumulator already
+        # received its share through the shared `reward` accumulation).
         if use_build:
             for i, build_agent in enumerate(build_agents):
+                if i not in build_terminal_paid:
+                    turn_reward_accum[i] += terminal_by_agent[i]
+                    build_terminal_paid.add(i)
                 if build_agent.pending:
                     dummy_state = agents[i].build_state_tensor(env)
                     build_agent.complete_pending(
@@ -317,6 +365,18 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
     if use_build:
         save_build_stats(build_orders, num_episodes)
     return win_counts, win_history
+
+
+def _terminal_rewards(winner, num_agents):
+    """Per-agent terminal reward (issue #46): win/loss by outcome, draw for
+    all when there is no winner. Defaults are 0 — a no-op unless config.toml
+    [training.rewards] sets win/loss/draw."""
+    if winner is None:
+        return {i: REWARDS["draw"] for i in range(num_agents)}
+    return {
+        i: REWARDS["win"] if i == winner else REWARDS["loss"]
+        for i in range(num_agents)
+    }
 
 
 def determine_winner(env):

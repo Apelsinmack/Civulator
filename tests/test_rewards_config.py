@@ -12,17 +12,25 @@ from civulator.game.unit import ArcherUnit, WarriorUnit
 from test_combat_range import make_flat_env, place
 
 
-def test_rewards_match_the_old_literals():
-    """The shipped config must reproduce the pre-#25 hardcoded values exactly."""
+def test_rewards_match_the_shipped_table():
+    """The loaded table must be exactly what config.toml ships — a guard
+    against silent drift between the file and the running experiment.
+    Current pin: the #46 reward-v2 anti-turtling table (2026-09-01);
+    the pre-#46 values live in the #39/#40 manifests and git history."""
     assert REWARDS == {
         "invalid_action": -1,
         "fortify": 0,
         "damage_per_hp": 0.1,
         "kill": 10,
-        "unit_lost": -10,
+        "unit_lost": -5,
         "capture_civilian": 15,
-        "capture_city": 20,
-        "found_city": 15,
+        "capture_city": 80,
+        "found_city": 40,
+        "win": 100,
+        "loss": -100,
+        "draw": 0,
+        "proximity_weight": 0.5,
+        "proximity_radius": 0,
     }
 
 

@@ -5,7 +5,7 @@ import logging
 import numpy as np
 
 from .map import Map
-from .. import mapgen
+from .. import hexmath, mapgen
 from ..mapgen.starts import StartPlacementError
 from ..rng import PortableRNG
 from ..terrain_model import can_enter, matches
@@ -27,8 +27,20 @@ _DEFAULT_REWARDS = {
     "capture_civilian": 15,
     "capture_city": 20,
     "found_city": 15,
+    # Terminal rewards (issue #46) — delivered by the trainer at episode end.
+    "win": 0,
+    "loss": 0,
+    "draw": 0,
+    # Potential-based proximity shaping (issue #46). Defaults are neutral:
+    # weight 0 disables shaping entirely; radius 0 means auto (cols//2 + 1).
+    "proximity_weight": 0.0,
+    "proximity_radius": 0,
 }
 REWARDS = {**_DEFAULT_REWARDS, **CFG.get("training", {}).get("rewards", {})}
+
+# Discount used in the shaping term gamma*Phi(s') - Phi(s) — must match the
+# agent's discount for the policy-invariance guarantee (Ng et al. 1999).
+GAMMA = CFG.get("training", {}).get("gamma", 0.9)
 
 _GAME_CFG = CFG.get("game", {})
 STARTING_WARRIORS = _GAME_CFG.get("starting_warriors", 3)
@@ -308,6 +320,13 @@ class GameEnvironment:
         - Select own unit, order to enemy unit → attack
         - Select own unit, order to enemy city (no unit) → move and capture
 
+        The returned reward includes the potential-based proximity shaping
+        term gamma*Phi(s') - Phi(s) for the ACTING player (issue #46) —
+        pinned at entry because _check_game_end can auto-advance the turn,
+        changing current_player mid-step. Phi(terminal) := 0 by convention.
+        With [training.rewards] proximity_weight = 0 the term is exactly 0
+        and rewards are byte-identical to the pre-#46 behavior.
+
         Args:
             action_matrix: [select_position, order_position] as numpy arrays
                 select_position can be (row, col) or (row, col, slot)
@@ -315,6 +334,46 @@ class GameEnvironment:
         Returns:
             tuple: (self, reward, done)
         """
+        acting_player = self.current_player
+        phi_before = self._proximity_potential(acting_player)
+        _, reward, done = self._step_inner(action_matrix)
+        phi_after = 0.0 if done else self._proximity_potential(acting_player)
+        reward += GAMMA * phi_after - phi_before
+        return self, reward, done
+
+    def _proximity_potential(self, player):
+        """Phi(s) = weight * sum over own military units of max(0, R - d).
+
+        d = wrap hex distance to the nearest enemy city (canonical
+        hexmath.distance); military = base combat strength > 0, so Settlers
+        and Workers are never pulled toward danger. R = proximity_radius,
+        or cols//2 + 1 when the config value is 0 (auto — scales with the
+        map preset). weight 0 short-circuits to 0.0 (shaping disabled).
+        """
+        weight = REWARDS["proximity_weight"]
+        if weight == 0:
+            return 0.0
+        radius = REWARDS["proximity_radius"] or (self.m // 2 + 1)
+        enemy_cities = [
+            city.coordinates
+            for p in self.players
+            if p is not player
+            for city in p.cities
+        ]
+        if not enemy_cities:
+            return 0.0
+        total = 0.0
+        for unit in player.units:
+            if unit.get_base_combat_strength() <= 0:
+                continue
+            d = min(
+                hexmath.distance(unit.coordinates, c, self.m)
+                for c in enemy_cities
+            )
+            total += max(0, radius - d)
+        return weight * total
+
+    def _step_inner(self, action_matrix):
         reward = 0
         select_pos = tuple(action_matrix[0])
         order_pos = tuple(action_matrix[1])

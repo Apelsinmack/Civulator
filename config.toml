@@ -497,12 +497,19 @@ fog_of_war = false       # true: enhanced encoder applies visibility (27ch — h
 # sourced from this mutable file.
 # seed_base = 12345
 
+# Reward table v2 (issue #46, 2026-09-01): anti-turtling package. Old values
+# in comments; the #39/#40 runs trained on those (their manifests pin them).
 [training.rewards]
 invalid_action = -1
 fortify = 0
-damage_per_hp = 0.1
+damage_per_hp = 0.1     # full kill ~ 10 damage + 10 kill = 20 (units have 100 HP)
 kill = 10
-unit_lost = -10
+unit_lost = -5          # was -10; proximity shaping adds a position-aware death penalty
 capture_civilian = 15
-capture_city = 20
-found_city = 15
+capture_city = 80       # was 20; 4x a full kill, 2x founding
+found_city = 40         # was 15; 2x a full kill
+win = 100               # terminal, delivered by the trainer into final transitions
+loss = -100
+draw = 0                # deliberate: draw penalty is the next knob if games still hit the cap
+proximity_weight = 0.5  # w in Phi = w * sum_military max(0, R - d_nearest_enemy_city); 0 disables
+proximity_radius = 0    # R; 0 = auto (cols//2 + 1, scales with map preset)

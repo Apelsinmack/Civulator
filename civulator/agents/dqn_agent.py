@@ -111,12 +111,17 @@ class DQNAgent:
         """Store a transition waiting for the next state (multi-agent)."""
         self.pending_transitions.append((state, action, reward))
 
-    def complete_pending_transition(self, next_state, done):
-        """Complete a pending transition with the agent's actual next state."""
+    def complete_pending_transition(self, next_state, done, extra_reward=0.0):
+        """Complete a pending transition with the agent's actual next state.
+
+        extra_reward is added to the stored reward — the trainer uses it to
+        deliver terminal win/loss/draw rewards (issue #46) into an agent's
+        final transition at episode end.
+        """
         if not self.pending_transitions:
             return
         state, action, reward = self.pending_transitions.pop(0)
-        self.store_transition(state, action, reward, next_state, done)
+        self.store_transition(state, action, reward + extra_reward, next_state, done)
 
     def select_action(self, state, epsilon=0.1, game_env=None):
         """Select an action using epsilon-greedy policy.
