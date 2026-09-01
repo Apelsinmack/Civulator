@@ -459,6 +459,106 @@ class TerrainAwareStateEncoder(EnhancedStateEncoder):
         return torch.cat([parent_state, terrain_tensor], dim=0)
 
 
+class CityDistanceStateEncoder(EnhancedStateEncoder):
+    """EnhancedStateEncoder plus ONE appended channel: a proximity field to
+    the nearest enemy city (issue #48).
+
+    Why: the FullyConv Q-network's receptive field is ~3 hexes, while duel
+    capitals sit ~12 apart — enemy cities (a single 1.0 on channel 23) are
+    architecturally invisible from afar, so directed marching is not
+    representable. This channel injects that global information per-tile:
+    even a radius-1 network can then read which neighbor tile is closer to
+    the enemy. Pairs with the #46 proximity shaping (same canonical
+    hexmath.distance, plain hex distance — deliberately NOT path distance).
+
+    Channel (appended after the parent's prefix, which stays bit-identical
+    to EnhancedStateEncoder.encode() — same contract as terrain_aware):
+        +0  proximity = 1 - d/D, where d = wrap hex distance to the nearest
+            enemy city and D = cols//2 + rows - 1 (the maximum possible
+            distance on the cylinder). Unclipped by design: the gradient is
+            nonzero EVERYWHERE, so there is no far-field blindness. 1.0 on
+            the city tile itself; all zeros when the enemy has no cities.
+
+    Depth: 25+1 = 26 (no fog), 27+1 = 28 (fog).
+
+    Fog: the field is computed from the same enemy-city set the parent's
+    channel 23 shows — under fog only explored cities count (cities don't
+    move, so explored = remembered). Fogged fields are computed uncached
+    (the explored mask would have to join the cache key); fogless fields
+    are cached on (map_uid, enemy-city coordinate set) — cities change only
+    on found/capture, so this is effectively free (issue #48/#32: Python
+    until the profiler objects).
+    """
+
+    CITY_DISTANCE_DEPTH = 1
+
+    def __init__(self, fog_of_war=None):
+        super().__init__(fog_of_war=fog_of_war)
+        self._distance_cache = None
+        self._distance_cache_key = None  # (map_uid, sorted enemy-city coords)
+
+    def get_depth(self, num_players):
+        return super().get_depth(num_players) + self.CITY_DISTANCE_DEPTH
+
+    def _distance_field(self, game_env, enemy_city_coords):
+        """Proximity field over the whole grid for the given city set.
+
+        Calls the canonical hexmath.distance per (tile, city) pair — the
+        hex-distance formula is never reimplemented here (the #24 lesson);
+        at <=(rows*cols*n_cities) O(1) calls behind a cache, cost is nil.
+        """
+        n, m = game_env.n, game_env.m
+        field = np.zeros((n, m), dtype=np.float32)
+        if not enemy_city_coords:
+            return field
+        d_max = float(m // 2 + n - 1)
+        for i in range(n):
+            for j in range(m):
+                d = min(
+                    hexmath.distance((i, j), c, m) for c in enemy_city_coords
+                )
+                field[i, j] = 1.0 - d / d_max
+        return field
+
+    def _get_city_distance_layer(self, game_env, player_index, explored):
+        current_player = game_env.players[player_index]
+        coords = sorted(
+            city.coordinates
+            for player in game_env.players
+            if player is not current_player
+            for city in player.cities
+        )
+        if explored is not None:
+            # Fog: only remembered (explored) enemy cities exist for this
+            # player — mask-dependent, computed uncached (see class docstring).
+            coords = [c for c in coords if explored[c]]
+            return self._distance_field(game_env, coords)
+
+        key = (game_env.map.map_uid, tuple(coords))
+        if self._distance_cache is not None and self._distance_cache_key == key:
+            return self._distance_cache
+        field = self._distance_field(game_env, coords)
+        self._distance_cache = field
+        self._distance_cache_key = key
+        return field
+
+    def encode(self, game_env, player_index, device=None):
+        if device is None:
+            device = torch.device("cpu")
+
+        parent_state = super().encode(game_env, player_index, device=device)
+
+        if self.fog_of_war:
+            visible = game_env.get_visibility_mask(player_index)
+            explored = game_env.get_explored_mask(player_index) | visible
+        else:
+            explored = None
+        field = self._get_city_distance_layer(game_env, player_index, explored)
+
+        field_tensor = torch.from_numpy(field[np.newaxis, :, :]).to(device)
+        return torch.cat([parent_state, field_tensor], dim=0)
+
+
 # --- Encoder registry (design doc `docs/terrain_encoder_design.md` #40) -----
 #
 # "State encoders are selected by name via state_encoders.get_encoder();
@@ -470,6 +570,7 @@ _ENCODER_REGISTRY = {
     "basic": BasicStateEncoder,
     "enhanced": EnhancedStateEncoder,
     "terrain_aware": TerrainAwareStateEncoder,
+    "city_distance": CityDistanceStateEncoder,
 }
 
 
@@ -477,10 +578,11 @@ def get_encoder(name, fog_of_war=None):
     """Instantiate a state encoder by name (the project's canonical registry).
 
     Args:
-        name: one of "basic", "enhanced", "terrain_aware".
+        name: one of "basic", "enhanced", "terrain_aware", "city_distance".
         fog_of_war: forwarded to encoders that accept it (enhanced,
-            terrain_aware); None lets them fall back to config.toml
-            [training] fog_of_war. Ignored for "basic" (no fog concept).
+            terrain_aware, city_distance); None lets them fall back to
+            config.toml [training] fog_of_war. Ignored for "basic" (no fog
+            concept).
 
     Raises:
         ValueError: unknown name -- never silently falls back (e.g. to

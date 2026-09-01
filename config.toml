@@ -489,7 +489,7 @@ epsilon_end = 0.05
 # ~200 episodes of near-greedy self-play experience in a 1000-episode run.
 epsilon_decay_episodes = 800
 target_update_freq = 100 # Sync target network every N optimization steps
-encoder = "enhanced"     # "basic" (5ch), "enhanced" (25ch/27ch fog), or "terrain_aware" (52ch/54ch fog, issue #40)
+encoder = "enhanced"     # "basic" (5ch), "enhanced" (25ch/27ch fog), "terrain_aware" (52ch/54ch fog, #40), or "city_distance" (26ch/28ch fog, #48)
 fully_conv = true        # Must be true for large maps (no FC layers)
 fog_of_war = false       # true: enhanced encoder applies visibility (27ch — hidden/explored/visible)
 # seed_base: episode-indexed seed schedule (issue #39, civulator/training/

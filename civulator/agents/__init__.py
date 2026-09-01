@@ -4,6 +4,7 @@ from .networks import SelectAndMoveNetwork, SharedBackboneNetwork, FullyConvNetw
 from .replay_memory import ReplayMemory
 from .state_encoders import (
     BasicStateEncoder,
+    CityDistanceStateEncoder,
     EnhancedStateEncoder,
     TerrainAwareStateEncoder,
     get_encoder,
