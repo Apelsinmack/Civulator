@@ -122,4 +122,4 @@ this boundary is visible at load time, not just here.
 - **Date**: 2026-09-02 night on Home Desktop — 3h31m05s, 12.67 s/episode
 - **Final win distribution**: P0=443, P1=484, draws=73 (late-training draws 31/200 — same turtling shape as rw2eps800)
 - **Evaluation** (protocol v1, 200 games vs duel_25ch_1000ep): **84 / 83 / 33** — null; **all 200 games at the 250-turn cap, zero eliminations**. The proximity channel changed *production behavior* (flat military mix, Settler 200 vs the baseline's 482, first eval with build_distribution recorded) but not game outcomes — global direction input alone does not produce marching either
-- **Stats**: `stats/baseline_baseline_1000ep_1788304274.json` + `win_history`/`win_rate_plot`/`build_orders_1788304274.*` + `stats/eval_duel_26ch_1000ep_vs_duel_25ch_1000ep_1788304495.json`
+- **Stats**: `stats/baseline_baseline_1000ep_1788304274.json` + `win_history`/`win_rate_plot_1788304273.*` + `build_orders_1788304274.*` + `stats/eval_duel_26ch_1000ep_vs_duel_25ch_1000ep_1788304495.json`
