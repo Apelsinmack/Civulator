@@ -558,6 +558,48 @@ class CityDistanceStateEncoder(EnhancedStateEncoder):
         return torch.cat([parent_state, field_tensor], dim=0)
 
 
+class FullStateEncoder(TerrainAwareStateEncoder):
+    """Everything measured or hypothesized useful, stacked (Erik, 2026-09-02
+    "kitchen-sink" direction): the TerrainAware layout (Enhanced prefix +
+    27ch terrain block, #40) plus the CityDistance proximity channel (#48)
+    appended last.
+
+    Channel layout: Enhanced 25 (27 fog) | terrain block 27 | proximity 1
+    -> 53ch (55 fog). The proximity channel is computed by the SAME code as
+    CityDistanceStateEncoder (composition via an internal instance — the
+    field logic lives in exactly one place; only the channel POSITION
+    differs between the two encoders).
+
+    Registry name: "full".
+    """
+
+    def __init__(self, fog_of_war=None):
+        super().__init__(fog_of_war=fog_of_war)
+        # Internal field provider — encode() below never calls its encode(),
+        # only the distance-layer machinery (cache included).
+        self._city_distance = CityDistanceStateEncoder(fog_of_war=self.fog_of_war)
+
+    def get_depth(self, num_players):
+        return super().get_depth(num_players) + CityDistanceStateEncoder.CITY_DISTANCE_DEPTH
+
+    def encode(self, game_env, player_index, device=None):
+        if device is None:
+            device = torch.device("cpu")
+
+        terrain_aware_state = super().encode(game_env, player_index, device=device)
+
+        if self.fog_of_war:
+            visible = game_env.get_visibility_mask(player_index)
+            explored = game_env.get_explored_mask(player_index) | visible
+        else:
+            explored = None
+        field = self._city_distance._get_city_distance_layer(
+            game_env, player_index, explored)
+
+        field_tensor = torch.from_numpy(field[np.newaxis, :, :]).to(device)
+        return torch.cat([terrain_aware_state, field_tensor], dim=0)
+
+
 # --- Encoder registry (design doc `docs/terrain_encoder_design.md` #40) -----
 #
 # "State encoders are selected by name via state_encoders.get_encoder();
@@ -570,6 +612,7 @@ _ENCODER_REGISTRY = {
     "enhanced": EnhancedStateEncoder,
     "terrain_aware": TerrainAwareStateEncoder,
     "city_distance": CityDistanceStateEncoder,
+    "full": FullStateEncoder,
 }
 
 

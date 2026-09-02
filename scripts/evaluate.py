@@ -119,7 +119,7 @@ DEFAULT_EPSILON = 0.05
 _tcfg = CFG.get("training", {})
 DEFAULT_MAX_TURNS = _tcfg.get("max_turns", 250)
 
-_ENCODER_CHOICES = ["basic", "enhanced", "terrain_aware", "city_distance"]
+_ENCODER_CHOICES = ["basic", "enhanced", "terrain_aware", "city_distance", "full"]
 
 
 def _load_side(weights_path, encoder_name, n, m, num_players, device):

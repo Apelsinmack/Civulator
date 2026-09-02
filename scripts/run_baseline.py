@@ -373,7 +373,7 @@ if __name__ == "__main__":
                         help="Explicit output root (weights/, weights/trained/, stats/ are created "
                              "under it). Overrides the --tag-based default either way.")
     parser.add_argument("--encoder", type=str, default=DEFAULT_ENCODER,
-                        choices=["basic", "enhanced", "terrain_aware", "city_distance"],
+                        choices=["basic", "enhanced", "terrain_aware", "city_distance", "full"],
                         help=f"State encoder, selected via civulator.agents.get_encoder "
                              f"(default: {DEFAULT_ENCODER!r}, from config.toml [training].encoder). "
                              "'terrain_aware' (52ch/54ch fog, issue #40) runs the SAME seed schedule "

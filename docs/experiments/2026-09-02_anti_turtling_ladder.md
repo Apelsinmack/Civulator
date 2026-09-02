@@ -38,12 +38,18 @@ win rate but **whether games end before the cap**.
 | 2 | `duel_26ch` | CityDistance encoder: +1 channel, unclipped proximity field to nearest enemy city | 84 / 83 / 33 | 200/200 | 0 |
 | 3 | `duel_26ch_net32x64x64` | Network (32,64,64): ~101k params, receptive radius 4 | 86 / 84 / 30 | 200/200 | 0 |
 | 4 | `duel_26ch_net64x5` | Network (64×5): ~600k params, radius 6 | 83 / 84 / 33 | 200/200 | 0 |
-| 5 | `duel_26ch_net128x6` | Network (128×6): ~950k params, radius 7 | *(training at publication)* | | |
+| 5 | `duel_26ch_net128x6` | Network (128×6): ~950k params, radius 7 | **109 / 70 / 21** | 199/200 | 0¹ |
 
-Every rung: statistically even win rate (95% CI ≈ ±7pp), **all 200 games at
-turn 251, zero eliminations** — five consecutive nulls on the needle that
-matters. (Rung 5, approved as the final capacity point, records the evening
-of 2026-09-02; a sixth null closes the capacity family.)
+¹ plus one **mutual-annihilation draw at turn 227** — the first game of the
+v0.6 epoch to end before the cap at all.
+
+Rungs 0–4: statistically even win rates (95% CI ≈ ±7pp), all 200 games at
+turn 251, zero eliminations — five consecutive nulls on the needle that
+matters. **Rung 5 broke the pattern**: 54.5% overall / 60.9% of decisive
+games (p ≈ 0.004), the ladder's first significant result. Its self-play was
+also the epoch's first *asymmetric* split (362/593, ~7σ): one of the two
+identically-configured twins escaped the mutual-turtle equilibrium, and the
+eval confirms the asymmetry (as seat 1: 72/22; as seat 0: 37/48).
 
 ## 4. What did move: production behavior
 
@@ -64,12 +70,15 @@ march them into contact.
 
 ## 5. Interpretation
 
-Two real defects were found and fixed (a reward table with no win incentive
-and a broken exploration schedule), one genuine architectural limit was
-identified and bypassed (receptive-field blindness, via the proximity field),
-and capacity was scaled 5.6× (33× once rung 4 records) — and the turtle
-survived all of it. The surviving explanations, roughly in order of our
-current suspicion:
+**The resolution, written after rung 5**: the incentive, schedule, and
+perception fixes were *necessary but not sufficient* at small capacity — at
+~1M parameters the optimizer finally finds a policy that exploits the stack,
+beats the frozen baseline significantly, out-produces it (1521 builds vs
+1262, military-heavy), and fights at least once to mutual extinction. But
+199/200 games still reach the cap and only ONE of the two self-play twins
+escaped the turtle equilibrium — turtling is dented, not broken. The levers
+below remain live for finishing the job (and the pre-rung-5 reasoning is
+kept as written, since four nulls shaped it):
 
 - **The optimum at the cap may genuinely be turtling.** A draw costs nothing
   (draw reward is 0 by deliberate first-pass choice), attacking a fortified
@@ -92,6 +101,13 @@ current suspicion:
   qualitative look at what the agents actually do all those 250 turns.
 
 ## 6. Bookkeeping this session also produced
+
+**#44 resolved and closed**: the "cross-machine mapgen divergence" was a
+record error — the seed schedule skips the identical 19 seeds on every
+machine and commit tested (the baseline's "3 skips" was a hand transcription
+of the last three console warnings). Mapgen is cross-machine bit-stable, all
+recorded runs share the exact world sequence, and skip lists are now
+persisted machine-readably in every run summary.
 
 Protocol v1 ratified · eval flake fixed (D26 resample at construction) ·
 `hexmath.distance` vectorized (ndarray broadcasting, scalar path untouched) ·

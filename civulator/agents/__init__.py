@@ -6,6 +6,7 @@ from .state_encoders import (
     BasicStateEncoder,
     CityDistanceStateEncoder,
     EnhancedStateEncoder,
+    FullStateEncoder,
     TerrainAwareStateEncoder,
     get_encoder,
 )
