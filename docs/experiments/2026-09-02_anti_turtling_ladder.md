@@ -37,11 +37,13 @@ win rate but **whether games end before the cap**.
 | 1 | `duel_25ch_rw2eps800` | ε decays to 0.05 by ep 800 (was: stuck at ~0.81) | 84 / 79 / 37 | 200/200 | 0 |
 | 2 | `duel_26ch` | CityDistance encoder: +1 channel, unclipped proximity field to nearest enemy city | 84 / 83 / 33 | 200/200 | 0 |
 | 3 | `duel_26ch_net32x64x64` | Network (32,64,64): ~101k params, receptive radius 4 | 86 / 84 / 30 | 200/200 | 0 |
-| 4 | `duel_26ch_net64x5` | Network (64×5): ~600k params, radius 6 | *(training at publication)* | | |
+| 4 | `duel_26ch_net64x5` | Network (64×5): ~600k params, radius 6 | 83 / 84 / 33 | 200/200 | 0 |
+| 5 | `duel_26ch_net128x6` | Network (128×6): ~950k params, radius 7 | *(training at publication)* | | |
 
 Every rung: statistically even win rate (95% CI ≈ ±7pp), **all 200 games at
-turn 251, zero eliminations** — four consecutive nulls on the needle that
-matters.
+turn 251, zero eliminations** — five consecutive nulls on the needle that
+matters. (Rung 5, approved as the final capacity point, records the evening
+of 2026-09-02; a sixth null closes the capacity family.)
 
 ## 4. What did move: production behavior
 
