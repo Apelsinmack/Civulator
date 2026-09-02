@@ -158,6 +158,7 @@ def _setup_versus(args):
         world_seed = game["seed"]
         a_seat = game["a_seat"]
         game_rng_seed = summary["seed_base"] + game["game_index"]
+        expected = (game["winner_seat"], game["turns"])
         # The JSON knows which files/encoders it scored — CLI can override
         # (e.g. relocated files) but defaults to replay exactly what ran.
         a_weights = args.a or summary["a_weights"]
@@ -176,6 +177,7 @@ def _setup_versus(args):
         game_rng_seed = world_seed
         a_weights, a_encoder = args.a, args.a_encoder
         b_weights, b_encoder = args.b, args.b_encoder
+        expected = None
 
     if not a_weights or not a_encoder:
         raise SystemExit("versus mode needs --a and --a-encoder (or --eval-json)")
@@ -202,10 +204,11 @@ def _setup_versus(args):
         a_seat: f"A {os.path.basename(a_weights)}",
         b_seat: f"B {os.path.basename(b_weights)}",
     }
-    return env, agents, build_agents, labels, epsilon
+    return env, agents, build_agents, labels, epsilon, expected
 
 
-def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0):
+def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0,
+               expected=None):
     """Render loop. `agents`/`build_agents_list` are indexable by
     player_index (list or dict); action order mirrors evaluate._play_game
     exactly so seeded games replay identically."""
@@ -359,7 +362,18 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0):
             # Score = cities*10 + units (determine_winner's cap tiebreak) —
             # shown so a turn-cap winner is self-explanatory in the HUD.
             result = "DRAW" if w is None else f"WINNER: {labels.get(w, f'P{w + 1}')} (score tiebreak)"
-            rl.draw_text(result.encode(), 10, 80 + len(env.players) * 18 + 6, 18, rl.GOLD)
+            y_result = 80 + len(env.players) * 18 + 6
+            rl.draw_text(result.encode(), 10, y_result, 18, rl.GOLD)
+            # Replay fidelity check: bit-exact replay needs the same float
+            # arithmetic as the scored run — a BUSY GPU can flip cuDNN
+            # algorithm choices and thus near-tie argmaxes. Say so loudly
+            # instead of silently showing a different history.
+            if expected is not None and (w, env.turn_counter) != tuple(expected):
+                rl.draw_text(
+                    (f"REPLAY DIVERGED from recorded game "
+                     f"(recorded: winner_seat={expected[0]}, {expected[1]} turns) "
+                     f"- replay on an IDLE GPU for fidelity").encode(),
+                    10, y_result + 24, 16, rl.RED)
 
         rl.draw_text(b"SPACE=pause  UP/DOWN=speed  SCROLL=zoom  RMOUSE=pan", 10, SCREEN_H - 25, 14, rl.DARKGRAY)
 
@@ -387,10 +401,12 @@ def main():
     args = parser.parse_args()
 
     if args.a or args.eval_json:
-        env, agents, builds, labels, epsilon = _setup_versus(args)
+        env, agents, builds, labels, epsilon, expected = _setup_versus(args)
     else:
         env, agents, builds, labels, epsilon = _setup_legacy()
-    run_viewer(env, agents, builds, labels, epsilon, smoke_frames=args.smoke)
+        expected = None
+    run_viewer(env, agents, builds, labels, epsilon, smoke_frames=args.smoke,
+               expected=expected)
 
 
 if __name__ == "__main__":
