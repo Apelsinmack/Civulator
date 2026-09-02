@@ -1,13 +1,48 @@
-"""Live game viewer — watch agents play with raylib hex grid rendering."""
+"""Live game viewer — watch agents play with raylib hex grid rendering.
 
+Two modes:
+
+**Versus / replay mode** (`--a <weights>`): load two combined payloads (the
+`meta.save_weights` format run_baseline.py produces) and watch them play.
+Loading goes through `evaluate._load_side` — encoder by registry name,
+network architecture inferred from the checkpoint (issue #48), so any
+capacity-ladder weights file works with no extra flags.
+
+Because protocol-v1 evaluation games are fully deterministic (seeded world +
+seeded per-game RNG + the same action-selection order), `--eval-json
+<summary.json> --game N` REPLAYS eval game N exactly as it was scored —
+same world, same seats, same epsilon rolls (same machine/device required
+for bit-identical torch RNG). This is the replay tool: re-simulation, not
+recorded state (issue #16's scrub-in-viewer remains a separate idea).
+
+    python scripts/watch.py --a weights/trained/duel_26ch_1000ep.pth \
+        --a-encoder city_distance \
+        --eval-json stats/eval_duel_26ch_1000ep_vs_duel_25ch_1000ep_1788304495.json \
+        --game 37
+
+Without --eval-json, `--seed` picks the world (default: random) and A sits
+in seat 0; --b defaults to the frozen #39 baseline.
+
+**Legacy mode** (no --a): original behavior — config-driven env, latest
+`weights/agent_{i}_episode_*.pth` checkpoints if present, epsilon 0.1.
+
+Controls: SPACE pause · UP/DOWN speed · scroll zoom · right-mouse pan.
+"""
+
+import argparse
+import json
 import os
+import random
 import sys
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, _PROJECT_ROOT)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # for `import evaluate`
 
 import pyray as rl
 import numpy as np
+import torch
 
 from civulator.config import CFG
 from civulator.meta import load_weights
@@ -40,6 +75,8 @@ _tcfg = CFG.get("training", {})
 MAP_ROWS, MAP_COLS, NUM_PLAYERS = resolve_size_and_players()
 MAX_TURNS = _gcfg.get("max_turns", 200)
 
+DEFAULT_B = os.path.join("weights", "trained", "duel_25ch_1000ep.pth")
+
 # Hex rendering
 HEX_SIZE = 12  # Outer radius of each hex
 SCREEN_W = 1600
@@ -58,15 +95,9 @@ PLAYER_COLORS = [
 ]
 
 
-def run_viewer():
-    """Run one game with live rendering."""
-    rl.init_window(SCREEN_W, SCREEN_H, b"Civulator - Live Viewer")
-    rl.set_target_fps(30)
-
-    # Camera for panning/zooming
-    camera = make_camera(MAP_ROWS, MAP_COLS, HEX_SIZE, SCREEN_W, SCREEN_H, zoom=0.5)
-
-    # Set up game
+def _setup_legacy():
+    """Original no-args behavior: config-driven env + latest per-agent
+    episode checkpoints (the pre-#39 weights format) if any exist."""
     env = GameEnvironment(MAP_ROWS, MAP_COLS, NUM_PLAYERS)
     env.max_turns = MAX_TURNS
     env.reset()
@@ -82,13 +113,11 @@ def run_viewer():
         agents.append(agent)
         build_agents_list.append(BuildAgent(MAP_ROWS, MAP_COLS, d))
 
-    # Load trained weights if available
     import glob
     for i, agent in enumerate(agents):
         pattern = f"weights/agent_{i}_episode_*.pth"
-        files = glob.glob(os.path.join(os.path.dirname(os.path.dirname(__file__)), pattern))
+        files = glob.glob(os.path.join(_PROJECT_ROOT, pattern))
         if files:
-            # Find highest episode
             best = max(files, key=lambda f: int(f.split("episode_")[1].split(".")[0]))
             try:
                 checkpoint, manifest = load_weights(best, map_location=agent.device)
@@ -105,13 +134,100 @@ def run_viewer():
         else:
             print(f"Agent {i}: no weights found, using random")
 
+    labels = {i: f"P{i + 1}" for i in range(NUM_PLAYERS)}
+    return env, agents, build_agents_list, labels, 0.1
+
+
+def _setup_versus(args):
+    """Versus/replay mode: two combined payloads via evaluate._load_side
+    (registry encoders, architecture inferred from the checkpoint)."""
+    import evaluate  # scripts/evaluate.py — the canonical loader + protocol
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    if args.eval_json:
+        with open(args.eval_json) as f:
+            summary = json.load(f)
+        game = summary["games_detail"][args.game]
+        n = summary["map_dims"]["rows"]
+        m = summary["map_dims"]["cols"]
+        num_players = summary["num_players"]
+        map_type = summary["map_type"]
+        max_turns = summary["max_turns"]
+        epsilon = summary["epsilon"] if args.epsilon is None else args.epsilon
+        world_seed = game["seed"]
+        a_seat = game["a_seat"]
+        game_rng_seed = summary["seed_base"] + game["game_index"]
+        # The JSON knows which files/encoders it scored — CLI can override
+        # (e.g. relocated files) but defaults to replay exactly what ran.
+        a_weights = args.a or summary["a_weights"]
+        a_encoder = args.a_encoder or summary["a_encoder"]
+        b_weights = args.b or summary["b_weights"]
+        b_encoder = args.b_encoder or summary["b_encoder"]
+        print(f"Replaying eval game {args.game}: seed={world_seed} a_seat={a_seat} "
+              f"recorded outcome={game['outcome']!r} in {game['turns']} turns")
+    else:
+        n, m, num_players = resolve_size_and_players(size="duel")
+        map_type = "earthlike"
+        max_turns = _tcfg.get("max_turns", 250)
+        epsilon = 0.05 if args.epsilon is None else args.epsilon
+        world_seed = args.seed if args.seed is not None else random.randrange(1 << 30)
+        a_seat = 0
+        game_rng_seed = world_seed
+        a_weights, a_encoder = args.a, args.a_encoder
+        b_weights, b_encoder = args.b, args.b_encoder
+
+    if not a_weights or not a_encoder:
+        raise SystemExit("versus mode needs --a and --a-encoder (or --eval-json)")
+
+    a_agents, a_builds, _, a_ch = evaluate._load_side(a_weights, a_encoder, n, m, num_players, device)
+    b_agents, b_builds, _, b_ch = evaluate._load_side(b_weights, b_encoder, n, m, num_players, device)
+    print(f"A: {os.path.basename(a_weights)} ({a_encoder}, conv {a_ch}) — seat {a_seat}")
+    print(f"B: {os.path.basename(b_weights)} ({b_encoder}, conv {b_ch}) — seat {1 - a_seat}")
+
+    env = GameEnvironment(n, m, num_players, map_type=map_type)
+    env.max_turns = max_turns
+    env.reset(seed=world_seed)
+
+    # Same per-game agent-side RNG discipline as evaluate.run_evaluation —
+    # this is what makes --eval-json replays reproduce the scored game.
+    random.seed(game_rng_seed)
+    np.random.seed(game_rng_seed)
+    torch.manual_seed(game_rng_seed)
+
+    b_seat = 1 - a_seat
+    agents = {a_seat: a_agents[a_seat], b_seat: b_agents[b_seat]}
+    build_agents = {a_seat: a_builds[a_seat], b_seat: b_builds[b_seat]}
+    labels = {
+        a_seat: f"A {os.path.basename(a_weights)}",
+        b_seat: f"B {os.path.basename(b_weights)}",
+    }
+    return env, agents, build_agents, labels, epsilon
+
+
+def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0):
+    """Render loop. `agents`/`build_agents_list` are indexable by
+    player_index (list or dict); action order mirrors evaluate._play_game
+    exactly so seeded games replay identically."""
+    rl.init_window(SCREEN_W, SCREEN_H, b"Civulator - Live Viewer")
+    rl.set_target_fps(30)
+
+    n_rows, n_cols = env.n, env.m
+    camera = make_camera(n_rows, n_cols, HEX_SIZE, SCREEN_W, SCREEN_H, zoom=0.5)
+
     done = False
-    turn = 0
+    turn = env.turn_counter
     last_player = -1
     paused = False
     speed = 1  # Actions per frame
+    frames = 0
+    end_turn_idx = env.n * env.m * NUM_UNIT_SLOTS
 
     while not rl.window_should_close():
+        frames += 1
+        if smoke_frames and frames > smoke_frames:
+            break
+
         # --- Input ---
         if rl.is_key_pressed(rl.KEY_SPACE):
             paused = not paused
@@ -120,51 +236,53 @@ def run_viewer():
         if rl.is_key_pressed(rl.KEY_DOWN):
             speed = max(speed // 2, 1)
 
-        # Zoom with scroll, pan with right mouse
         update_camera_zoom_pan(camera, zoom_step=0.05, zoom_min=0.1, zoom_max=3.0)
         # Re-enter from the opposite side after panning past the column-wrap
         # seam (§7.5 camera/seam policy) instead of drifting into unmapped
         # space — this is a scrolling view, unlike the painter/recorder.
         wrap_camera_x(camera, HEX_SIZE, env.m)
 
-        # --- Game step ---
+        # --- Game step (mirrors evaluate._play_game's order exactly) ---
         if not done and not paused:
-            for _ in range(speed):
-                if done:
-                    break
+            with torch.no_grad():
+                for _ in range(speed):
+                    if done:
+                        break
 
-                pi = env.current_player.player_index
-                agent = agents[pi]
+                    pi = env.current_player.player_index
+                    agent = agents[pi]
 
-                # Build decisions at turn boundary
-                if pi != last_player:
-                    ba = build_agents_list[pi]
-                    cs = agent.build_state_tensor(env)
-                    for city in env.current_player.cities:
-                        if city.current_production is None:
-                            idx = ba.select_build(cs, city, env, epsilon=0.1)
-                            opt = BUILD_OPTIONS[idx]
-                            if opt in City.BUILDING_COSTS:
-                                city.produce_building(opt)
-                            else:
-                                city.produce_unit(opt)
-                    last_player = pi
+                    # Build decisions at turn boundary
+                    if pi != last_player:
+                        ba = build_agents_list[pi]
+                        cs = agent.build_state_tensor(env)
+                        for city in env.current_player.cities:
+                            if city.current_production is None:
+                                idx = ba.select_build(cs, city, env, epsilon=epsilon)
+                                opt = BUILD_OPTIONS[idx]
+                                if opt in City.BUILDING_COSTS:
+                                    city.produce_building(opt)
+                                else:
+                                    city.produce_unit(opt)
+                        ba.pending = []  # viewer never trains
+                        last_player = pi
 
-                state = agent.build_state_tensor(env)
-                action = agent.select_action(state, epsilon=0.1, game_env=env)
+                    state = agent.build_state_tensor(env)
+                    action = agent.select_action(state, epsilon=epsilon, game_env=env)
 
-                end_turn_idx = env.n * env.m * NUM_UNIT_SLOTS
-                if action[0] == end_turn_idx:
-                    env.current_player.end_turn()
-                    env.next_turn()
+                    if action[0] == end_turn_idx:
+                        env.current_player.end_turn()
+                        env.next_turn()
+                        turn = env.turn_counter
+                        done = env.done
+                    else:
+                        tile_idx = action[0] // NUM_UNIT_SLOTS
+                        slot = action[0] % NUM_UNIT_SLOTS
+                        r, c = tile_idx // env.m, tile_idx % env.m
+                        mr, mc = action[1] // env.m, action[1] % env.m
+                        action_matrix = [np.array([r, c, slot]), np.array([mr, mc])]
+                        _, reward, done = env.step(action_matrix)
                     turn = env.turn_counter
-                else:
-                    tile_idx = action[0] // NUM_UNIT_SLOTS
-                    slot = action[0] % NUM_UNIT_SLOTS
-                    r, c = tile_idx // env.m, tile_idx % env.m
-                    mr, mc = action[1] // env.m, action[1] % env.m
-                    action_matrix = [np.array([r, c, slot]), np.array([mr, mc])]
-                    _, reward, done = env.step(action_matrix)
 
         # --- Draw ---
         rl.begin_drawing()
@@ -172,8 +290,8 @@ def run_viewer():
         rl.begin_mode_2d(camera)
 
         # Draw terrain
-        for row in range(MAP_ROWS):
-            for col in range(MAP_COLS):
+        for row in range(n_rows):
+            for col in range(n_cols):
                 tile = env.map.tiles[row, col]
                 if tile is None:
                     continue
@@ -220,19 +338,24 @@ def run_viewer():
 
         # HUD
         rl.draw_text(f"Turn: {turn}".encode(), 10, 10, 20, rl.WHITE)
-        rl.draw_text(f"Speed: {speed}x".encode(), 10, 35, 16, rl.LIGHTGRAY)
+        rl.draw_text(f"Speed: {speed}x  eps={epsilon}".encode(), 10, 35, 16, rl.LIGHTGRAY)
         status = b"PAUSED" if paused else (b"GAME OVER" if done else b"RUNNING")
         rl.draw_text(status, 10, 55, 16, rl.YELLOW if paused else rl.WHITE)
 
         # Player scoreboard
-        alive = [p for p in env.players if not p.is_dead]
         for i, p in enumerate(env.players):
             pcolor = PLAYER_COLORS[p.player_index % len(PLAYER_COLORS)]
             y = 80 + i * 18
-            label = f"P{p.player_index+1}: {len(p.units)}u {len(p.cities)}c"
+            label = f"{labels.get(p.player_index, f'P{p.player_index + 1}')}: {len(p.units)}u {len(p.cities)}c"
             if p.is_dead:
                 label += " DEAD"
             rl.draw_text(label.encode(), 10, y, 14, pcolor)
+
+        if done:
+            from civulator.training.trainer import determine_winner
+            w = determine_winner(env)
+            result = "DRAW" if w is None else f"WINNER: {labels.get(w, f'P{w + 1}')}"
+            rl.draw_text(result.encode(), 10, 80 + len(env.players) * 18 + 6, 18, rl.GOLD)
 
         rl.draw_text(b"SPACE=pause  UP/DOWN=speed  SCROLL=zoom  RMOUSE=pan", 10, SCREEN_H - 25, 14, rl.DARKGRAY)
 
@@ -241,5 +364,30 @@ def run_viewer():
     rl.close_window()
 
 
+def main():
+    parser = argparse.ArgumentParser(description="Civulator live viewer / eval-game replayer.")
+    parser.add_argument("--a", default=None, help="Side A combined weights payload (versus mode).")
+    parser.add_argument("--a-encoder", default=None, help="Side A encoder registry name.")
+    parser.add_argument("--b", default=DEFAULT_B,
+                        help=f"Side B weights payload (default: the frozen #39 baseline {DEFAULT_B}).")
+    parser.add_argument("--b-encoder", default="enhanced", help="Side B encoder (default: enhanced).")
+    parser.add_argument("--eval-json", default=None,
+                        help="Protocol-v1 eval summary JSON: replay one of its games exactly.")
+    parser.add_argument("--game", type=int, default=0, help="Game index within --eval-json (default 0).")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="World seed for a fresh versus game (ignored with --eval-json).")
+    parser.add_argument("--epsilon", type=float, default=None,
+                        help="Exploration (default: the eval JSON's, else 0.05).")
+    parser.add_argument("--smoke", type=int, default=0,
+                        help="Close the window after N frames (self-test).")
+    args = parser.parse_args()
+
+    if args.a or args.eval_json:
+        env, agents, builds, labels, epsilon = _setup_versus(args)
+    else:
+        env, agents, builds, labels, epsilon = _setup_legacy()
+    run_viewer(env, agents, builds, labels, epsilon, smoke_frames=args.smoke)
+
+
 if __name__ == "__main__":
-    run_viewer()
+    main()
