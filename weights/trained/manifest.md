@@ -157,3 +157,13 @@ this boundary is visible at load time, not just here.
 - **Final win distribution**: P0=456, P1=467, draws=77
 - **Evaluation** (protocol v1, 200 games vs duel_25ch_1000ep): **83 / 84 / 33** — null; **all 200 games at the 250-turn cap, zero eliminations** — fifth consecutive null on the turn-cap needle. Build mix stays broad-military (Horseman 204, Spearman 198, Catapult 195, Granary 76; baseline same games: Settler 507)
 - **Stats**: `stats/baseline_baseline_net64x5_1000ep_1788335472.json` + timestamped `win_history`/`win_rate_plot`/`build_orders` + `stats/eval_duel_26ch_net64x5_1000ep_vs_duel_25ch_1000ep_1788335716.json`
+
+### duel_26ch_net128x6_1000ep.pth — the #48 capacity follower, third point ⚡ FIRST NON-NULL
+
+- **Naming**: `net128x6` = conv_channels (128,)×6 — ~950k params (52× the original), receptive radius 7; single changed variable vs duel_26ch_net64x5
+- **Config**: city_distance 26ch, table v2, epsilon decay 800, seed_base 390000 on Home Desktop
+- **Date**: 2026-09-02 day on Home Desktop — 9h11m15s, 33.08 s/episode
+- **Final win distribution**: P0=362, P1=593, draws=45 — **first strongly asymmetric self-play of the epoch (~7σ)**: the seat-1 agent found something its twin didn't
+- **Evaluation** (protocol v1, 200 games vs duel_25ch_1000ep): **109 / 70 / 21** (54.5% vs 35.0%; among decisive games 60.9%, p≈0.004) — **the ladder's first significant win**. Driven by the strong seat-1 agent (as A@seat1: 72/22; as A@seat0: 37/48). And the first game of the epoch to end before the cap: game 123 (seed 990062), **mutual annihilation draw at turn 227** — real combat to extinction. 199/200 still at cap; turtling dented, not broken
+- **Builds**: A 1521 items (Warrior 287, Settler 254, Horseman 245, Spearman 238, Archer 229, Catapult 189, Granary 79) vs baseline's 1262 (Settler 500) — more total production AND more military
+- **Stats**: `stats/baseline_baseline_net128x6_1000ep_1788368822.json` + timestamped `win_history`/`win_rate_plot`/`build_orders` + `stats/eval_duel_26ch_net128x6_1000ep_vs_duel_25ch_1000ep_1788369488.json`
