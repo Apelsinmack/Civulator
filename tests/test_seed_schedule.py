@@ -154,3 +154,32 @@ def test_seed_base_absent_uses_unseeded_reset_unchanged(monkeypatch, tmp_path):
     assert calls == [None, None]
     assert len(win_history) == 2
     assert set(win_counts) == {0, 1}
+
+
+def test_skipped_seeds_are_persisted_to_caller_list(monkeypatch, tmp_path):
+    """`train_agents(skipped_seeds=[...])` records every skipped schedule
+    seed in place — the #44 lesson: the baseline's skip record was a hand
+    transcription of console scrollback and captured only 3 of 19 skips,
+    spawning a phantom cross-machine-divergence investigation. The run
+    summary now persists the machine-readable list (run_baseline.py wires
+    this into its stats JSON).
+    """
+    monkeypatch.chdir(tmp_path)
+    seed_base = 810000
+    bad_seed = seed_base + 1
+    env, agents = _make_agents()
+    real_reset = GameEnvironment.reset
+
+    def patched_reset(self, num_players=None, seed=None):
+        if seed == bad_seed:
+            raise StartPlacementError(f"forced failure for seed {seed}")
+        return real_reset(self, num_players=num_players, seed=seed)
+
+    skipped = []
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(GameEnvironment, "reset", patched_reset)
+        train_agents(env, agents, num_episodes=3, batch_size=8, debug=False,
+                     save_checkpoints=False, seed_base=seed_base,
+                     skipped_seeds=skipped)
+
+    assert skipped == [bad_seed]

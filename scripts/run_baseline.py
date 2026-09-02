@@ -298,6 +298,7 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
             print(f"[checkpoint] episode {completed} -> {ck_path}")
 
         t0 = time.perf_counter()
+        skipped_seeds = []  # persisted below — console warnings are not a record (#44 lesson)
         win_counts, win_history = train_agents(
             env, agents, num_episodes=episodes, batch_size=batch_size, debug=False,
             build_agents=build_agents, seed_base=SEED_BASE,
@@ -305,6 +306,7 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
                 checkpoint_every=checkpoint_every,
                 checkpoint_saver=checkpoint_saver,
             ),
+            skipped_seeds=skipped_seeds,
         )
         elapsed = time.perf_counter() - t0
 
@@ -335,6 +337,7 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
             "batch_size": batch_size,
             "learning_rate": learning_rate,
             "gamma": gamma,
+            "skipped_schedule_seeds": skipped_seeds,
             "win_counts": {str(k): v for k, v in win_counts.items()},
             "win_history": [int(w) for w in win_history],
             "elapsed_seconds": elapsed,

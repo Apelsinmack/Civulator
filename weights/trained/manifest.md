@@ -92,16 +92,21 @@ this boundary is visible at load time, not just here.
 - **Evaluation**: head-to-head vs duel_25ch_1000ep via `scripts/evaluate.py` (protocol v1) — results on #40
 - **Stats**: `stats/baseline_baseline_1000ep_1787713987.json` + `win_history`/`win_rate_plot`/`build_orders_1787713987.*`
 
-> **Correction 2026-09-02 (seed-schedule divergence, see #44):** every 2026-09-01/02
-> run below (rw2, rw2eps800, 26ch, net32x64x64, net64x5, net128x6) skipped **19**
-> schedule seeds (390016…390945 — the Lenovo's #44 superset, first divergence at
-> episode ~16), not the #39 baseline's 3. Any "exact baseline world sequence" claim
-> in these rows is therefore wrong: comparability with the baseline is
-> **distributional only** (same seed range), exactly the caveat #40 already carried.
-> The 2026-09 runs ARE exact with **each other** (identical 19-skip sequence).
-> Cause under investigation — Home Desktop now reproduces the Lenovo set, so #44
-> is likely a code/environment version change (bisectable), not machine float
-> indeterminism.
+> **Correction 2026-09-02 (seed-schedule record, #44) — RESOLVED same evening:**
+> the schedule from seed_base=390000 skips **19 seeds** (390016, 390053, 390065,
+> 390076, 390264, 390277, 390294, 390385, 390408, 390489, 390672, 390683, 390689,
+> 390759, 390770, 390785, 390850, 390909, 390945) — on every machine and every
+> commit tested. Direct enumeration at the baseline's own commit 96b3578 on the
+> baseline's own machine reproduces the identical 19 (golden mapgen SHA tests from
+> 2026-08-23 still pass there, and numpy/Python/OS predate the baseline unchanged).
+> **The baseline row's "3 seeds skipped" below is an incomplete hand transcription**
+> — exactly the last 3 of 19 console warnings surviving in scrollback. Consequences:
+> every run in this file (baseline, #40 Lenovo, all 2026-09 rungs) walked the SAME
+> 19-skip sequence — "exact world sequence" replication holds run-for-run AND
+> cross-machine; #40's episode-pairing caveat and #44's cross-machine-divergence
+> premise are both retracted. Hardening: `run_baseline.py` now persists
+> `skipped_schedule_seeds` into every run summary (console warnings are not a
+> record).
 
 ### duel_25ch_rw2_1000ep.pth — the #46 reward-table-v2 follower
 

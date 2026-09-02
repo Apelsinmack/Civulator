@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 _MAX_CONSECUTIVE_SEED_SKIPS = 1000
 
 
-def _seeded_reset(env, seed_cursor, episode, seed_base):
+def _seeded_reset(env, seed_cursor, episode, seed_base, skip_log=None):
     """`env.reset(seed=seed_cursor)`, walking the cursor forward past any
     seeds `GameEnvironment.reset` rejects with `StartPlacementError` (the
     ~2% of seeds mapgen's start-placement ladder cannot place — `reset
@@ -63,6 +63,14 @@ def _seeded_reset(env, seed_cursor, episode, seed_base):
         (episode_seed, next_cursor): the seed that actually produced this
         episode's world, and where the search for the NEXT episode should
         resume.
+
+    skip_log: optional list; every skipped seed is appended to it, so the
+        caller can PERSIST the full skip set into the run's stats/manifest.
+        Console warnings proved insufficient as a record: the #39 baseline's
+        manifest hand-transcribed only the last 3 of 19 skip warnings
+        surviving in scrollback, which spawned issue #44's phantom
+        cross-machine-divergence hunt (resolved 2026-09-02: all machines
+        and commits agree seed-for-seed).
     """
     cursor = seed_cursor
     skips = 0
@@ -71,6 +79,8 @@ def _seeded_reset(env, seed_cursor, episode, seed_base):
             env.reset(seed=cursor)
             return cursor, cursor + 1
         except StartPlacementError as exc:
+            if skip_log is not None:
+                skip_log.append(cursor)
             logger.warning(
                 "episode seed schedule (seed_base=%d): episode %d seed %d "
                 "failed start placement, skipping to %d: %s",
@@ -92,7 +102,7 @@ def _seeded_reset(env, seed_cursor, episode, seed_base):
 
 def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
                   save_checkpoints=True, build_agents=None, seed_base=None,
-                  episode_callback=None):
+                  episode_callback=None, skipped_seeds=None):
     """Train multiple agents with proper state tracking and win counting.
 
     Args:
@@ -116,6 +126,9 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
             like every other run parameter here (num_episodes,
             batch_size, ...), callers resolve their own value (CLI flag,
             `[training] seed_base`, or a literal) and pass it in.
+        skipped_seeds: Optional list, filled in place with every schedule
+            seed the seeded-reset walk skipped (see _seeded_reset's
+            skip_log) — callers persist it into the run record.
         episode_callback: Optional callable `(episode, num_episodes,
             win_counts)`, invoked once at the end of each completed
             episode (after that episode's winner is recorded). Non-
@@ -141,7 +154,8 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
             print(f"Starting episode {episode}")
             env.reset()
         else:
-            episode_seed, seed_cursor = _seeded_reset(env, seed_cursor, episode, seed_base)
+            episode_seed, seed_cursor = _seeded_reset(
+                env, seed_cursor, episode, seed_base, skip_log=skipped_seeds)
             print(f"Starting episode {episode} (seed={episode_seed})")
         done = False
 
