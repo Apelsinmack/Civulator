@@ -346,7 +346,9 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0):
         for i, p in enumerate(env.players):
             pcolor = PLAYER_COLORS[p.player_index % len(PLAYER_COLORS)]
             y = 80 + i * 18
-            label = f"{labels.get(p.player_index, f'P{p.player_index + 1}')}: {len(p.units)}u {len(p.cities)}c"
+            score = len(p.cities) * 10 + len(p.units)
+            label = (f"{labels.get(p.player_index, f'P{p.player_index + 1}')}: "
+                     f"{len(p.units)}u {len(p.cities)}c = {score}pts")
             if p.is_dead:
                 label += " DEAD"
             rl.draw_text(label.encode(), 10, y, 14, pcolor)
@@ -354,7 +356,9 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0):
         if done:
             from civulator.training.trainer import determine_winner
             w = determine_winner(env)
-            result = "DRAW" if w is None else f"WINNER: {labels.get(w, f'P{w + 1}')}"
+            # Score = cities*10 + units (determine_winner's cap tiebreak) —
+            # shown so a turn-cap winner is self-explanatory in the HUD.
+            result = "DRAW" if w is None else f"WINNER: {labels.get(w, f'P{w + 1}')} (score tiebreak)"
             rl.draw_text(result.encode(), 10, 80 + len(env.players) * 18 + 6, 18, rl.GOLD)
 
         rl.draw_text(b"SPACE=pause  UP/DOWN=speed  SCROLL=zoom  RMOUSE=pan", 10, SCREEN_H - 25, 14, rl.DARKGRAY)
