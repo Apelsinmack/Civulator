@@ -273,7 +273,10 @@ def _play_game(env, agents_by_seat, build_agents_by_seat, epsilon):
                 done = env.done
 
     winner = determine_winner(env)
-    return winner, env.turn_counter, builds_by_seat
+    # Snapshot the engine's per-player episode counters (kills, losses,
+    # damage, cities founded/captured, civilians captured) for aggregation.
+    combat_by_seat = {seat: dict(env.episode_stats[seat]) for seat in agents_by_seat}
+    return winner, env.turn_counter, builds_by_seat, combat_by_seat
 
 
 def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
@@ -324,6 +327,7 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
     games_detail = []
     turns_list = []
     build_totals = {"a": {}, "b": {}}
+    combat_totals = {"a": {}, "b": {}}
 
     for i in range(games):
         a_seat = 0 if i % 2 == 0 else 1
@@ -351,12 +355,14 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
         build_agents_by_seat = {a_seat: a_builds[a_seat], b_seat: b_builds[b_seat]}
 
         with torch.no_grad():
-            winner_seat, turns, builds_by_seat = _play_game(
+            winner_seat, turns, builds_by_seat, combat_by_seat = _play_game(
                 env, agents_by_seat, build_agents_by_seat, epsilon)
 
         for side, seat in (("a", a_seat), ("b", b_seat)):
             for option, count in builds_by_seat[seat].items():
                 build_totals[side][option] = build_totals[side].get(option, 0) + count
+            for stat, value in combat_by_seat[seat].items():
+                combat_totals[side][stat] = combat_totals[side].get(stat, 0) + value
 
         if winner_seat is None:
             outcome = "draw"
@@ -417,6 +423,7 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
             side: dict(sorted(counts.items(), key=lambda kv: -kv[1]))
             for side, counts in build_totals.items()
         },
+        "combat_stats": combat_totals,
         "games_detail": games_detail,
         "manifest_a": _manifest_summary(a_manifest),
         "manifest_b": _manifest_summary(b_manifest),
@@ -480,6 +487,8 @@ def main():
     print(f"Game length (turns): {summary['game_length']}")
     print(f"Builds A: {summary['build_distribution']['a']}")
     print(f"Builds B: {summary['build_distribution']['b']}")
+    print(f"Combat A: {summary['combat_stats']['a']}")
+    print(f"Combat B: {summary['combat_stats']['b']}")
     print(f"Summary written to: {stats_path}")
     print("=" * 72)
 

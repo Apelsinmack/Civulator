@@ -186,6 +186,24 @@ class GameEnvironment:
 
         self.current_player_index = 0
         self.current_player = self.players[self.current_player_index]
+        self.episode_stats = self._fresh_episode_stats()
+
+    def _fresh_episode_stats(self):
+        """Per-player episode counters (issue #48 statistics wish, Erik
+        2026-09-02): pure bookkeeping, reset with every episode. The eval
+        harness reads these after each game; nothing in the engine or the
+        agents ever reads them back."""
+        return {
+            i: {
+                "kills": 0,
+                "losses": 0,
+                "damage_dealt": 0.0,
+                "cities_founded": 0,
+                "cities_captured": 0,
+                "civilians_captured": 0,
+            }
+            for i in range(self.num_players)
+        }
 
     def reset(self, num_players=None, seed=None):
         """Reset the game for a new episode.
@@ -220,6 +238,7 @@ class GameEnvironment:
 
         self.turn_counter = 1
         self.done = False
+        self.episode_stats = self._fresh_episode_stats()
         recreate_players = num_players is not None
 
         if seed is not None:
@@ -440,6 +459,7 @@ class GameEnvironment:
                 city = selected_unit.found_city(self)
                 if city:
                     city.assign_tiles(self)
+                    self.episode_stats[self.current_player.player_index]["cities_founded"] += 1
                     return self, REWARDS["found_city"], self.done
                 else:
                     return self, REWARDS["invalid_action"], self.done  # Invalid location
@@ -465,6 +485,7 @@ class GameEnvironment:
         if tile and tile.city and tile.city.player != self.current_player:
             tile.city.set_owner(self.current_player)
             reward += REWARDS["capture_city"]
+            self.episode_stats[self.current_player.player_index]["cities_captured"] += 1
 
         # Movement changes what the player can see
         self.update_exploration(self.current_player.player_index)
@@ -495,6 +516,11 @@ class GameEnvironment:
         if not is_ranged and defender.coordinates not in adj_coords:
             return REWARDS["invalid_action"]
 
+        # Episode-stat attribution: grab both indices BEFORE any mutation
+        # (civilian capture reassigns defender.player below).
+        atk_idx = attacker.player.player_index
+        def_idx = defender.player.player_index
+
         damage_dealt, damage_received, target_killed, attacker_killed = \
             attacker.attack(defender, self)
 
@@ -507,15 +533,20 @@ class GameEnvironment:
 
         # Reward for damage dealt
         reward += damage_dealt * REWARDS["damage_per_hp"]
+        self.episode_stats[atk_idx]["damage_dealt"] += damage_dealt
+        self.episode_stats[def_idx]["damage_dealt"] += damage_received
 
         if target_killed:
             reward += REWARDS["kill"]
+            self.episode_stats[atk_idx]["kills"] += 1
+            self.episode_stats[def_idx]["losses"] += 1
             # Capture civilian units (Settler, Worker) instead of killing them
             if defender.unit_type in ("Settler", "Worker") and not attacker_killed:
                 defender.player.remove_unit(defender)
                 defender.player = self.current_player
                 self.current_player.units.append(defender)
                 reward += REWARDS["capture_civilian"]
+                self.episode_stats[atk_idx]["civilians_captured"] += 1
             else:
                 self.delete_unit(defender)
             # Only melee attackers move into the vacated tile
@@ -526,9 +557,12 @@ class GameEnvironment:
                 if tile and tile.city and tile.city.player != self.current_player:
                     tile.city.set_owner(self.current_player)
                     reward += REWARDS["capture_city"]
+                    self.episode_stats[atk_idx]["cities_captured"] += 1
 
         if attacker_killed:
             reward += REWARDS["unit_lost"]
+            self.episode_stats[atk_idx]["losses"] += 1
+            self.episode_stats[def_idx]["kills"] += 1
             self.delete_unit(attacker)
 
         return reward
