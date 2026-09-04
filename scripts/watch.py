@@ -51,8 +51,9 @@ from civulator.agents import DQNAgent, BuildAgent, BasicStateEncoder, EnhancedSt
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.agents.build_agent import BUILD_OPTIONS
 from civulator.game.city import City
+from civulator.agents.action_space import decode_action, end_turn_index
 from civulator.game.unit import NUM_UNIT_SLOTS
-from civulator.training.trainer import determine_winner, player_score
+from civulator.training.trainer import STEP_LIMIT, determine_winner, player_score
 from civulator.viz.hex_render import (
     draw_hex,
     draw_hex_outline,
@@ -225,7 +226,12 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0,
     paused = False
     speed = 1  # Actions per frame
     frames = 0
-    end_turn_idx = env.n * env.m * NUM_UNIT_SLOTS
+    end_turn_idx = end_turn_index(env.n, env.m)
+    # Same livelock guard the trainer and the eval harness carry (#51/#54):
+    # the viewer is the tool used to INVESTIGATE anomalies, so it must
+    # announce a game that will not end rather than spin silently.
+    step_counter = 0
+    truncated = False
 
     while not rl.window_should_close():
         frames += 1
@@ -251,6 +257,13 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0,
             with torch.no_grad():
                 for _ in range(speed):
                     if done:
+                        break
+
+                    step_counter += 1
+                    if step_counter > STEP_LIMIT:
+                        print("WARNING: Step limit exceeded, breaking loop")
+                        truncated = True
+                        done = True
                         break
 
                     pi = env.current_player.player_index
@@ -280,12 +293,15 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0,
                         turn = env.turn_counter
                         done = env.done
                     else:
-                        tile_idx = action[0] // NUM_UNIT_SLOTS
-                        slot = action[0] % NUM_UNIT_SLOTS
-                        r, c = tile_idx // env.m, tile_idx % env.m
-                        mr, mc = action[1] // env.m, action[1] % env.m
-                        action_matrix = [np.array([r, c, slot]), np.array([mr, mc])]
-                        _, reward, done = env.step(action_matrix)
+                        action_matrix = decode_action(action[0], action[1],
+                                                      env.n, env.m)
+                        try:
+                            _, reward, done = env.step(action_matrix)
+                        except AttributeError as e:
+                            # Parity with the trainer and eval loops, which
+                            # both continue rather than crash here (#54).
+                            print(f"AttributeError during step: {e}")
+                            done = env.done
                     turn = env.turn_counter
 
         # --- Draw ---
@@ -379,7 +395,11 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0,
             # arithmetic as the scored run — a BUSY GPU can flip cuDNN
             # algorithm choices and thus near-tie argmaxes. Say so loudly
             # instead of silently showing a different history.
-            if expected is not None and (w, env.turn_counter) != tuple(expected):
+            if truncated:
+                rl.draw_text(
+                    b"TRUNCATED: step limit hit - this game did not finish (#51)",
+                    10, y_result + 24, 16, rl.RED)
+            elif expected is not None and (w, env.turn_counter) != tuple(expected):
                 rl.draw_text(
                     (f"REPLAY DIVERGED from recorded game "
                      f"(recorded: winner_seat={expected[0]}, {expected[1]} turns) "

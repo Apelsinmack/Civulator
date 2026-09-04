@@ -98,6 +98,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
 from civulator.agents import DQNAgent, BuildAgent, ReplayMemory, get_encoder
+from civulator.agents.action_space import decode_action, end_turn_index
 from civulator.agents.networks import conv_channels_from_state_dict
 from civulator.agents.build_agent import BUILD_OPTIONS
 from civulator.config import CFG
@@ -231,7 +232,7 @@ def _play_game(env, agents_by_seat, build_agents_by_seat, epsilon):
         is indistinguishable from a genuine draw in the run record. 50 of
         200 games in one #48 evaluation were such phantom draws.
     """
-    end_turn_idx = env.n * env.m * NUM_UNIT_SLOTS
+    end_turn_idx = end_turn_index(env.n, env.m)
     last_player_index = -1
     done = False
     step_counter = 0
@@ -282,13 +283,7 @@ def _play_game(env, agents_by_seat, build_agents_by_seat, epsilon):
             env.next_turn()
             done = env.done
         else:
-            tile_idx = selected_pos // NUM_UNIT_SLOTS
-            slot = selected_pos % NUM_UNIT_SLOTS
-            sel_row, sel_col = tile_idx // env.m, tile_idx % env.m
-            action_matrix = [
-                np.array([sel_row, sel_col, slot]),
-                np.array([move_pos // env.m, move_pos % env.m]),
-            ]
+            action_matrix = decode_action(selected_pos, move_pos, env.n, env.m)
             try:
                 _, _reward, done = env.step(action_matrix)
             except AttributeError as e:

@@ -9,6 +9,7 @@ import matplotlib
 matplotlib.use("Agg")  # Non-interactive backend — no GUI window
 import matplotlib.pyplot as plt
 
+from ..agents.action_space import decode_action, end_turn_index
 from ..agents.networks import get_valid_select_mask
 from ..agents.build_agent import BUILD_OPTIONS
 from ..config import CFG
@@ -263,21 +264,13 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
             action = current_agent.select_action(state, epsilon=epsilon, game_env=env)
             last_action_by_agent[current_player_index] = action
 
-            # Decode slot-aware action to coordinates
-            end_turn_idx = env.n * env.m * NUM_UNIT_SLOTS
+            # Decode slot-aware action to coordinates (issue #54: one shared
+            # definition — a private copy is how the pre-0.6 scripts silently
+            # broke against the slot-aware action space).
+            end_turn_idx = end_turn_index(env.n, env.m)
             selected_pos = action[0]
             move_pos = action[1]
-
-            if selected_pos != end_turn_idx:
-                tile_idx = selected_pos // NUM_UNIT_SLOTS
-                slot = selected_pos % NUM_UNIT_SLOTS
-                sel_row, sel_col = tile_idx // env.m, tile_idx % env.m
-                action_matrix = [
-                    np.array([sel_row, sel_col, slot]),
-                    np.array([move_pos // env.m, move_pos % env.m]),
-                ]
-            else:
-                action_matrix = None
+            action_matrix = decode_action(selected_pos, move_pos, env.n, env.m)
 
             # Execute action
             if selected_pos == end_turn_idx:
