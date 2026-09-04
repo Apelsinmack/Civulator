@@ -5,6 +5,40 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
+## v0.6.1 — Masks may not offer no-op actions (2026-09-04)
+
+**Rule change, measured.** An action the engine refuses (`invalid_action`)
+consumes no movement, ends no turn and alters nothing, so a deterministic
+policy whose argmax lands on one repeats it forever. Two such actions were
+reachable through the masks: a **Settler ordered to found a city where
+`min_city_distance` forbids it**, and **any step the unit cannot afford**
+(1 movement point left with hills or a river crossing ahead). Both are now
+excluded by `get_valid_moves_mask`; a Settler with no legal order at all is
+no longer selectable. `Unit.step_cost` became the single price of one step,
+read by `Unit.move` and by the mask, so the two can no longer disagree.
+Closes #51.
+
+**Measured effect** (`duel_53ch_net128x6_1000ep` vs the frozen #39 baseline,
+protocol v1, 200 games, before → after the fix):
+
+| | pre-fix | post-fix |
+|---|---|---|
+| A / B / draw | 122 / 25 / 53 | **172 / 22 / 6** |
+| decisive win rate | 0.830 (n=147) | **0.887 (n=194)** |
+| games truncated by the step guard | 50 | **0** |
+
+The livelock had been costing the stronger model about fifty games, each
+scored as a draw and therefore indistinguishable from a real one. It had
+also truncated 85 of that model's 1000 training episodes. Truncation is now
+recorded machine-readably (`truncated` / `truncated_games` per evaluation,
+`truncated_episodes` per run) rather than silently becoming a draw — hitting
+the guard is a bug, never an outcome.
+
+**Not bit-comparable across the fix**: re-running an evaluation of an
+existing model no longer reproduces numbers recorded before it, because the
+previously livelocked games now play out. Both readings are kept in
+`weights/trained/manifest.md`.
+
 ## v0.6.0 — Terrain remodel: layered tiles, real worlds (2026-08-23)
 
 **Every seeded world changes.** All pre-0.6 scenario terrain is invalid; the
