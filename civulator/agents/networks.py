@@ -455,11 +455,131 @@ class FullyConvSeparateNetwork(nn.Module):
         return select_qvalues, None
 
 
+def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
+    """The (n, m) numpy core behind `get_valid_moves_mask` — every order this
+    returns is one that the engine will actually carry out.
+
+    An offered order that the engine refuses is a *state-preserving* action:
+    `_step_inner` returns REWARDS["invalid_action"] having consumed no
+    movement, ended no turn and altered nothing, so a deterministic (greedy)
+    policy whose argmax lands on it repeats it until the 10,000-step guard.
+    That livelock truncated 85 training episodes and 50 of 200 eval games
+    (issue #51). Two conditions therefore gate the mask that never used to:
+
+      * **own tile** — fortify for every unit type, which always succeeds
+        while movement_points > 0, EXCEPT for a Settler, for whom the own
+        tile means *found city*: offered only when
+        `game_env.can_found_city_at` agrees (the reproduced bug was a Settler
+        inside `min_city_distance` of a city).
+      * **affordability** — a neighbouring tile whose `Unit.step_cost`
+        (terrain + river crossing) exceeds the unit's remaining movement
+        points is a move that silently fails; e.g. 1 MP left with hills
+        ahead. It is not offered. Affordability does NOT gate an *attack*:
+        attacking is free, it only requires having movement points at all,
+        and it always lands at least 1 HP of damage.
+
+    Shared with `get_valid_select_mask`, which uses it to keep a Settler that
+    has no valid order at all out of the selection mask — that caller passes
+    `stop_at_first=True`, which returns as soon as one order is found because
+    all it asks is `.any()`. The returned mask is then NOT complete and must
+    only be tested for emptiness.
+    """
+    valid_move_mask = np.zeros((n, m), dtype=np.float32)
+    if unit is None or unit.movement_points <= 0:
+        return valid_move_mask
+
+    row, col = unit.coordinates
+    current_player = game_env.current_player
+
+    # Current tile: fortify (always succeeds here), or found city for a
+    # Settler — only where a city may actually be founded (issue #51).
+    # Checked first so `stop_at_first` usually costs one call and no loop.
+    if unit.unit_type != "Settler" or game_env.can_found_city_at((row, col)):
+        valid_move_mask[row, col] = 1
+        if stop_at_first:
+            return valid_move_mask
+
+    from ..game.map import HEX_DIRECTIONS
+    for dr, dc in HEX_DIRECTIONS:
+        new_row = row + dr
+        new_col = (col + dc) % m
+        if new_row < 0 or new_row >= n:
+            continue
+        dest = (new_row, new_col)
+
+        # Terrain first: the unit's movement domain must admit the tile
+        if not unit.can_enter(game_env.map.get_tile(dest)):
+            continue
+
+        # An enemy on the tile makes this an attack, not a move: no slot or
+        # movement-cost rule applies, and the attack always changes state.
+        enemy_there = any(
+            u.player != current_player for u in game_env.get_units_at(dest)
+        )
+        if enemy_there:
+            valid_move_mask[new_row, new_col] = 1
+            if stop_at_first:
+                return valid_move_mask
+            continue
+
+        # Plain move: our slot must be free and the step must be payable.
+        if game_env.is_slot_occupied(dest, unit.slot, current_player):
+            continue
+        if unit.movement_points < unit.step_cost((row, col), dest, game_env):
+            continue
+        valid_move_mask[new_row, new_col] = 1
+        if stop_at_first:
+            return valid_move_mask
+
+    # Ranged units: enemy-occupied tiles within range AND line of sight
+    # are valid targets (rules-LoS — if the unit can shoot it, it can see
+    # it, so this leaks nothing under fog of war)
+    if unit.get_base_ranged_strength() > 0:
+        attack_range = unit.get_range()
+        for player in game_env.players:
+            if player is current_player:
+                continue
+            for enemy in player.units:
+                er, ec = enemy.coordinates
+                if (
+                    game_env.map.distance_function((row, col), (er, ec)) <= attack_range
+                    and game_env.check_line_of_sight((row, col), (er, ec))
+                ):
+                    valid_move_mask[er, ec] = 1
+                    if stop_at_first:
+                        return valid_move_mask
+
+    return valid_move_mask
+
+
+def _settler_has_valid_order(unit, game_env, n, m):
+    """Whether this Settler has any order it could actually give — the
+    completeness half of issue #51.
+
+    Every unit type except the Settler can always fortify on its own tile
+    (`Unit.fortify` succeeds whenever movement_points > 0), so only a Settler
+    can end up with an all-zero move mask: one that cannot found a city where
+    it stands and cannot afford or reach any neighbour. Offering such a unit
+    for selection reproduces the livelock — `DQNAgent._greedy_action` falls
+    back to the unit's own tile when no move is valid, and that action
+    changes nothing, forever.
+
+    Only emptiness is asked, so `stop_at_first` returns after the first
+    order found (usually the own tile, before any loop runs).
+    """
+    return bool(_valid_order_mask_np(unit, game_env, n, m, stop_at_first=True).any())
+
+
 def get_valid_select_mask(state, game_env):
     """Generate a mask for valid unit selections with slot support.
 
     Output shape: [n*m*NUM_SLOTS] — one entry per tile-slot combination.
     Index encoding: tile_index * NUM_SLOTS + slot
+
+    A unit is offered when it is alive, has movement points left, and has at
+    least one order it could actually give — see `_settler_has_valid_order`
+    for that last clause (issue #51) and `_valid_order_mask_np` for what
+    "actually give" means.
 
     `game_env` is required: masking reads the actual unit data. (The old
     state-tensor fallback, which could not distinguish slots, was unreachable
@@ -480,8 +600,20 @@ def get_valid_select_mask(state, game_env):
         rows = np.fromiter((u.coordinates[0] for u in units), dtype=np.int64, count=len(units))
         cols = np.fromiter((u.coordinates[1] for u in units), dtype=np.int64, count=len(units))
         slots = np.fromiter((u.slot for u in units), dtype=np.int64, count=len(units))
+        # The selectability predicate, kept inline in the single pass #42
+        # already made over the unit list. The Settler clause (issue #51,
+        # `_settler_has_valid_order`) sits behind a short-circuited `and`, so
+        # a side with no Settlers pays one extra string comparison per unit.
         valid = np.fromiter(
-            (u.health > 0 and u.movement_points > 0 for u in units), dtype=bool, count=len(units)
+            (
+                u.health > 0 and u.movement_points > 0
+                and (
+                    u.unit_type != "Settler"
+                    or _settler_has_valid_order(u, game_env, n, m)
+                )
+                for u in units
+            ),
+            dtype=bool, count=len(units),
         )
         tile_idx = rows[valid] * m + cols[valid]
         mask_np[tile_idx * NUM_UNIT_SLOTS + slots[valid]] = 1.0
@@ -501,20 +633,23 @@ def get_valid_moves_mask(state, selected_pos, game_env):
 
     Valid = adjacent tile (hex adjacency) the unit's movement domain may enter
     (design doc §3.3/§7 — terrain filtering the masks never had before; water
-    and mountains are now unofferable rather than illegal-but-attemptable) and
-    where the unit's slot is not occupied by a friendly unit, plus the current
-    tile (for fortify/found city).
+    and mountains are now unofferable rather than illegal-but-attemptable),
+    where the unit's slot is not occupied by a friendly unit and whose step
+    the unit can pay for, plus enemy-occupied tiles it can attack, plus the
+    current tile when fortifying (any unit) or founding a city (a Settler,
+    only where `can_found_city_at` allows) would actually happen.
 
     `game_env` is required; the old state-tensor fallback branch (unreachable
     from live code) was deleted in P2a.
 
+    The rules live in `_valid_order_mask_np` — see its docstring for the
+    issue-#51 no-op conditions and why `get_valid_select_mask` shares it.
     The mask is accumulated in a numpy array on CPU and transferred to
     `state.device` once at the end (issue #42) — the original wrote each
     entry (per hex direction, per ranged target) into a CUDA tensor
     directly, each write its own GPU kernel launch/sync. The per-tile game
-    logic itself (terrain, slot occupancy, line of sight) is unchanged —
-    it calls back into `game_env`/`Unit` and can't be vectorized without
-    duplicating those rules.
+    logic itself (terrain, slot occupancy, line of sight) calls back into
+    `game_env`/`Unit` and can't be vectorized without duplicating those rules.
     """
     _, n, m = state.shape
     device = state.device
@@ -529,57 +664,9 @@ def get_valid_moves_mask(state, selected_pos, game_env):
     row = tile_pos // m
     col = tile_pos % m
 
-    valid_move_mask = np.zeros((n, m), dtype=np.float32)
-
     selected_unit = game_env.get_unit_in_slot(
         (row, col), selected_slot, game_env.current_player
     )
-    if selected_unit is None or selected_unit.movement_points <= 0:
-        return torch.from_numpy(valid_move_mask.flatten()).to(device)
-
-    from ..game.map import HEX_DIRECTIONS
-    for dr, dc in HEX_DIRECTIONS:
-        new_row = row + dr
-        new_col = (col + dc) % m
-        if new_row < 0 or new_row >= n:
-            continue
-
-        # Terrain first: the unit's movement domain must admit the tile
-        if not selected_unit.can_enter(game_env.map.get_tile((new_row, new_col))):
-            continue
-
-        # Check if our slot is occupied by a friendly unit
-        friendly_in_slot = game_env.is_slot_occupied(
-            (new_row, new_col), selected_unit.slot, game_env.current_player
-        )
-        if not friendly_in_slot:
-            valid_move_mask[new_row, new_col] = 1
-        else:
-            # Allow if enemy present (attack)
-            enemy_there = any(
-                u.player != game_env.current_player
-                for u in game_env.get_units_at((new_row, new_col))
-            )
-            if enemy_there:
-                valid_move_mask[new_row, new_col] = 1
-
-    # Ranged units: enemy-occupied tiles within range AND line of sight
-    # are valid targets (rules-LoS — if the unit can shoot it, it can see
-    # it, so this leaks nothing under fog of war)
-    if selected_unit.get_base_ranged_strength() > 0:
-        attack_range = selected_unit.get_range()
-        for player in game_env.players:
-            if player is game_env.current_player:
-                continue
-            for enemy in player.units:
-                er, ec = enemy.coordinates
-                if (
-                    game_env.map.distance_function((row, col), (er, ec)) <= attack_range
-                    and game_env.check_line_of_sight((row, col), (er, ec))
-                ):
-                    valid_move_mask[er, ec] = 1
-
-    # Current tile is always valid (fortify / found city)
-    valid_move_mask[row, col] = 1
+    valid_move_mask = _valid_order_mask_np(selected_unit, game_env, n, m)
 
     return torch.from_numpy(valid_move_mask.flatten()).to(device)

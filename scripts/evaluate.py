@@ -44,8 +44,15 @@ pending):
 - Output: per-side win/loss/draw totals, the same split BY WHICH SEAT A
   HELD (first-move-advantage check), mean/min/max game length in turns, and
   a JSON summary (`stats/eval_<Atag>_vs_<Btag>_<timestamp>.json`) with the
-  full per-game result list (seed, seats, winner, turns) plus both weight
-  files' manifest key fields (game_version, git_commit, date).
+  full per-game result list (seed, seats, winner, turns, truncated) plus both
+  weight files' manifest key fields (game_version, git_commit, date).
+- Truncation (issue #51): a game stopped by the STEP_LIMIT guard instead of
+  ending on its own is NOT a result. It is flagged per game as
+  `truncated: true` and counted in the summary's `truncated_games`. Such
+  games are also in `totals["draws"]` — determine_winner has no other verdict
+  for a game cut off mid-play — so any reading of the run must subtract them
+  first. Summaries written before #51 have neither field; treat a missing
+  `truncated` as false and consult the run log's `Step limit exceeded` lines.
 
 Design decisions NOT nailed down by the task spec (documented here since
 this is the "as-code" record of protocol v1):
@@ -115,6 +122,12 @@ FULLY_CONV = True
 DEFAULT_GAMES = 200
 DEFAULT_SEED_BASE = 990000
 DEFAULT_EPSILON = 0.05
+
+# Safety net for a game that will not end on its own. Reaching it is a bug
+# (issue #51), not a legitimate outcome, so a game that hits it is flagged
+# `truncated` rather than quietly handed to determine_winner. A module-level
+# constant so tests can lower it; mirrors trainer.STEP_LIMIT.
+STEP_LIMIT = 10000
 
 _tcfg = CFG.get("training", {})
 DEFAULT_MAX_TURNS = _tcfg.get("max_turns", 250)
@@ -203,23 +216,33 @@ def _play_game(env, agents_by_seat, build_agents_by_seat, epsilon):
             section).
 
     Returns:
-        (winner_seat, turns, builds_by_seat): winner_seat is a player_index
-        or None (draw, `determine_winner`'s own contract); turns is
-        `env.turn_counter` when the episode ended; builds_by_seat maps each
-        player_index to {build_option: count} for this game (what each side
-        actually produced -- surfaced in the run summary's
-        build_distribution).
+        (winner_seat, turns, builds_by_seat, combat_by_seat, truncated):
+        winner_seat is a player_index or None (draw, `determine_winner`'s
+        own contract); turns is `env.turn_counter` when the episode ended;
+        builds_by_seat maps each player_index to {build_option: count} for
+        this game (what each side actually produced -- surfaced in the run
+        summary's build_distribution); combat_by_seat is the engine's
+        per-player episode counters; `truncated` is True when the game hit
+        the step-limit guard instead of ending on its own.
+
+        Truncation must be reported, never left implicit (issue #51): a
+        livelocked game breaks out of the loop with both players alive and
+        below the turn cap, so `determine_winner` returns None and the game
+        is indistinguishable from a genuine draw in the run record. 50 of
+        200 games in one #48 evaluation were such phantom draws.
     """
     end_turn_idx = env.n * env.m * NUM_UNIT_SLOTS
     last_player_index = -1
     done = False
     step_counter = 0
+    truncated = False
     builds_by_seat = {seat: {} for seat in agents_by_seat}
 
     while not done:
         step_counter += 1
-        if step_counter > 10000:
+        if step_counter > STEP_LIMIT:
             print("WARNING: Step limit exceeded, breaking loop")
+            truncated = True
             break
 
         current_player_index = env.current_player.player_index
@@ -276,7 +299,7 @@ def _play_game(env, agents_by_seat, build_agents_by_seat, epsilon):
     # Snapshot the engine's per-player episode counters (kills, losses,
     # damage, cities founded/captured, civilians captured) for aggregation.
     combat_by_seat = {seat: dict(env.episode_stats[seat]) for seat in agents_by_seat}
-    return winner, env.turn_counter, builds_by_seat, combat_by_seat
+    return winner, env.turn_counter, builds_by_seat, combat_by_seat, truncated
 
 
 def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
@@ -326,6 +349,7 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
     }
     games_detail = []
     turns_list = []
+    truncated_games = 0
     build_totals = {"a": {}, "b": {}}
     combat_totals = {"a": {}, "b": {}}
 
@@ -355,7 +379,7 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
         build_agents_by_seat = {a_seat: a_builds[a_seat], b_seat: b_builds[b_seat]}
 
         with torch.no_grad():
-            winner_seat, turns, builds_by_seat, combat_by_seat = _play_game(
+            winner_seat, turns, builds_by_seat, combat_by_seat, truncated = _play_game(
                 env, agents_by_seat, build_agents_by_seat, epsilon)
 
         for side, seat in (("a", a_seat), ("b", b_seat)):
@@ -378,7 +402,12 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
             by_a_seat[a_seat]["b_wins"] += 1
         by_a_seat[a_seat]["games"] += 1
         turns_list.append(turns)
+        if truncated:
+            truncated_games += 1
 
+        # `truncated` is a new field (issue #51); readers of older summaries
+        # (scripts/watch.py) must keep working, so nothing else in the entry
+        # moved and consumers should treat a missing key as False.
         games_detail.append({
             "game_index": i,
             "seed": episode_seed,
@@ -387,12 +416,14 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
             "winner_seat": winner_seat,
             "outcome": outcome,
             "turns": turns,
+            "truncated": truncated,
         })
 
         if verbose:
             print(
                 f"[eval] game {i + 1}/{games} seed={episode_seed} "
                 f"A@seat{a_seat} outcome={outcome} turns={turns}"
+                + (" TRUNCATED" if truncated else "")
             )
 
     summary = {
@@ -413,6 +444,12 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
         "b_weights": b_weights,
         "b_encoder": b_encoder,
         "totals": totals,
+        # Games cut off by the step-limit guard rather than ending on their
+        # own (issue #51). They are ALSO counted in totals["draws"] —
+        # determine_winner has no other verdict for a game stopped mid-play
+        # — so a nonzero value here means that many "draws" are not results
+        # and the run should be recounted without them.
+        "truncated_games": truncated_games,
         "by_a_seat": {str(k): v for k, v in by_a_seat.items()},
         "game_length": {
             "mean_turns": (sum(turns_list) / len(turns_list)) if turns_list else 0.0,
