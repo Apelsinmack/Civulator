@@ -474,6 +474,7 @@ num_players = 8
 max_turns = 1000
 starting_warriors = 3
 min_city_distance = 3    # Minimum hex distance between cities
+city_score_weight = 10   # Turn-cap tiebreak: score = cities * this + units (#55)
 
 [training]
 episodes = 64

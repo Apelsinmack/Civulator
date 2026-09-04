@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 
 from ..agents.networks import get_valid_select_mask
 from ..agents.build_agent import BUILD_OPTIONS
+from ..config import CFG
 from ..game.city import City
 from ..game.environment import REWARDS
 from ..game.unit import NUM_UNIT_SLOTS
@@ -32,6 +33,11 @@ _MAX_CONSECUTIVE_SEED_SKIPS = 1000
 # reported through `train_agents(truncated_episodes=[...])`. A module-level
 # constant so tests can lower it; mirrors scripts/evaluate.py's STEP_LIMIT.
 STEP_LIMIT = 10000
+
+# Turn-cap score weight: a city is worth this many units when no one has been
+# eliminated by max_turns (issue #55 — was a bare literal here, re-derived by
+# the viewer HUD). Gameplay constant, so config.toml owns it.
+CITY_SCORE_WEIGHT = CFG.get("game", {}).get("city_score_weight", 10)
 
 
 def _seeded_reset(env, seed_cursor, episode, seed_base, skip_log=None):
@@ -411,6 +417,18 @@ def _terminal_rewards(winner, num_agents):
     }
 
 
+def player_score(player):
+    """A living player's turn-cap score: cities * CITY_SCORE_WEIGHT + units.
+
+    THE score formula (issue #55) — `determine_winner`'s tiebreak below and
+    every display of a score (e.g. scripts/watch.py's HUD) call this, so a
+    scoreboard can never disagree with the verdict beside it. Dead players
+    are handled by the caller: `determine_winner` scores them -1, which is
+    a ranking convention rather than a property of the player.
+    """
+    return len(player.cities) * CITY_SCORE_WEIGHT + len(player.units)
+
+
 def determine_winner(env):
     """Determine the winner based on the environment state.
 
@@ -428,7 +446,7 @@ def determine_winner(env):
             if player.is_dead:
                 scores.append(-1)
             else:
-                scores.append(len(player.cities) * 10 + len(player.units))
+                scores.append(player_score(player))
 
         max_score = max(scores)
         if scores.count(max_score) == 1:

@@ -52,6 +52,7 @@ from civulator.agents.replay_memory import ReplayMemory
 from civulator.agents.build_agent import BUILD_OPTIONS
 from civulator.game.city import City
 from civulator.game.unit import NUM_UNIT_SLOTS
+from civulator.training.trainer import determine_winner, player_score
 from civulator.viz.hex_render import (
     draw_hex,
     draw_hex_outline,
@@ -358,7 +359,9 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0,
         for i, p in enumerate(env.players):
             pcolor = PLAYER_COLORS[p.player_index % len(PLAYER_COLORS)]
             y = 80 + i * 18
-            score = len(p.cities) * 10 + len(p.units)
+            # THE score formula, not a copy of it (issue #55) — a scoreboard
+            # must never disagree with determine_winner's verdict below.
+            score = player_score(p)
             label = (f"{labels.get(p.player_index, f'P{p.player_index + 1}')}: "
                      f"{len(p.units)}u {len(p.cities)}c = {score}pts")
             if p.is_dead:
@@ -366,10 +369,9 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0,
             rl.draw_text(label.encode(), 10, y, 14, pcolor)
 
         if done:
-            from civulator.training.trainer import determine_winner
             w = determine_winner(env)
-            # Score = cities*10 + units (determine_winner's cap tiebreak) —
-            # shown so a turn-cap winner is self-explanatory in the HUD.
+            # Score = cities*weight + units (determine_winner's cap tiebreak)
+            # — shown so a turn-cap winner is self-explanatory in the HUD.
             result = "DRAW" if w is None else f"WINNER: {labels.get(w, f'P{w + 1}')} (score tiebreak)"
             y_result = 80 + len(env.players) * 18 + 6
             rl.draw_text(result.encode(), 10, y_result, 18, rl.GOLD)
