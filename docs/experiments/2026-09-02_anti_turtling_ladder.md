@@ -39,16 +39,28 @@ Every model re-evaluated 2026-09-04 under identical post-fix rules, 200
 games each, **zero truncated games in any run**. "Decisive rate" is A's
 share of games that produced a winner; z is against a fair coin.
 
-| model | what it adds | decisive rate | z | kills | losses | cities founded | games ending early |
-|---|---|---|---|---|---|---|---|
-| `duel_52ch` | terrain block, 18k params (#40) | 0.447 (n=170) | −1.4 | 1 | 0 | 0 | 0 |
-| `duel_25ch_rw2` | reward table v2 | 0.472 (n=176) | −0.7 | 0 | 0 | 0 | 0 |
-| `duel_25ch_rw2eps800` | + ε decay to 0.05 by ep 800 | 0.500 (n=172) | 0.0 | 0 | 0 | 0 | 0 |
-| `duel_26ch` | + city-proximity channel | 0.469 (n=175) | −0.8 | 0 | 0 | 1 | 0 |
-| `duel_26ch_net32x64x64` | + 101k params | 0.528 (n=163) | +0.7 | 0 | 0 | 0 | 0 |
-| `duel_26ch_net64x5` | + 600k params | 0.465 (n=170) | −0.9 | 0 | 0 | 1 | 0 |
-| `duel_26ch_net128x6` | + 950k params | 0.587 (n=184) | **+2.4** | 0 | 2 | 21 | 0 |
-| **`duel_53ch_net128x6`** | **+ terrain block** | **0.887 (n=194)** | **+10.8** | 69 | 169 | **92** | 13 |
+All counts are **totals across that model's 200 games** and are the model's
+own (its opponent is always the same frozen baseline). "Kills" is enemy
+units destroyed; "losses" is its own units destroyed; "eliminations" is
+games won outright by wiping the opponent out, which in this engine means
+capturing their last city.
+
+| model | what it adds | decisive rate | z | kills | losses | cities founded | cities captured | eliminations |
+|---|---|---|---|---|---|---|---|---|
+| `duel_52ch` | terrain block, 18k params (#40) | 0.447 (n=170) | −1.4 | 1 | 0 | 0 | 0 | 0 |
+| `duel_25ch_rw2` | reward table v2 | 0.472 (n=176) | −0.7 | 0 | 0 | 0 | 0 | 0 |
+| `duel_25ch_rw2eps800` | + ε decay to 0.05 by ep 800 | 0.500 (n=172) | 0.0 | 0 | 0 | 0 | 0 | 0 |
+| `duel_26ch` | + city-proximity channel | 0.469 (n=175) | −0.8 | 0 | 0 | 1 | 0 | 0 |
+| `duel_26ch_net32x64x64` | + 101k params | 0.528 (n=163) | +0.7 | 0 | 0 | 0 | 0 | 0 |
+| `duel_26ch_net64x5` | + 600k params | 0.465 (n=170) | −0.9 | 0 | 0 | 1 | 0 | 0 |
+| `duel_26ch_net128x6` | + 950k params | 0.587 (n=184) | **+2.4** | 0 | 2 | 21 | 0 | 0 |
+| **`duel_53ch_net128x6`** | **+ terrain block** | **0.887 (n=194)** | **+10.8** | 69 | 169 | **92** | 13 | **13** |
+
+The last two columns are the same thirteen games: **every elimination was a
+city capture, and every one was won from seat 1** (the winning model's
+seat-1 network scores 93 wins to seat 0's 79 — the same twin asymmetry the
+earlier 26ch run showed). Eliminations are the only games in this entire
+table that ended before the 250-turn cap.
 
 ## 4. What the instrumentation actually shows
 
