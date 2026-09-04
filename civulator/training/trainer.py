@@ -26,6 +26,13 @@ logger = logging.getLogger(__name__)
 # broken generator) — abort loudly instead of spinning forever.
 _MAX_CONSECUTIVE_SEED_SKIPS = 1000
 
+# Safety net for an episode that will not end on its own. Reaching it is a
+# bug (issue #51: a mask-legal action that changes nothing lets a greedy
+# policy loop forever), not a legitimate outcome, so the episode index is
+# reported through `train_agents(truncated_episodes=[...])`. A module-level
+# constant so tests can lower it; mirrors scripts/evaluate.py's STEP_LIMIT.
+STEP_LIMIT = 10000
+
 
 def _seeded_reset(env, seed_cursor, episode, seed_base, skip_log=None):
     """`env.reset(seed=seed_cursor)`, walking the cursor forward past any
@@ -102,7 +109,8 @@ def _seeded_reset(env, seed_cursor, episode, seed_base, skip_log=None):
 
 def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
                   save_checkpoints=True, build_agents=None, seed_base=None,
-                  episode_callback=None, skipped_seeds=None):
+                  episode_callback=None, skipped_seeds=None,
+                  truncated_episodes=None):
     """Train multiple agents with proper state tracking and win counting.
 
     Args:
@@ -129,6 +137,14 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
         skipped_seeds: Optional list, filled in place with every schedule
             seed the seeded-reset walk skipped (see _seeded_reset's
             skip_log) — callers persist it into the run record.
+        truncated_episodes: Optional list, filled in place with the index of
+            every episode that hit the step-limit guard (`STEP_LIMIT`)
+            instead of ending on its own (issue #51). Same contract and same reason as
+            skipped_seeds: such an episode is truncated garbage whose
+            recorded winner is an artifact of where the loop was cut, and
+            a console warning is not a record — 85 of the 1000 episodes in
+            the `duel_53ch_net128x6` run were truncated and nothing in that
+            run's stats says so.
         episode_callback: Optional callable `(episode, num_episodes,
             win_counts)`, invoked once at the end of each completed
             episode (after that episode's winner is recorded). Non-
@@ -184,8 +200,10 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
 
         while not done:
             step_counter += 1
-            if step_counter > 10000:
+            if step_counter > STEP_LIMIT:
                 print("WARNING: Step limit exceeded, breaking loop")
+                if truncated_episodes is not None:
+                    truncated_episodes.append(episode)
                 break
 
             current_player_index = env.current_player.player_index

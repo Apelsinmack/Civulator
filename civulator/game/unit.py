@@ -148,6 +148,21 @@ class Unit:
         """
         return can_enter(self.get_movement_domain(), tile)
 
+    def step_cost(self, from_coords, to_coords, game_env):
+        """Movement points one step from `from_coords` to the ADJACENT
+        `to_coords` costs: the destination tile's cost plus the river-crossing
+        surcharge (D23) when a river runs along the shared edge.
+
+        The single source for "what does this step cost" — `move()` (both its
+        adjacent fast path and its pathfinder walk) and the action masks
+        (`agents/networks.py`) read it, so the mask can never offer a step the
+        unit cannot pay for (issue #51).
+        """
+        cost = game_env.map.get_tile(to_coords).movement_cost
+        if game_env.is_river_between(from_coords, to_coords):
+            cost += RIVER_CROSSING_COST
+        return cost
+
     def current_tile(self):
         """The tile this unit stands on, or None when it has no environment yet."""
         env = self.player.game_env if self.player is not None else None
@@ -273,9 +288,7 @@ class Unit:
         # Check if destination is adjacent (distance 1) — bypass pathfinder
         adj_coords = game_env.map.get_adjacent_coords(self.coordinates)
         if dest in adj_coords:
-            movement_cost = dest_tile.movement_cost
-            if game_env.is_river_between(self.coordinates, dest):
-                movement_cost += RIVER_CROSSING_COST
+            movement_cost = self.step_cost(self.coordinates, dest, game_env)
 
             if self.movement_points < movement_cost:
                 return False, self.coordinates
@@ -316,10 +329,7 @@ class Unit:
             next_tile = game_env.map.get_tile(next_pos_tuple)
             if not self.can_enter(next_tile):
                 break
-            movement_cost = next_tile.movement_cost
-
-            if game_env.is_river_between(current_pos_tuple, next_pos_tuple):
-                movement_cost += RIVER_CROSSING_COST
+            movement_cost = self.step_cost(current_pos_tuple, next_pos_tuple, game_env)
 
             if remaining_mp < movement_cost:
                 break

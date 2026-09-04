@@ -14,7 +14,15 @@ random game states, that the real (post-#42) functions produce bit-identical
 output to the reference — same values, dtype, shape, and device semantics.
 
 Do NOT "fix" the _reference_* functions to match new behavior — if a real
-regression makes them disagree, that's the test doing its job.
+regression makes them disagree, that's the test doing its job. The one
+legitimate reason to touch them is a DELIBERATE change of what the masks
+mean, and then the same rule is written into the reference by hand and
+labelled with its issue. That has happened once:
+
+  * #51 — the masks must never offer an action that cannot change the game
+    state (own tile for a Settler that cannot found there; a neighbour the
+    unit cannot pay the movement cost for; a Settler with no valid order at
+    all is not selectable). Marked "#51" in the reference bodies below.
 """
 
 import random
@@ -99,6 +107,12 @@ def _reference_get_valid_select_mask(state, game_env):
             r, c = unit.coordinates
             tile_idx = r * m + c
             mask[tile_idx * NUM_UNIT_SLOTS + unit.slot] = 1.0
+            # #51: a unit with no order to give is not selectable. Only a
+            # Settler can reach that state (everyone else can always fortify).
+            if unit.unit_type == "Settler" and not _reference_get_valid_moves_mask(
+                state, (tile_idx * NUM_UNIT_SLOTS + unit.slot), game_env
+            ).any():
+                mask[tile_idx * NUM_UNIT_SLOTS + unit.slot] = 0.0
     return mask
 
 
@@ -134,17 +148,22 @@ def _reference_get_valid_moves_mask(state, selected_pos, game_env):
         if not selected_unit.can_enter(game_env.map.get_tile((new_row, new_col))):
             continue
 
+        enemy_there = any(
+            u.player != game_env.current_player
+            for u in game_env.get_units_at((new_row, new_col))
+        )
         friendly_in_slot = game_env.is_slot_occupied(
             (new_row, new_col), selected_unit.slot, game_env.current_player
         )
-        if not friendly_in_slot:
+        if enemy_there:
+            # Attack: free of both the slot rule and the movement cost.
             valid_move_mask[new_row, new_col] = 1
-        else:
-            enemy_there = any(
-                u.player != game_env.current_player
-                for u in game_env.get_units_at((new_row, new_col))
+        elif not friendly_in_slot:
+            # #51: a move the unit cannot pay for silently fails -> not offered.
+            step = selected_unit.step_cost(
+                (row, col), (new_row, new_col), game_env
             )
-            if enemy_there:
+            if selected_unit.movement_points >= step:
                 valid_move_mask[new_row, new_col] = 1
 
     if selected_unit.get_base_ranged_strength() > 0:
@@ -160,7 +179,10 @@ def _reference_get_valid_moves_mask(state, selected_pos, game_env):
                 ):
                     valid_move_mask[er, ec] = 1
 
-    valid_move_mask[row, col] = 1
+    # #51: own tile is fortify for everyone (always succeeds with movement
+    # points left) but found-city for a Settler, which can be refused.
+    if selected_unit.unit_type != "Settler" or game_env.can_found_city_at((row, col)):
+        valid_move_mask[row, col] = 1
 
     return valid_move_mask.flatten()
 

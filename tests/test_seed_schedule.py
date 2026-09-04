@@ -183,3 +183,43 @@ def test_skipped_seeds_are_persisted_to_caller_list(monkeypatch, tmp_path):
                      skipped_seeds=skipped)
 
     assert skipped == [bad_seed]
+
+
+def test_truncated_episodes_are_persisted_to_caller_list(monkeypatch, tmp_path):
+    """`train_agents(truncated_episodes=[...])` records every episode cut off
+    by the step-limit guard — the #51 lesson, and the same argument as
+    `skipped_seeds` above: a truncated episode's recorded winner is an
+    artifact of where the loop was cut, not a result, and a console warning
+    is not a record (85 of the `duel_53ch_net128x6` run's 1000 episodes were
+    truncated and nothing in that run's stats says which).
+
+    Forced by lowering `trainer.STEP_LIMIT` rather than by building a
+    livelock: after #51 the masks no longer offer an action that changes
+    nothing, so a real one cannot be constructed — what is under test here is
+    the guard's REPORTING, not its trigger.
+    """
+    monkeypatch.chdir(tmp_path)
+    env, agents = _make_agents()
+    env.max_turns = 250  # far beyond what 3 steps can reach
+
+    truncated = []
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr("civulator.training.trainer.STEP_LIMIT", 3)
+        train_agents(env, agents, num_episodes=2, batch_size=8, debug=False,
+                     save_checkpoints=False, seed_base=820000,
+                     truncated_episodes=truncated)
+
+    assert truncated == [0, 1]
+
+
+def test_untruncated_run_reports_nothing(monkeypatch, tmp_path):
+    """The healthy case: the list stays empty when episodes end on their own."""
+    monkeypatch.chdir(tmp_path)
+    env, agents = _make_agents()  # max_turns = 4, ends well inside the guard
+
+    truncated = []
+    train_agents(env, agents, num_episodes=2, batch_size=8, debug=False,
+                 save_checkpoints=False, seed_base=830000,
+                 truncated_episodes=truncated)
+
+    assert truncated == []

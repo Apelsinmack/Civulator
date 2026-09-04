@@ -73,3 +73,48 @@ def test_evaluate_harness_completes_and_is_deterministic():
     # queued, which never completes in 15 turns, so no new build decision
     # arises; real 250-turn evals accumulate plenty.
     assert set(summary_1["build_distribution"]) == {"a", "b"}
+
+
+def test_truncation_is_recorded_and_absent_from_a_healthy_run():
+    """Issue #51: a game cut off by the step-limit guard must be visible in
+    the machine-readable record.
+
+    `determine_winner` has no verdict for a game stopped mid-play — both
+    players alive, below the turn cap — so it returns None and the game
+    lands in totals["draws"], indistinguishable from a real draw. That is
+    how 50 of the 200 games in the #48 rung-6 evaluation were first read as
+    combat results. The per-game entry now carries `truncated`, and the
+    summary a `truncated_games` count.
+
+    Truncation is forced by lowering `evaluate.STEP_LIMIT`, not by building
+    a livelock: after #51 the masks no longer offer an action that changes
+    nothing, so a real one cannot be constructed here — what is under test
+    is the guard's REPORTING.
+    """
+    healthy = _run()
+    assert healthy["truncated_games"] == 0
+    assert all(g["truncated"] is False for g in healthy["games_detail"])
+
+    original_limit = evaluate.STEP_LIMIT
+    evaluate.STEP_LIMIT = 3  # cut every game off almost immediately
+    try:
+        cut_off = _run()
+    finally:
+        evaluate.STEP_LIMIT = original_limit
+
+    assert cut_off["truncated_games"] == GAMES
+    assert all(g["truncated"] is True for g in cut_off["games_detail"])
+    # The point of the field: these are counted as draws and would otherwise
+    # be unrecognizable as non-results.
+    assert cut_off["totals"]["draws"] == GAMES
+
+
+def test_games_detail_keeps_the_fields_older_readers_use():
+    """scripts/watch.py reads games_detail entries by name (game_index, seed,
+    a_seat, b_seat, winner_seat, outcome, turns). #51 ADDS `truncated`; it
+    must not rename or drop anything, and older summaries that lack the key
+    must stay readable (consumers treat a missing key as False)."""
+    summary = _run()
+    for game in summary["games_detail"]:
+        assert {"game_index", "seed", "a_seat", "b_seat", "winner_seat",
+                "outcome", "turns"} <= set(game)
