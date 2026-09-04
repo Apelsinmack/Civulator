@@ -39,9 +39,13 @@ win rate but **whether games end before the cap**.
 | 3 | `duel_26ch_net32x64x64` | Network (32,64,64): ~101k params, receptive radius 4 | 86 / 84 / 30 | 200/200 | 0 |
 | 4 | `duel_26ch_net64x5` | Network (64×5): ~600k params, radius 6 | 83 / 84 / 33 | 200/200 | 0 |
 | 5 | `duel_26ch_net128x6` | Network (128×6): ~950k params, radius 7 | **109 / 70 / 21** | 199/200 | 0¹ |
+| 6 | `duel_53ch_net128x6` | **+ the #40 terrain block** (53ch: Enhanced + terrain + proximity) | **122 / 25 / 53** | **144/200** | **6²** |
 
 ¹ plus one **mutual-annihilation draw at turn 227** — the first game of the
 v0.6 epoch to end before the cap at all.
+² six *outright eliminations*, every one won by the terrain-aware model —
+the epoch's first non-draw eliminations. 56 games ended before the cap
+(earliest turn 73), of which 50 were mutual annihilations.
 
 Rungs 0–4: statistically even win rates (95% CI ≈ ±7pp), all 200 games at
 turn 251, zero eliminations — five consecutive nulls on the needle that
@@ -50,6 +54,18 @@ games (p ≈ 0.004), the ladder's first significant result. Its self-play was
 also the epoch's first *asymmetric* split (362/593, ~7σ): one of the two
 identically-configured twins escaped the mutual-turtle equilibrium, and the
 eval confirms the asymmetry (as seat 1: 72/22; as seat 0: 37/48).
+
+**Rung 6 ended the hunt.** Adding the one ingredient the ladder had left
+out — the #40 terrain block, previously written off as a null at 18k
+parameters — produced **83.0% of decisive games (z ≈ 8.0)**, both seats
+strong, and warfare at last: 56 games ended before the cap (earliest turn
+73), six by outright elimination, mean game length down to 235.1. The
+agents also rebuilt their armies around it: **46% Spearmen** (1153 of 2502
+builds, versus the baseline's 151 in the same games) — the
+strength-per-production optimum among cheap units (25 strength / 50
+production, against Warrior's 20/40). Once composed terrain defense and
+rivers were visible in the state, the agent found the cheap, strong,
+defensive unit and went to war with it.
 
 ## 4. What did move: production behavior
 
@@ -63,22 +79,43 @@ even though combat outcomes don't budge:
 | Rung 2 (city-distance) | 200 | 208 | 194 | 190 | 180 | 151 | 90 |
 | Rung 3 (+capacity) | 159 | 207 | 181 | 147 | **225** | **200** | 59 |
 
+| Rung 6 (+terrain) | 181 | 350 | **1153** | 256 | 286 | 196 | 80 |
+
 The baseline mass-produces Settlers; the direction-aware agents shift hard
 toward a broad military mix, deepening with capacity (rung 3: cavalry and
-siege lead, Granary nearly abandoned). They build armies — they just never
-march them into contact.
+siege lead, Granary nearly abandoned). Through rung 5 they build armies and
+never march them into contact. **Rung 6 is different in kind**: 46% of all
+production is Spearmen — the cheap strength-per-production optimum — and
+those armies fight.
+
+Also worth recording: in every game we probed through rung 5, *no player
+ever founded a second city* and *no unit ever died* in 250 turns. The score
+tiebreak (cities×10 + units) was therefore decided purely by unit count —
+the entire "game" being scored was a production race.
 
 ## 5. Interpretation
 
-**The resolution, written after rung 5**: the incentive, schedule, and
-perception fixes were *necessary but not sufficient* at small capacity — at
-~1M parameters the optimizer finally finds a policy that exploits the stack,
-beats the frozen baseline significantly, out-produces it (1521 builds vs
-1262, military-heavy), and fights at least once to mutual extinction. But
-199/200 games still reach the cap and only ONE of the two self-play twins
-escaped the turtle equilibrium — turtling is dented, not broken. The levers
-below remain live for finishing the job (and the pre-rung-5 reasoning is
-kept as written, since four nulls shaped it):
+**The resolution, written after rung 6**: turtling was never one problem
+with one cause. It required *both* enough capacity to represent a fighting
+policy **and** enough state to know where fighting is favourable. Rung 5
+supplied the first and got a modest, one-sided win; rung 6 added the second
+and got dominance with real battles. Neither ingredient works alone —
+terrain at 18k parameters was a null (#40, August), capacity without
+terrain was a half-result.
+
+**The methodological lesson is the session's most valuable output**: a null
+result at insufficient capacity says nothing about the representation. Every
+"one variable at a time" null in this project's record now carries an
+implicit *at that capacity* qualifier — and the discipline that produced
+five clean nulls in a row would have kept producing them forever, because
+the missing ingredient had already been tested and discarded.
+
+**What stays unattributed**: rungs 0–2 varied rewards, epsilon, and the
+proximity channel at 18k parameters, where nothing could express itself.
+Whether reward table v2, the epsilon schedule, or the city-distance channel
+contribute anything at 128×6 is genuinely unknown — the ablations below are
+the only way to find out. The pre-rung-5 reasoning is kept as written, since
+five nulls shaped it:
 
 - **The optimum at the cap may genuinely be turtling.** A draw costs nothing
   (draw reward is 0 by deliberate first-pass choice), attacking a fortified
@@ -99,6 +136,24 @@ kept as written, since four nulls shaped it):
   city-distance agent play (`scripts/watch.py` needs a two-line encoder
   update first) and read a few eval games move-by-move. Four nulls earn a
   qualitative look at what the agents actually do all those 250 turns.
+
+## 5b. What to do next, written after rung 6
+
+1. **Efficiency before more science.** Rung 6 cost 28h01m at 100.9 s/episode
+   — the 53-channel input roughly tripled the big net's cost. Reaching
+   radius 7 with **dilated convolutions** instead of six stacked layers would
+   pay for every experiment after it.
+2. **Ablations at 128×6 + 53ch**, one per night, to attribute what rungs 0–2
+   could not: old reward table; no city-distance channel; the original
+   epsilon schedule.
+3. **Pool it** (#6): `duel_53ch_net128x6` is the first legitimate second
+   member of the opponent pool, and a candidate to become the reference
+   opponent once a successor exists. (Promoting the reference requires
+   recording the bridge match against the current one — which this eval
+   already is.)
+4. **Then the design passes**: #50 multi-turn go-to orders (which would
+   collapse both broken credit chains — marching *and* settling), #18
+   history stacking, #49 build-agent rewards.
 
 ## 6. Bookkeeping this session also produced
 
