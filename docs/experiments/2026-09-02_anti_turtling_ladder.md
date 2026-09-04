@@ -1,184 +1,182 @@
-# The anti-turtling ladder — experiment report, 2026-09-01/02
+# The anti-turtling ladder — experiment report
 
-*Erik Steen & Claude · issues #46, #48 · game v0.6.0 · one overnight session on
-Home Desktop (RTX 3070). Report written 2026-09-02 morning; rung 4 still
-training at publication (result appended when recorded).*
+*Erik Steen & Claude · issues #46, #48, #51 · game v0.6.0 → v0.6.1 · runs
+2026-09-01 → 09-04 on Home Desktop (RTX 3070).*
+
+> **Revision history.** A first draft of this report was written on 09-02,
+> before instrumentation existed, and contained two errors: a three-game
+> probe written up as a property of the ladder, and 50 games truncated by an
+> engine bug read as battles. Both are corrected below and the corrections
+> are kept visible rather than overwritten. **This version is built entirely
+> from instrumented evaluations re-run after that bug was fixed**, listed in
+> §7 so every number here can be re-derived.
 
 ## 1. The question
 
-The #40 evaluation surfaced a stark fact: **every one of 200 evaluation games
-hit the 250-turn cap with zero eliminations** — trained agents don't fight,
-they turtle, and the score tiebreak decides everything. This session
-systematically tested four hypotheses for why, one variable per rung, each
-rung a full 1000-episode training run followed by the ratified protocol-v1
-evaluation (200 games vs the frozen #39 baseline `duel_25ch_1000ep`, 100
-seeds × both seats, ε=0.05, seed range 990000+). The headline metric is NOT
-win rate but **whether games end before the cap**.
+Trained agents did not fight. Every one of 200 evaluation games in the #40
+run reached the 250-turn cap with no eliminations, and the winner was
+decided by the score tiebreak. This session tested four explanations, one
+new variable per rung, each rung a full 1000-episode training run followed
+by the ratified protocol-v1 evaluation: 200 games against the frozen #39
+baseline `duel_25ch_1000ep`, 100 seeds × both seat assignments, ε = 0.05.
 
-## 2. The diagnoses behind the rungs
+## 2. The four diagnoses
 
 1. **No incentive** (#46): the reward table had no reward for winning at all,
-   symmetric kill/loss (±10), and γ=0.9 makes rewards >10 turns away
-   invisible — turtling was arguably *optimal*.
-2. **No exploitation** (#46): `epsilon_decay_episodes=5000` meant a
-   1000-episode run trained at ε≈0.81–1.0 throughout — the policies almost
+   symmetric kill/loss (±10), and γ = 0.9 hides anything beyond ~10 turns.
+2. **No exploitation** (#46): `epsilon_decay_episodes = 5000` meant a
+   1000-episode run trained at ε ≈ 0.81–1.0 throughout — the policies almost
    never experienced their own play.
-3. **No perception** (#48): the FullyConv network's receptive field is ~3
-   hexes; enemy cities (a single 1.0 on channel 23) are architecturally
-   invisible across a duel map's ~12-hex capital separation — directed
-   marching is not representable.
-4. **No capacity** (#48): 18,118 parameters may simply be too small.
+3. **No perception** (#48): the network's receptive field is ~3 hexes and
+   enemy cities were a single binary channel, so a target 12 hexes away was
+   architecturally invisible; a proximity-field channel was added.
+4. **No capacity** (#48): 18,118 parameters, scaled to ~950k across three
+   rungs.
 
-## 3. The rungs and results
+## 3. Results — all eight models, one table
 
-| Rung | Run | Single variable changed | Eval vs baseline (W/L/D) | Games past cap | Eliminations |
-|---|---|---|---|---|---|
-| 0 | `duel_25ch_rw2` | Reward table v2: potential-based proximity shaping (Φ = 0.5·Σ military max(0, R−d)), terminal win/loss ±100, capture 80, found 40, unit_lost −5 | 85 / 80 / 35 | 200/200 | 0 |
-| 1 | `duel_25ch_rw2eps800` | ε decays to 0.05 by ep 800 (was: stuck at ~0.81) | 84 / 79 / 37 | 200/200 | 0 |
-| 2 | `duel_26ch` | CityDistance encoder: +1 channel, unclipped proximity field to nearest enemy city | 84 / 83 / 33 | 200/200 | 0 |
-| 3 | `duel_26ch_net32x64x64` | Network (32,64,64): ~101k params, receptive radius 4 | 86 / 84 / 30 | 200/200 | 0 |
-| 4 | `duel_26ch_net64x5` | Network (64×5): ~600k params, radius 6 | 83 / 84 / 33 | 200/200 | 0 |
-| 5 | `duel_26ch_net128x6` | Network (128×6): ~950k params, radius 7 | **109 / 70 / 21** | 199/200 | 0¹ |
-| 6 | `duel_53ch_net128x6` | **+ the #40 terrain block** (53ch: Enhanced + terrain + proximity) | **122 / 25 / 53** | **144/200** | **6²** |
+Every model re-evaluated 2026-09-04 under identical post-fix rules, 200
+games each, **zero truncated games in any run**. "Decisive rate" is A's
+share of games that produced a winner; z is against a fair coin.
 
-¹ plus one **mutual-annihilation draw at turn 227** — the first game of the
-v0.6 epoch to end before the cap at all.
-² six *outright eliminations*, every one won by the terrain-aware model —
-the epoch's first non-draw eliminations. 56 games ended before the cap
-(earliest turn 73), of which 50 were mutual annihilations.
-
-Rungs 0–4: statistically even win rates (95% CI ≈ ±7pp), all 200 games at
-turn 251, zero eliminations — five consecutive nulls on the needle that
-matters. **Rung 5 broke the pattern**: 54.5% overall / 60.9% of decisive
-games (p ≈ 0.004), the ladder's first significant result. Its self-play was
-also the epoch's first *asymmetric* split (362/593, ~7σ): one of the two
-identically-configured twins escaped the mutual-turtle equilibrium, and the
-eval confirms the asymmetry (as seat 1: 72/22; as seat 0: 37/48).
-
-**Rung 6 ended the hunt.** Adding the one ingredient the ladder had left
-out — the #40 terrain block, previously written off as a null at 18k
-parameters — produced **83.0% of decisive games (z ≈ 8.0)**, both seats
-strong, and warfare at last: 56 games ended before the cap (earliest turn
-73), six by outright elimination, mean game length down to 235.1. The
-agents also rebuilt their armies around it: **46% Spearmen** (1153 of 2502
-builds, versus the baseline's 151 in the same games) — the
-strength-per-production optimum among cheap units (25 strength / 50
-production, against Warrior's 20/40). Once composed terrain defense and
-rivers were visible in the state, the agent found the cheap, strong,
-defensive unit and went to war with it.
-
-## 4. What did move: production behavior
-
-Rung 2's evaluation was the first with per-side build tracking, and it shows
-the interventions are *not* inert — they shift the joint policy's production
-even though combat outcomes don't budge:
-
-| Producer | Settler | Warrior | Spearman | Archer | Horseman | Catapult | Granary |
+| model | what it adds | decisive rate | z | kills | losses | cities founded | games ending early |
 |---|---|---|---|---|---|---|---|
-| Baseline (same games) | **504** | 175 | 184 | 73 | 80 | 94 | 125 |
-| Rung 2 (city-distance) | 200 | 208 | 194 | 190 | 180 | 151 | 90 |
-| Rung 3 (+capacity) | 159 | 207 | 181 | 147 | **225** | **200** | 59 |
+| `duel_52ch` | terrain block, 18k params (#40) | 0.447 (n=170) | −1.4 | 1 | 0 | 0 | 0 |
+| `duel_25ch_rw2` | reward table v2 | 0.472 (n=176) | −0.7 | 0 | 0 | 0 | 0 |
+| `duel_25ch_rw2eps800` | + ε decay to 0.05 by ep 800 | 0.500 (n=172) | 0.0 | 0 | 0 | 0 | 0 |
+| `duel_26ch` | + city-proximity channel | 0.469 (n=175) | −0.8 | 0 | 0 | 1 | 0 |
+| `duel_26ch_net32x64x64` | + 101k params | 0.528 (n=163) | +0.7 | 0 | 0 | 0 | 0 |
+| `duel_26ch_net64x5` | + 600k params | 0.465 (n=170) | −0.9 | 0 | 0 | 1 | 0 |
+| `duel_26ch_net128x6` | + 950k params | 0.587 (n=184) | **+2.4** | 0 | 2 | 21 | 0 |
+| **`duel_53ch_net128x6`** | **+ terrain block** | **0.887 (n=194)** | **+10.8** | 69 | 169 | **92** | 13 |
 
-| Rung 6 (+terrain) | 181 | 350 | **1153** | 256 | 286 | 196 | 80 |
+## 4. What the instrumentation actually shows
 
-The baseline mass-produces Settlers; the direction-aware agents shift hard
-toward a broad military mix, deepening with capacity (rung 3: cavalry and
-siege lead, Granary nearly abandoned). Through rung 5 they build armies and
-never march them into contact. **Rung 6 is different in kind**: 46% of all
-production is Spearmen — the cheap strength-per-production optimum — and
-those armies fight.
+**Combat is essentially absent from seven of the eight models.** Across 200
+games each, six record **zero kills** and one records one. This is not a
+subtle effect: at 250 turns per game that is 50,000 turns of play per model
+without a single unit dying. The turtling diagnosis was correct, and none of
+rewards, exploration, perception or capacity-below-950k changed it at all.
 
-A note on a claim that appeared in an earlier draft of this report, corrected
-2026-09-04: it said no player ever founded a second city and no unit ever
-died. **The evidence for that was three games** (indices 0, 2, 4) replayed
-headless from the rung-4 evaluation, where both players ended with one city
-and unit counts exactly equal to starting warriors plus builds. Three games
-of one model do not support a claim about the ladder, and Erik observed a
-second city being founded in a rung-5 replay. The honest statement is: in
-the small sample probed, expansion and combat were absent; the
-population-level numbers come from the instrumented evaluations (`kills`,
-`losses`, `cities_founded`, `cities_captured` per side, added 2026-09-03)
-and are reported in the cross-model statistics table.
+**Win rate tracks cities founded, and nothing else.** Ordering the table by
+cities founded reproduces the ordering by win rate: 0–1 cities → decisive
+rates clustered around 0.47–0.53, all statistically indistinguishable from a
+coin flip; 21 cities → 0.587; 92 cities → 0.887. Nothing else in the
+measurements separates the models.
 
-## 5. Interpretation
+**Settler production is almost entirely wasted, for everyone.** In every
+matchup the baseline built between 520 and 551 Settlers per 200 games — over
+40% of its total production — and founded between **0 and 3 cities**. That
+is roughly one city per two hundred Settlers. Erik observed a second city
+being founded in a replay and asked whether it was real; it is real, and it
+is also rare enough that a three-game probe (the first draft's error) could
+easily see none.
 
-**The resolution, written after rung 6**: turtling was never one problem
-with one cause. It required *both* enough capacity to represent a fighting
-policy **and** enough state to know where fighting is favourable. Rung 5
-supplied the first and got a modest, one-sided win; rung 6 added the second
-and got dominance with real battles. Neither ingredient works alone —
-terrain at 18k parameters was a null (#40, August), capacity without
-terrain was a half-result.
+**The winning model wins by expanding while losing the fight.** The 53ch
+model is the only one that fights at all, and it *loses* the exchange: 69
+kills against 169 losses. It wins 88.7% of decisive games anyway, because a
+city is worth ten units in the turn-cap score (`player_score`, #55) and it
+founds 92 cities to the baseline's 0. It also captures 53 enemy Settlers and
+13 cities — the only model to do either.
 
-**The methodological lesson is the session's most valuable output**: a null
-result at insufficient capacity says nothing about the representation. Every
-"one variable at a time" null in this project's record now carries an
-implicit *at that capacity* qualifier — and the discipline that produced
-five clean nulls in a row would have kept producing them forever, because
-the missing ingredient had already been tested and discarded.
+**Two ingredients were needed for that, and neither works alone.** Terrain
+at 18k parameters produced nothing (`duel_52ch`: 0 cities, 1 kill,
+decisive rate 0.447 — the original #40 null, confirmed with behavioural
+data). Capacity without terrain produced the first real expansion but only
+21 cities (`duel_26ch_net128x6`). Capacity *and* terrain produced 92.
 
-**What stays unattributed**: rungs 0–2 varied rewards, epsilon, and the
-proximity channel at 18k parameters, where nothing could express itself.
-Whether reward table v2, the epsilon schedule, or the city-distance channel
-contribute anything at 128×6 is genuinely unknown — the ablations below are
-the only way to find out. The pre-rung-5 reasoning is kept as written, since
-five nulls shaped it:
+Two honest caveats on the size of these effects. First, even the best model
+founds a second city in fewer than half its games (92 per 200) and kills
+0.35 units per game — this is a comparison between very passive policies,
+not between competent ones. Second, `duel_26ch_net128x6`'s +2.4 z is a
+single 200-game measurement of a modest effect; it deserves a repeat before
+anything is built on it.
 
-- **The optimum at the cap may genuinely be turtling.** A draw costs nothing
-  (draw reward is 0 by deliberate first-pass choice), attacking a fortified
-  defender on good terrain is locally negative EV, and the score tiebreak
-  rewards accumulating units — which is exactly what the build shift shows
-  the agents learning. The cheapest next probe: a **draw penalty**, making
-  the cap itself aversive.
-- **Multi-step credit assignment**: even with dense shaping (+~0.2 per
-  approach step), an 8-turn march into a fight the policy has never won may
-  never look good to one-step Q-learning at γ=0.9. Probes: γ=0.95/0.99, or
-  n-step returns.
-- **The policies may simply need to see wins to value winning**: nothing in
-  1000 episodes of self-play between equally passive agents demonstrates
-  that captures pay. This is the argument that milestone A routes through
-  **imitation learning** (#3/#4 — recorded human demonstrations of combat
-  scenarios) rather than further reward/architecture tuning.
-- **Look at the games.** Before the next rung of anything: watch the
-  city-distance agent play (`scripts/watch.py` needs a two-line encoder
-  update first) and read a few eval games move-by-move. Four nulls earn a
-  qualitative look at what the agents actually do all those 250 turns.
+## 5. The bug that corrupted the first reading
 
-## 5b. What to do next, written after rung 6
+The first draft reported "56 games ended before the cap — warfare at last".
+Fifty of those were **livelocks**, not battles (issue #51): a mask-legal
+action that changes nothing — a Settler ordered to found where
+`min_city_distance` forbids it, or a step the unit cannot afford — returns
+`invalid_action` having consumed no movement and ended no turn, so a greedy
+policy repeats it until the 10,000-step guard. Those games were cut off and
+scored as draws, indistinguishable in the record from real ones.
 
-1. **Efficiency before more science.** Rung 6 cost 28h01m at 100.9 s/episode
-   — the 53-channel input roughly tripled the big net's cost. Reaching
-   radius 7 with **dilated convolutions** instead of six stacked layers would
-   pay for every experiment after it.
-2. **Ablations at 128×6 + 53ch**, one per night, to attribute what rungs 0–2
-   could not: old reward table; no city-distance channel; the original
-   epsilon schedule.
-3. **Pool it** (#6): `duel_53ch_net128x6` is the first legitimate second
-   member of the opponent pool, and a candidate to become the reference
-   opponent once a successor exists. (Promoting the reference requires
-   recording the bridge match against the current one — which this eval
-   already is.)
-4. **Then the design passes**: #50 multi-turn go-to orders (which would
-   collapse both broken credit chains — marching *and* settling), #18
-   history stacking, #49 build-agent rewards.
+It cost more than a misreading: it had truncated **85 of the 53ch model's
+1000 training episodes**, and 50 of its 200 evaluation games. With the bug
+fixed, the same model and the same protocol give **172 / 22 / 6** instead of
+122 / 25 / 53 — the livelocks had been suppressing about fifty wins.
 
-## 6. Bookkeeping this session also produced
+Fixed in v0.6.1 with a new invariant: *a mask must never offer an action that
+cannot change the state.* Truncation is now recorded machine-readably
+(`truncated_games`, `truncated_episodes`) instead of silently becoming a
+draw, and the reporting rule in CLAUDE.md requires excluding truncated games
+before any claim rests on them.
+
+## 6. What to do next
+
+1. **The score function is doing the work, so look at it first.** Win rate
+   is currently a proxy for cities founded, because a city is worth ten
+   units and games essentially never end by elimination. Before more
+   architecture experiments, decide whether that is the game we want to
+   measure — a draw penalty, a different tiebreak weight, or a longer cap
+   would each change what "winning" means.
+2. **Settlers are the cheapest available win.** Everyone builds them and
+   nobody settles them; the model that learned to settle 92 of them beat the
+   baseline 172–22. A reward or curriculum aimed squarely at founding may be
+   worth more than any encoder change.
+3. **Efficiency**: the 53ch run cost 28h01m at 100.9 s/episode, roughly
+   triple the earlier big-net runs. Dilated convolutions would reach the same
+   receptive field far more cheaply and would pay for every experiment after
+   them.
+4. **Ablations at 128×6** to attribute what rungs 0–2 could not: they are now
+   known to be behaviourally inert *at 18k parameters*, which says nothing
+   about whether they contribute at 950k.
+5. **Pool the winner** (#6) — `duel_53ch_net128x6` is the first legitimate
+   second member of the opponent pool, and this evaluation is the bridge
+   match a promotion to reference opponent would need.
+
+## 7. Provenance
+
+Every number above comes from these committed artifacts, all produced by
+`scripts/evaluate.py` (protocol v1) after the #51 fix, and re-derivable with
+the per-file summary script used to write this section:
+
+`stats/eval_duel_53ch_net128x6_1000ep_vs_duel_25ch_1000ep_1788499820.json` ·
+`..._duel_52ch_1000ep_..._1788500042.json` ·
+`..._duel_25ch_rw2_1000ep_..._1788500240.json` ·
+`..._duel_25ch_rw2eps800_1000ep_..._1788500434.json` ·
+`..._duel_26ch_1000ep_..._1788500642.json` ·
+`..._duel_26ch_net32x64x64_1000ep_..._1788500859.json` ·
+`..._duel_26ch_net64x5_1000ep_..._1788501091.json` ·
+`..._duel_26ch_net128x6_1000ep_..._1788501456.json`
+
+Training runs and their manifests are in `weights/trained/manifest.md`;
+pre-fix evaluations are kept alongside the post-fix ones, since the pre-fix
+numbers are what the pre-fix code produced.
+
+## 8. Also produced this session
 
 **#44 resolved and closed**: the "cross-machine mapgen divergence" was a
 record error — the seed schedule skips the identical 19 seeds on every
-machine and commit tested (the baseline's "3 skips" was a hand transcription
-of the last three console warnings). Mapgen is cross-machine bit-stable, all
-recorded runs share the exact world sequence, and skip lists are now
-persisted machine-readably in every run summary.
+machine and commit tested, and the baseline's recorded "3 skips" was a hand
+transcription of the last three console warnings. Mapgen is cross-machine
+bit-stable; skip lists are now persisted machine-readably.
 
-Protocol v1 ratified · eval flake fixed (D26 resample at construction) ·
-`hexmath.distance` vectorized (ndarray broadcasting, scalar path untouched) ·
-FullyConv generalized to arbitrary depth with checkpoint compatibility pinned
-· eval summaries now record per-side build distributions · mid-training
-checkpoints every 100 episodes (episodes-to-50% now computable) · issues
-filed: #47 (C++ build provenance), #49 (BuildAgent rewards) · everything on
-`develop` through `7e8c56d`; all runs, weights, and eval JSONs in the
-scientific record with embedded manifests.
+**Five unification issues closed** after an audit against the canonical
+systems table: four pre-0.6 scripts archived (their end-turn sentinel
+predated the slot-aware action space, so they scored every game a draw —
+#53); one shared action decoder (#54); one `player_score` (#55); continuous
+east-west scrolling in the canonical renderer, which turned out to be a
+one-copy limitation rather than a second render engine (#52); and the
+livelock fix itself (#51). The audit found the systems CLAUDE.md names
+canonical to be genuinely singular — the drift was concentrated in
+`scripts/`.
+
+Also: protocol v1 ratified · an eval-harness crash on unplaceable worlds
+fixed · `hexmath.distance` vectorized · FullyConv generalized to arbitrary
+depth with checkpoint compatibility pinned · per-side build distributions and
+combat counters in every evaluation · mid-training checkpoints.
 
 ---
 
