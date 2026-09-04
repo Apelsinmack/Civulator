@@ -133,7 +133,7 @@ STEP_LIMIT = 10000
 _tcfg = CFG.get("training", {})
 DEFAULT_MAX_TURNS = _tcfg.get("max_turns", 250)
 
-_ENCODER_CHOICES = ["basic", "enhanced", "terrain_aware", "city_distance", "full"]
+_ENCODER_CHOICES = ["basic", "enhanced", "terrain_aware", "city_distance", "full", "settle"]
 
 
 def _load_side(weights_path, encoder_name, n, m, num_players, device):

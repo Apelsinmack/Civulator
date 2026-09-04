@@ -101,7 +101,7 @@ from civulator.game import GameEnvironment, resolve_size_and_players
 from civulator.game.environment import REWARDS
 from civulator.agents import DQNAgent, BuildAgent, ReplayMemory, get_encoder
 from civulator.training import train_agents
-from civulator.meta import save_weights
+from civulator.meta import load_weights, save_weights
 
 # --- The #39 pinned configuration (see module docstring) -------------------
 SIZE_PRESET = "duel"
@@ -209,6 +209,41 @@ def build_training_objects(n, m, num_players, learning_rate, gamma, encoder,
     return env, agents, build_agents, d
 
 
+def load_resume_weights(agents, build_agents, path):
+    """Continue training from an earlier run's combined payload.
+
+    Loads combat and build networks (and their optimizer states) per seat
+    from a `save_final_weights` artifact — so "another 1000 episodes on top
+    of the last run" is one flag rather than a new script.
+
+    What is deliberately NOT restored: the epsilon schedule position
+    (`DQNAgent.episode_count`) and the replay memory. A continuation
+    therefore re-runs the epsilon decay from the start, which for a
+    `[training] epsilon_decay_episodes` of 800 means the resumed run
+    explores hard again before settling. That is a real experimental
+    choice, not an oversight — say so in the run's manifest row, and pass
+    a smaller `epsilon_start` in config if a pure exploitation continuation
+    is wanted instead.
+    """
+    payload, manifest = load_weights(path, map_location=agents[0].device)
+    for entry in payload["agents"]:
+        agent = agents[entry["player_index"]]
+        agent.network.load_state_dict(entry["model_state_dict"])
+        agent.target_network.load_state_dict(entry["model_state_dict"])
+        if "optimizer_state_dict" in entry:
+            agent.optimizer.load_state_dict(entry["optimizer_state_dict"])
+    for entry in payload.get("build_agents", []):
+        build_agent = build_agents[entry["player_index"]]
+        build_agent.network.load_state_dict(entry["model_state_dict"])
+        if "optimizer_state_dict" in entry:
+            build_agent.optimizer.load_state_dict(entry["optimizer_state_dict"])
+    version = manifest["game_version"] if manifest else "pre-manifest"
+    print(f"[resume] loaded {len(payload['agents'])} combat + "
+          f"{len(payload.get('build_agents', []))} build networks from {path} "
+          f"(game_version {version}); epsilon schedule and replay memory start fresh")
+    return manifest
+
+
 def save_final_weights(agents, build_agents, path):
     """The run's one combined, manifest-carrying artifact (civulator.meta.
     save_weights already embeds build_manifest() -- game_version,
@@ -247,7 +282,7 @@ def save_final_weights(agents, build_agents, path):
 
 
 def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
-         checkpoint_every=100, conv_channels=CONV_CHANNELS):
+         checkpoint_every=100, conv_channels=CONV_CHANNELS, resume=None):
     conv_channels = tuple(conv_channels)
     n, m, num_players = resolve_size_and_players(size=SIZE_PRESET)
     max_turns = _tcfg.get("max_turns", 250)
@@ -287,6 +322,12 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
         env, agents, build_agents, d = build_training_objects(
             n, m, num_players, learning_rate, gamma, encoder, conv_channels
         )
+        resume_manifest = None
+        if resume:
+            # Path is resolved against the ORIGINAL cwd, not the tag's
+            # output root that _chdir moved us into.
+            resume_path = resume if os.path.isabs(resume) else os.path.join(PROJECT_ROOT, resume)
+            resume_manifest = load_resume_weights(agents, build_agents, resume_path)
         env.max_turns = max_turns
 
         def checkpoint_saver(completed):
@@ -339,6 +380,7 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
             "batch_size": batch_size,
             "learning_rate": learning_rate,
             "gamma": gamma,
+            "resumed_from": resume,
             "skipped_schedule_seeds": skipped_seeds,
             # Episodes cut off by the step-limit guard (#51): their entry in
             # win_history is an artifact of where the loop was cut, not a
@@ -379,7 +421,7 @@ if __name__ == "__main__":
                         help="Explicit output root (weights/, weights/trained/, stats/ are created "
                              "under it). Overrides the --tag-based default either way.")
     parser.add_argument("--encoder", type=str, default=DEFAULT_ENCODER,
-                        choices=["basic", "enhanced", "terrain_aware", "city_distance", "full"],
+                        choices=["basic", "enhanced", "terrain_aware", "city_distance", "full", "settle"],
                         help=f"State encoder, selected via civulator.agents.get_encoder "
                              f"(default: {DEFAULT_ENCODER!r}, from config.toml [training].encoder). "
                              "'terrain_aware' (52ch/54ch fog, issue #40) runs the SAME seed schedule "
@@ -400,6 +442,12 @@ if __name__ == "__main__":
                              f"Default: the pinned baseline {CONV_CHANNELS}. Deeper/wider "
                              "runs should also pass --variant (encoder channel count alone "
                              "no longer distinguishes the artifact name).")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Continue training from a combined weights payload "
+                             "(e.g. weights/trained/duel_53ch_net128x6_1000ep.pth). "
+                             "Encoder and --conv-channels must match the payload. "
+                             "The epsilon schedule and replay memory start fresh — "
+                             "see load_resume_weights' docstring.")
     args = parser.parse_args()
 
     conv_channels = (
@@ -408,4 +456,4 @@ if __name__ == "__main__":
     )
     main(episodes=args.episodes, tag=args.tag, outdir=args.outdir, encoder=args.encoder,
          variant=args.variant, checkpoint_every=args.checkpoint_every,
-         conv_channels=conv_channels)
+         conv_channels=conv_channels, resume=args.resume)

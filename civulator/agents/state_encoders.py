@@ -600,6 +600,80 @@ class FullStateEncoder(TerrainAwareStateEncoder):
         return torch.cat([terrain_aware_state, field_tensor], dim=0)
 
 
+class SettleSiteStateEncoder(FullStateEncoder):
+    """FullStateEncoder plus ONE channel: where a city may legally be founded
+    (issue #8).
+
+    Why: as of the 2026-09-04 cross-model evaluation, win rate tracks cities
+    founded and nothing else — yet every model builds 500+ Settlers per 200
+    games and founds between 0 and 3 cities. The settling rule (land, not
+    impassable, empty, and at least `min_city_distance` from EVERY existing
+    city of EVERY player) is nowhere in the state, so an agent can only
+    discover it by trial. #51 stopped the mask from offering an illegal
+    found-here, which tells a Settler about the tile it is standing on; this
+    channel tells it about the tiles it could walk to.
+
+    Channel (appended last, after the terrain block and proximity field):
+        +0  1.0 where `GameEnvironment.can_found_city_at` is True, else 0.0.
+
+    Depth: 53+1 = 54 (no fog), 55+1 = 56 (fog).
+
+    Fog: masked by `explored`, like the terrain block — a player should not
+    see settleable ground it has never visited. (The engine itself always
+    knows the truth; fog is an encoder concern, per the project rule.)
+
+    Caching: the legal-site set changes only when terrain changes or a city
+    is founded/captured/destroyed, so the grid is cached on
+    (map_uid, terrain_epoch, sorted coordinates of every city on the map) —
+    the same "rare update" the issue asks for.
+    """
+
+    SETTLE_SITE_DEPTH = 1
+
+    def __init__(self, fog_of_war=None):
+        super().__init__(fog_of_war=fog_of_war)
+        self._settle_cache = None
+        self._settle_cache_key = None
+
+    def get_depth(self, num_players):
+        return super().get_depth(num_players) + self.SETTLE_SITE_DEPTH
+
+    def _get_settle_layer(self, game_env):
+        all_cities = tuple(sorted(
+            city.coordinates
+            for player in game_env.players
+            for city in player.cities
+        ))
+        key = (game_env.map.map_uid, game_env.map.terrain_epoch, all_cities)
+        if self._settle_cache is not None and self._settle_cache_key == key:
+            return self._settle_cache
+
+        n, m = game_env.n, game_env.m
+        grid = np.zeros((n, m), dtype=np.float32)
+        for i in range(n):
+            for j in range(m):
+                if game_env.can_found_city_at((i, j)):
+                    grid[i, j] = 1.0
+        self._settle_cache = grid
+        self._settle_cache_key = key
+        return grid
+
+    def encode(self, game_env, player_index, device=None):
+        if device is None:
+            device = torch.device("cpu")
+
+        base_state = super().encode(game_env, player_index, device=device)
+        grid = self._get_settle_layer(game_env)
+
+        if self.fog_of_war:
+            visible = game_env.get_visibility_mask(player_index)
+            explored = game_env.get_explored_mask(player_index) | visible
+            grid = grid * explored.astype(np.float32)
+
+        layer = torch.from_numpy(grid[np.newaxis, :, :]).to(device)
+        return torch.cat([base_state, layer], dim=0)
+
+
 # --- Encoder registry (design doc `docs/terrain_encoder_design.md` #40) -----
 #
 # "State encoders are selected by name via state_encoders.get_encoder();
@@ -613,6 +687,7 @@ _ENCODER_REGISTRY = {
     "terrain_aware": TerrainAwareStateEncoder,
     "city_distance": CityDistanceStateEncoder,
     "full": FullStateEncoder,
+    "settle": SettleSiteStateEncoder,
 }
 
 
