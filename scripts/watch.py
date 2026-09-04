@@ -62,7 +62,7 @@ from civulator.viz.hex_render import (
     tile_color,
     update_camera_zoom_pan,
     wrap_camera_x,
-    wrapped_draw_x,
+    wrap_copies_x,
 )
 
 # --- Config ---
@@ -292,21 +292,28 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0,
         rl.clear_background(rl.Color(30, 30, 35, 255))
         rl.begin_mode_2d(camera)
 
+        # Half the visible world width — every draw below repeats the world
+        # at each wrap copy inside it, so panning east cycles continuously
+        # instead of jumping by one period at the seam (issue #52).
+        view_half_width = SCREEN_W / (2 * camera.zoom)
+
         # Draw terrain
         for row in range(n_rows):
             for col in range(n_cols):
                 tile = env.map.tiles[row, col]
                 if tile is None:
                     continue
-                cx, cy = hex_to_pixel(row, col, HEX_SIZE, env.m)
-                cx = wrapped_draw_x(cx, camera.target.x, HEX_SIZE, env.m)
-                draw_hex(cx, cy, HEX_SIZE - 1, tile_color(tile))
-                draw_hex_outline(cx, cy, HEX_SIZE, rl.Color(60, 60, 60, 100))
-                draw_resource_marker(cx, cy, HEX_SIZE, tile)
+                cx0, cy = hex_to_pixel(row, col, HEX_SIZE, env.m)
+                for cx in wrap_copies_x(cx0, camera.target.x, HEX_SIZE, env.m,
+                                        view_half_width):
+                    draw_hex(cx, cy, HEX_SIZE - 1, tile_color(tile))
+                    draw_hex_outline(cx, cy, HEX_SIZE, rl.Color(60, 60, 60, 100))
+                    draw_resource_marker(cx, cy, HEX_SIZE, tile)
 
         # Rivers (design doc §5 — none generate until P4; the primitive is
         # wired in now so P4's rivers appear automatically).
-        draw_river_edges(env.map, HEX_SIZE, env.m, camera_x=camera.target.x)
+        draw_river_edges(env.map, HEX_SIZE, env.m, camera_x=camera.target.x,
+                         view_half_width=view_half_width)
 
         # Draw cities
         for player in env.players:
@@ -314,10 +321,11 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0,
                 continue
             pcolor = PLAYER_COLORS[player.player_index % len(PLAYER_COLORS)]
             for city in player.cities:
-                cx, cy = hex_to_pixel(*city.coordinates, HEX_SIZE, env.m)
-                cx = wrapped_draw_x(cx, camera.target.x, HEX_SIZE, env.m)
-                rl.draw_circle(int(cx), int(cy), HEX_SIZE * 0.7, pcolor)
-                rl.draw_circle_lines(int(cx), int(cy), HEX_SIZE * 0.7, rl.WHITE)
+                cx0, cy = hex_to_pixel(*city.coordinates, HEX_SIZE, env.m)
+                for cx in wrap_copies_x(cx0, camera.target.x, HEX_SIZE, env.m,
+                                        view_half_width):
+                    rl.draw_circle(int(cx), int(cy), HEX_SIZE * 0.7, pcolor)
+                    rl.draw_circle_lines(int(cx), int(cy), HEX_SIZE * 0.7, rl.WHITE)
 
         # Draw units
         for player in env.players:
@@ -325,17 +333,18 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0,
                 continue
             pcolor = PLAYER_COLORS[player.player_index % len(PLAYER_COLORS)]
             for unit in player.units:
-                cx, cy = hex_to_pixel(*unit.coordinates, HEX_SIZE, env.m)
-                cx = wrapped_draw_x(cx, camera.target.x, HEX_SIZE, env.m)
-                # Offset by slot to avoid overlap
-                offset_x = (unit.slot - 1.5) * 4
-                rl.draw_circle(int(cx + offset_x), int(cy), 3, pcolor)
-                # Health bar
-                hp_frac = unit.health / 100.0
-                bar_w = HEX_SIZE * 0.8
-                rl.draw_rectangle(int(cx - bar_w/2), int(cy - HEX_SIZE * 0.6),
-                                  int(bar_w * hp_frac), 2,
-                                  rl.Color(50, 220, 50, 200))
+                cx0, cy = hex_to_pixel(*unit.coordinates, HEX_SIZE, env.m)
+                for cx in wrap_copies_x(cx0, camera.target.x, HEX_SIZE, env.m,
+                                        view_half_width):
+                    # Offset by slot to avoid overlap
+                    offset_x = (unit.slot - 1.5) * 4
+                    rl.draw_circle(int(cx + offset_x), int(cy), 3, pcolor)
+                    # Health bar
+                    hp_frac = unit.health / 100.0
+                    bar_w = HEX_SIZE * 0.8
+                    rl.draw_rectangle(int(cx - bar_w/2), int(cy - HEX_SIZE * 0.6),
+                                      int(bar_w * hp_frac), 2,
+                                      rl.Color(50, 220, 50, 200))
 
         rl.end_mode_2d()
 

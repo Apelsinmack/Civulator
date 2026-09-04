@@ -40,7 +40,7 @@ from ..viz.hex_render import (
     tile_color,
     update_camera_zoom_pan,
     wrap_camera_x,
-    wrapped_draw_x,
+    wrap_copies_x,
 )
 from . import MAP_TYPES, generate
 from .data import resolve_size
@@ -76,17 +76,23 @@ def _draw_frame(tiles, rivers, starts, rows, cols, camera, show_starts=True):
     rl.clear_background(rl.Color(30, 30, 35, 255))
     rl.begin_mode_2d(camera)
 
+    # Every draw repeats the world at each wrap copy inside the viewport, so
+    # east/west scrolling cycles continuously at any zoom (issue #52).
+    view_half_width = SCREEN_W / (2 * camera.zoom)
+
     for r in range(rows):
         for c in range(cols):
             tile = tiles[r][c]
-            cx, cy = hex_to_pixel(r, c, HEX_SIZE, cols)
-            cx = wrapped_draw_x(cx, camera.target.x, HEX_SIZE, cols)
-            draw_hex(cx, cy, HEX_SIZE - 1, tile_color(tile))
-            draw_hex_outline(cx, cy, HEX_SIZE, rl.Color(60, 60, 60, 100))
-            draw_resource_marker(cx, cy, HEX_SIZE, tile)
+            cx0, cy = hex_to_pixel(r, c, HEX_SIZE, cols)
+            for cx in wrap_copies_x(cx0, camera.target.x, HEX_SIZE, cols,
+                                    view_half_width):
+                draw_hex(cx, cy, HEX_SIZE - 1, tile_color(tile))
+                draw_hex_outline(cx, cy, HEX_SIZE, rl.Color(60, 60, 60, 100))
+                draw_resource_marker(cx, cy, HEX_SIZE, tile)
 
     draw_river_edges(
-        types.SimpleNamespace(rivers=rivers), HEX_SIZE, cols, camera_x=camera.target.x
+        types.SimpleNamespace(rivers=rivers), HEX_SIZE, cols,
+        camera_x=camera.target.x, view_half_width=view_half_width,
     )
 
     # Start-position markers (design doc §11 P7.5) — drawn last, on top of
@@ -95,9 +101,10 @@ def _draw_frame(tiles, rivers, starts, rows, cols, camera, show_starts=True):
     # ceremony without an extra keypress).
     if show_starts:
         for (r, c) in starts:
-            cx, cy = hex_to_pixel(r, c, HEX_SIZE, cols)
-            cx = wrapped_draw_x(cx, camera.target.x, HEX_SIZE, cols)
-            draw_start_marker(cx, cy, HEX_SIZE)
+            cx0, cy = hex_to_pixel(r, c, HEX_SIZE, cols)
+            for cx in wrap_copies_x(cx0, camera.target.x, HEX_SIZE, cols,
+                                    view_half_width):
+                draw_start_marker(cx, cy, HEX_SIZE)
 
     rl.end_mode_2d()
     rl.end_drawing()

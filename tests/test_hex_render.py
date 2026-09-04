@@ -27,6 +27,7 @@ from civulator.viz.hex_render import (
     river_edge_endpoints,
     tile_color,
     wrap_camera_x,
+    wrap_copies_x,
     wrap_period,
     wrapped_draw_x,
 )
@@ -270,3 +271,74 @@ class TestRiverEdgeEndpoints:
             # across the map, which is what a naive (non-k-shifted) endpoint
             # computation would produce for the seam-straddling edge.
             assert math.hypot(x2 - x1, y2 - y1) == pytest.approx(_SIZE, abs=1e-9)
+
+
+# --- (e) continuous cycling scroll: wrap_copies_x (issue #52) ---------------
+#
+# wrapped_draw_x returns ONE copy, which suffices only while the viewport is
+# no wider than the wrap period; wider than that the world cannot tile the
+# screen and a gap band appears. wrap_copies_x returns every visible copy.
+
+
+class TestWrapCopiesX:
+    WRAP_W = 24  # the duel preset's column count -- the configuration that failed
+
+    def _period(self):
+        return wrap_period(_SIZE, self.WRAP_W)
+
+    def test_matches_wrapped_draw_x_when_viewport_is_narrow(self):
+        """Viewport well inside one period: the nearest copy is the only one,
+        so the new helper agrees with the old single-copy behavior."""
+        period = self._period()
+        camera_x = 0.3 * period
+        half = period / 4
+        for col in range(self.WRAP_W):
+            x, _ = hex_to_pixel(0, col, _SIZE, self.WRAP_W)
+            copies = wrap_copies_x(x, camera_x, _SIZE, self.WRAP_W, half)
+            if copies:
+                assert copies[0] == pytest.approx(
+                    wrapped_draw_x(x, camera_x, _SIZE, self.WRAP_W))
+
+    def test_wide_viewport_tiles_the_world_with_no_gap(self):
+        """The bug: a viewport wider than the period left a bare band. Every
+        x across the whole visible span must be covered by some copy of some
+        column -- checked by walking the span in sub-hex steps."""
+        period = self._period()
+        camera_x = 0.7 * period
+        half = 2.5 * period  # 5 periods wide -- the duel/replay case
+        drawn = []
+        for col in range(self.WRAP_W):
+            x, _ = hex_to_pixel(0, col, _SIZE, self.WRAP_W)
+            drawn.extend(wrap_copies_x(x, camera_x, _SIZE, self.WRAP_W, half))
+
+        step = _SQRT3 * _SIZE / 2  # half a hex width
+        probe = camera_x - half
+        while probe <= camera_x + half:
+            assert any(abs(d - probe) <= _SQRT3 * _SIZE for d in drawn), (
+                f"gap in the wrapped strip at x={probe:.1f} "
+                f"(camera_x={camera_x:.1f}, half={half:.1f})"
+            )
+            probe += step
+
+    def test_copies_are_spaced_exactly_one_period_apart(self):
+        period = self._period()
+        x, _ = hex_to_pixel(0, 5, _SIZE, self.WRAP_W)
+        copies = sorted(wrap_copies_x(x, 0.0, _SIZE, self.WRAP_W, 3 * period))
+        assert len(copies) >= 6
+        for a, b in zip(copies, copies[1:]):
+            assert b - a == pytest.approx(period)
+
+    def test_offscreen_tile_yields_no_copies(self):
+        """Free culling: a tile far outside a narrow viewport draws nothing."""
+        period = self._period()
+        x, _ = hex_to_pixel(0, 0, _SIZE, self.WRAP_W)
+        # Camera half a period away, viewport a tenth of a period wide.
+        assert wrap_copies_x(x, x + period / 2, _SIZE, self.WRAP_W,
+                             period / 20) == []
+
+    def test_absurd_zoom_out_falls_back_to_one_copy(self):
+        """Guard: the copy loop must not grow without bound."""
+        period = self._period()
+        x, _ = hex_to_pixel(0, 3, _SIZE, self.WRAP_W)
+        copies = wrap_copies_x(x, 0.0, _SIZE, self.WRAP_W, 10_000 * period)
+        assert len(copies) == 1

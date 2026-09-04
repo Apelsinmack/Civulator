@@ -211,6 +211,11 @@ def wrapped_draw_x(x, camera_x, size, wrap_w):
     screen (§7.5 camera/seam policy) — otherwise everything on the far side
     of the canonical [0, P) strip vanishes the moment the camera crosses the
     seam.
+
+    ONE copy only, which is enough while the viewport is no wider than one
+    wrap period; wider than that the world cannot tile the screen and the
+    strip visibly jumps by P when the nearest-copy choice flips. Views that
+    must stay continuous at any zoom use `wrap_copies_x` (issue #52).
     """
     period = wrap_period(size, wrap_w)
     best = x
@@ -222,6 +227,47 @@ def wrapped_draw_x(x, camera_x, size, wrap_w):
             best_dist = d
             best = shifted
     return best
+
+
+# A viewport wider than this many wrap periods is treated as a mistake rather
+# than drawn: at that zoom the whole world is a few pixels wide, and the copy
+# loop would grow without bound.
+MAX_WRAP_COPIES = 64
+
+
+def wrap_copies_x(x, camera_x, size, wrap_w, view_half_width):
+    """EVERY k*P copy of a raw hex_to_pixel x that lands inside the viewport.
+
+    The general form of `wrapped_draw_x` (issue #52): a scrolling view whose
+    viewport is wider than one wrap period P needs the world drawn several
+    times side by side, or a bare gap band appears and the map jumps by P
+    when the nearest-copy choice flips. Drawing every visible copy makes
+    east/west scrolling cycle continuously at any zoom.
+
+    Args:
+        x: raw x from `hex_to_pixel` (already in [0, P)).
+        camera_x: `camera.target.x` — the world x at the camera's focus.
+        size, wrap_w: as everywhere else (hex outer radius, map column count).
+        view_half_width: half the visible world width, i.e.
+            `screen_w / (2 * camera.zoom)`. One hex width of margin is added
+            internally so tiles straddling the screen edge are not culled.
+
+    Returns:
+        list of x positions, nearest-first. Empty when the tile is off
+        screen entirely — callers may treat that as free culling.
+    """
+    period = wrap_period(size, wrap_w)
+    margin = _S3 * size
+    half = view_half_width + margin
+    k_lo = math.ceil((camera_x - half - x) / period)
+    k_hi = math.floor((camera_x + half - x) / period)
+    if k_hi - k_lo + 1 > MAX_WRAP_COPIES:
+        # Absurd zoom-out: fall back to the single nearest copy rather than
+        # emitting thousands of draws.
+        return [wrapped_draw_x(x, camera_x, size, wrap_w)]
+    copies = [x + k * period for k in range(k_lo, k_hi + 1)]
+    copies.sort(key=lambda cx: abs(cx - camera_x))
+    return copies
 
 
 # =====================================================================
@@ -413,7 +459,8 @@ def river_edge_endpoints(coords1, coords2, size, wrap_w):
     return (mx - px * half, my - py * half), (mx + px * half, my + py * half)
 
 
-def draw_river_edges(map_obj, size, wrap_w, color=RIVER_COLOR, thickness=3.0, camera_x=None):
+def draw_river_edges(map_obj, size, wrap_w, color=RIVER_COLOR, thickness=3.0,
+                     camera_x=None, view_half_width=None):
     """Draw every Map.rivers edge as a segment along the tiles' shared edge (§7.5).
 
     `camera_x`, if given (scrolling views only), additionally shifts each
@@ -421,13 +468,25 @@ def draw_river_edges(map_obj, size, wrap_w, color=RIVER_COLOR, thickness=3.0, ca
     rule wrapped_draw_x applies to tiles, so a river near the seam renders
     in the copy actually on screen. Painter/recorder (fully visible boards)
     call this with `camera_x=None`.
+
+    `view_half_width` (issue #52) switches to `wrap_copies_x`, drawing the
+    segment in EVERY visible copy — required for continuous cycling scroll,
+    and it must be passed wherever tiles are drawn that way, or rivers
+    vanish from every copy but one.
     """
     for coords1, coords2 in map_obj.rivers:
         (x1, y1), (x2, y2) = river_edge_endpoints(coords1, coords2, size, wrap_w)
-        if camera_x is not None:
-            shift = wrapped_draw_x(x1, camera_x, size, wrap_w) - x1
-            x1, x2 = x1 + shift, x2 + shift
-        rl.draw_line_ex(rl.Vector2(x1, y1), rl.Vector2(x2, y2), thickness, color)
+        if camera_x is None:
+            rl.draw_line_ex(rl.Vector2(x1, y1), rl.Vector2(x2, y2), thickness, color)
+            continue
+        if view_half_width is None:
+            shifts = [wrapped_draw_x(x1, camera_x, size, wrap_w) - x1]
+        else:
+            shifts = [cx - x1 for cx in
+                      wrap_copies_x(x1, camera_x, size, wrap_w, view_half_width)]
+        for shift in shifts:
+            rl.draw_line_ex(rl.Vector2(x1 + shift, y1),
+                            rl.Vector2(x2 + shift, y2), thickness, color)
 
 
 def load_sprites(sprite_files, art_dir):
