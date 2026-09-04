@@ -167,3 +167,17 @@ this boundary is visible at load time, not just here.
 - **Evaluation** (protocol v1, 200 games vs duel_25ch_1000ep): **109 / 70 / 21** (54.5% vs 35.0%; among decisive games 60.9%, p≈0.004) — **the ladder's first significant win**. Driven by the strong seat-1 agent (as A@seat1: 72/22; as A@seat0: 37/48). And the first game of the epoch to end before the cap: game 123 (seed 990062), **mutual annihilation draw at turn 227** — real combat to extinction. 199/200 still at cap; turtling dented, not broken
 - **Builds**: A 1521 items (Warrior 287, Settler 254, Horseman 245, Spearman 238, Archer 229, Catapult 189, Granary 79) vs baseline's 1262 (Settler 500) — more total production AND more military
 - **Stats**: `stats/baseline_baseline_net128x6_1000ep_1788368822.json` + timestamped `win_history`/`win_rate_plot`/`build_orders` + `stats/eval_duel_26ch_net128x6_1000ep_vs_duel_25ch_1000ep_1788369488.json`
+
+### duel_53ch_net128x6_1000ep.pth — the "kitchen-sink" run ⭐⭐ THE BREAKTHROUGH
+
+- **Naming**: 53ch = `FullStateEncoder` (Enhanced 25 + terrain block 27 + city-proximity 1), conv (128,)×6 (~950k params, radius 7)
+- **The stack**: reward table v2 + epsilon-decay 800 + terrain awareness + city-distance + max capacity — every measured or hypothesized ingredient at once (Erik's "what if we run one time with everything" direction, 2026-09-02). Single changed variable vs `duel_26ch_net128x6`: **the 27-channel terrain block**
+- **Config**: seed_base 390000 on Home Desktop; **19 skipped schedule seeds recorded machine-readably** (first run with the #44 hardening)
+- **Date**: 2026-09-02/03 on Home Desktop — **28h01m02s, 100.86 s/episode** (the 53ch encoder ~tripled the big net's per-episode cost — the argument for dilated convolutions instead of depth)
+- **Final win distribution**: P0=490, P1=408, draws=102 — late-training draws climb to 63/200 (mutual annihilation in self-play)
+- **Evaluation** (protocol v1, 200 games vs `duel_25ch_1000ep`): **122 / 25 / 53 — 83.0% of decisive games, z ≈ 8.0.** Both seats strong (71/16 and 51/9), unlike net128x6's one-sided asymmetry
+  - **56 of 200 games ended before the 250-turn cap** (vs 1 for the entire rest of the epoch), earliest at **turn 73**; mean length 235.1
+  - **6 outright eliminations, all won by this model** — the first non-draw eliminations of the v0.6 epoch; the other 50 early endings are mutual annihilations
+- **Build shift**: **Spearman 1153 of 2502 items (46%)** vs the baseline's 151 in the same games (baseline: Settler 473). Spearman is the strength-per-production optimum among cheap units (25 str / 50 prod, vs Warrior 20/40) — with terrain defense now visible in the state, the agent found the cheap-strong-defensive unit
+- **Stats**: `stats/baseline_baseline_net128x6_1000ep_1788471884.json` + timestamped `win_history`/`win_rate_plot`/`build_orders_1788471884.*` + `stats/eval_duel_53ch_net128x6_1000ep_vs_duel_25ch_1000ep_1788477191.json`
+- **Note**: this eval predates the `combat_stats` instrumentation (c3b3dec) — re-run pending for the cross-model statistics table
