@@ -104,6 +104,44 @@ not between competent ones. Second, `duel_26ch_net128x6`'s +2.4 z is a
 single 200-game measurement of a modest effect; it deserves a repeat before
 anything is built on it.
 
+## 4b. How much of this is noise? A caveat added 2026-09-04 evening
+
+Every number above is a single measurement of a single final checkpoint. To
+size the variance, the winning model's own mid-training checkpoints were
+evaluated the same way (200 games each against the frozen baseline):
+
+| checkpoint | wins / losses / draws | kills | own losses | cities founded |
+|---|---|---|---|---|
+| episode 300 | **166** / 30 / 4 | 146 | 182 | 85 |
+| episode 500 | **138** / 42 / 20 | 13 | 28 | 28 |
+| episode 700 | **149** / 42 / 9 | 93 | 90 | 75 |
+| episode 900 | **160** / 30 / 10 | 119 | 97 | 116 |
+| episode 1000 (the model reported above) | **172** / 22 / 6 | 69 | 169 | 92 |
+
+Two consequences, and neither is comfortable:
+
+**Most of the gain exists by episode 300.** 166 against 172 is inside the
+noise band for 200 games. Roughly twenty of the run's twenty-eight hours
+bought nothing measurable — which answers "should we train longer" with a
+fairly firm no, on this evidence.
+
+**The curve is not monotone, and the swings are behavioural, not just
+numerical.** Episode 500 records 13 kills and 28 cities founded; two hundred
+episodes earlier the same run recorded 146 and 85. The policy oscillates
+between qualitatively different strategies rather than converging on one.
+
+So **the final checkpoint is a lottery ticket**. Had this run stopped at 500
+we would have written up the terrain block as producing a passive
+138-win policy; at 300, as producing a bloodier 166-win one. Every
+single-point result in §3 inherits that variance — most importantly the
+`duel_26ch_net128x6` +2.4 z, which is exactly the size of swing this table
+shows a single run producing by chance.
+
+The methodological fixes are cheap and are recorded on #71: select the
+checkpoint by evaluation rather than by "it was last", report a curve rather
+than a point, and size the run-to-run variance before reading anything into
+a capacity sweep.
+
 ## 5. The bug that corrupted the first reading
 
 The first draft reported "56 games ended before the cap — warfare at last".
