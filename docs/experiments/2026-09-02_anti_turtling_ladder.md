@@ -88,10 +88,17 @@ never march them into contact. **Rung 6 is different in kind**: 46% of all
 production is Spearmen — the cheap strength-per-production optimum — and
 those armies fight.
 
-Also worth recording: in every game we probed through rung 5, *no player
-ever founded a second city* and *no unit ever died* in 250 turns. The score
-tiebreak (cities×10 + units) was therefore decided purely by unit count —
-the entire "game" being scored was a production race.
+A note on a claim that appeared in an earlier draft of this report, corrected
+2026-09-04: it said no player ever founded a second city and no unit ever
+died. **The evidence for that was three games** (indices 0, 2, 4) replayed
+headless from the rung-4 evaluation, where both players ended with one city
+and unit counts exactly equal to starting warriors plus builds. Three games
+of one model do not support a claim about the ladder, and Erik observed a
+second city being founded in a rung-5 replay. The honest statement is: in
+the small sample probed, expansion and combat were absent; the
+population-level numbers come from the instrumented evaluations (`kills`,
+`losses`, `cities_founded`, `cities_captured` per side, added 2026-09-03)
+and are reported in the cross-model statistics table.
 
 ## 5. Interpretation
 
