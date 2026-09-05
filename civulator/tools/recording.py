@@ -34,6 +34,7 @@ from ..game.unit import (
     ArcherUnit,
     CatapultUnit,
     HorsemanUnit,
+    SlingerUnit,
     SpearmanUnit,
     SwordsmanUnit,
     WarriorUnit,
@@ -45,6 +46,7 @@ HUMAN_PLAYER_INDEX = 0
 
 UNIT_CLASSES = {
     "Warrior": WarriorUnit,
+    "Slinger": SlingerUnit,
     "Archer": ArcherUnit,
     "Swordsman": SwordsmanUnit,
     "Spearman": SpearmanUnit,

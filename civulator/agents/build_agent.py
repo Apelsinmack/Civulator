@@ -12,26 +12,65 @@ from ..game.unit import Unit
 from ..game.city import City
 
 
-# Build options — index in this list = action index
+# Build options — index in this list = action index.
+#
+# Every entry is either a key of City.BUILDING_COSTS (a building) or a unit
+# type with complete stats in the six unit tables; tests/test_build_options.py
+# is the gate for that, and for the converse — a statted unit is either here or
+# named in game/unit.py's DEFERRED_BUILD_UNITS with a reason (issue #67).
+#
+# No availability gate beyond cost: research does not exist yet (#41/#76), so
+# every unit option is always a legal, state-changing action and the mask
+# invariant (CLAUDE.md) holds.
+#
+# Changing this list changes the BuildNetwork output width and therefore
+# invalidates previously saved build-agent weights.
 BUILD_OPTIONS = [
     "Warrior", "Spearman", "Archer", "Horseman", "Catapult",
-    "Settler", "Granary",
+    "Settler", "Granary", "Slinger", "Swordsman",
 ]
 NUM_BUILD_OPTIONS = len(BUILD_OPTIONS)
 
-# Number of extra channels added to combat state for build decisions
-# 6 turns-to-complete + current_production + progress + city_marker = 9
-NUM_BUILD_CHANNELS = 9
+# Extra channels added to the combat state for build decisions: one
+# turns-to-complete channel per build option, plus current-production progress
+# and the city marker. Derived from BUILD_OPTIONS rather than hardcoded, so
+# adding an option cannot silently leave it without an input channel.
+NUM_BUILD_CHANNELS = NUM_BUILD_OPTIONS + 2
+
+
+def options_for_width(num_options):
+    """The build-option list a network of this output width plays.
+
+    New options are only ever APPENDED to BUILD_OPTIONS, so index k means the
+    same thing it always did and the first `num_options` entries are exactly
+    the list a narrower (older) agent was trained on. That is what makes a
+    pre-existing weights file still evaluable after a rule change adds an
+    option: it keeps playing its own 7-option policy rather than being padded
+    with fabricated Q-values for options it never saw.
+    """
+    if not 1 <= num_options <= NUM_BUILD_OPTIONS:
+        raise ValueError(
+            f"num_options={num_options} is outside 1..{NUM_BUILD_OPTIONS}; a "
+            "wider payload than BUILD_OPTIONS means options were removed or "
+            "reordered, which breaks the append-only index contract"
+        )
+    return BUILD_OPTIONS[:num_options]
+
+
+def build_channels_for_width(num_options):
+    """Extra state channels a build agent of this output width consumes."""
+    return num_options + 2
 
 
 class BuildNetwork(nn.Module):
     """Small CNN that outputs Q-values over build options.
 
     Input: combat state + build info channels + city marker = [batch, d, n, m]
-    Output: [batch, NUM_BUILD_OPTIONS]
+    Output: [batch, num_options]
     """
 
-    def __init__(self, n, m, d, kernel_size=3, conv_channels=(16, 32)):
+    def __init__(self, n, m, d, kernel_size=3, conv_channels=(16, 32),
+                 num_options=NUM_BUILD_OPTIONS):
         super().__init__()
 
         self.padding_size = kernel_size // 2
@@ -51,7 +90,8 @@ class BuildNetwork(nn.Module):
         conv2_out_m = conv1_out_m - kernel_size + 1
         flattened = c2 * conv2_out_n * conv2_out_m
 
-        self.fc = nn.Linear(flattened, NUM_BUILD_OPTIONS)
+        self.num_options = num_options
+        self.fc = nn.Linear(flattened, num_options)
 
     def forward(self, state):
         padded = horizontal_wrap_padding(state, self.padding_size)
@@ -61,82 +101,91 @@ class BuildNetwork(nn.Module):
         return self.fc(x)
 
 
-def encode_build_state(combat_state, city, game_env):
+def encode_build_state(combat_state, city, game_env, options=None):
     """Add build-info channels and city marker to the combat state tensor.
 
     Args:
         combat_state: [d, n, m] tensor from any StateEncoder
         city: City instance making the build decision
         game_env: GameEnvironment
+        options: build-option list to encode. Defaults to BUILD_OPTIONS; a
+            legacy agent loaded from a narrower checkpoint passes its own
+            prefix (see options_for_width).
 
     Returns:
-        [d + 9, n, m] tensor
+        [d + len(options) + 2, n, m] tensor
     """
+    if options is None:
+        options = BUILD_OPTIONS
+    num_options = len(options)
+
     d, n, m = combat_state.shape
     device = combat_state.device
 
-    extra = torch.zeros(NUM_BUILD_CHANNELS, n, m, device=device)
+    extra = torch.zeros(build_channels_for_width(num_options), n, m, device=device)
 
     ci, cj = city.coordinates
     prod_per_turn = max(1, city.calculate_production(game_env))
     max_turns_norm = 50.0
 
-    # Channels 0-4: turns to complete each unit type
-    for idx, option in enumerate(BUILD_OPTIONS[:5]):
-        cost = Unit.PRODUCTION_COST.get(option, 40)
+    # Channels 0..num_options-1: turns to complete each build option, in
+    # BUILD_OPTIONS order. Buildings and units are looked up in their own
+    # cost table; the current stockpile is subtracted either way.
+    for idx, option in enumerate(options):
+        if option in City.BUILDING_COSTS:
+            cost = City.BUILDING_COSTS[option]
+        else:
+            cost = Unit.PRODUCTION_COST.get(option, 40)
         # Subtract current stockpile if already building this type
         effective_cost = max(0, cost - city.production)
         turns = effective_cost / prod_per_turn
         extra[idx, ci, cj] = min(turns, max_turns_norm) / max_turns_norm
 
-    # Channel 5: turns to settler
-    settler_cost = Unit.PRODUCTION_COST.get("Settler", 120)
-    effective_cost = max(0, settler_cost - city.production)
-    turns = effective_cost / prod_per_turn
-    extra[5, ci, cj] = min(turns, max_turns_norm) / max_turns_norm
-
-    # Channel 6: turns to granary
-    granary_cost = City.BUILDING_COSTS.get("Granary", 60)
-    effective_cost = max(0, granary_cost - city.production)
-    turns = effective_cost / prod_per_turn
-    extra[6, ci, cj] = min(turns, max_turns_norm) / max_turns_norm
-
-    # Channel 7: current production progress (0→1)
+    # Penultimate channel: current production progress (0→1)
     if city.current_production:
         if city.current_production["type"] == "unit":
             total_cost = city.get_unit_cost(city.current_production["unit_type"])
         else:
             total_cost = city.get_building_cost(city.current_production["building_type"])
-        extra[7, ci, cj] = min(city.production / max(1, total_cost), 1.0)
+        extra[num_options, ci, cj] = min(city.production / max(1, total_cost), 1.0)
 
-    # Channel 8: city marker (1.0 at this city)
-    extra[8, ci, cj] = 1.0
+    # Last channel: city marker (1.0 at this city)
+    extra[num_options + 1, ci, cj] = 1.0
 
     return torch.cat([combat_state, extra], dim=0)
 
 
-def get_valid_build_mask(city, device=None):
+def get_valid_build_mask(city, device=None, options=None):
     """Which build options are valid for this city.
 
+    Driven by BUILD_OPTIONS rather than by hardcoded indices, so a new option
+    is masked by the rule that applies to it and never by position:
+
+    - buildings (keys of City.BUILDING_COSTS): valid unless already built —
+      re-producing one it owns could not change the city's state (CLAUDE.md's
+      mask invariant, #51)
+    - Settler: requires population >= 3
+    - every other unit: always valid, there is no research gate yet (#41/#76)
+
     Returns:
-        [NUM_BUILD_OPTIONS] tensor
+        [len(options)] tensor, defaulting to NUM_BUILD_OPTIONS wide
     """
     if device is None:
         device = torch.device("cpu")
+    if options is None:
+        options = BUILD_OPTIONS
 
-    mask = torch.zeros(NUM_BUILD_OPTIONS, device=device)
+    mask = torch.zeros(len(options), device=device)
 
-    # Unit types: always valid
-    for i in range(5):  # Warrior through Catapult
-        mask[i] = 1.0
-
-    # Settler: requires pop >= 3
-    if city.population >= 3:
-        mask[5] = 1.0
-
-    # Granary: only if not already built
-    if "Granary" not in city.buildings:
-        mask[6] = 1.0
+    for idx, option in enumerate(options):
+        if option in City.BUILDING_COSTS:
+            valid = option not in city.buildings
+        elif option == "Settler":
+            valid = city.population >= 3
+        else:
+            valid = True
+        if valid:
+            mask[idx] = 1.0
 
     return mask
 
@@ -149,15 +198,24 @@ class BuildAgent:
     """
 
     def __init__(self, n, m, d_combat, memory_size=5000, gamma=0.95,
-                 learning_rate=0.001):
+                 learning_rate=0.001, num_options=NUM_BUILD_OPTIONS):
+        """num_options: how many BUILD_OPTIONS entries this agent plays.
+
+        Defaults to all of them. A checkpoint saved before a rule change added
+        an option is loaded with ITS width (scripts/evaluate.py infers it from
+        the saved fc layer), so an archived run keeps evaluating the policy it
+        actually learned instead of failing to load — see options_for_width.
+        """
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.n = n
         self.m = m
         self.d_combat = d_combat
         self.gamma = gamma
+        self.options = options_for_width(num_options)
+        self.num_options = num_options
 
-        d_build = d_combat + NUM_BUILD_CHANNELS
-        self.network = BuildNetwork(n, m, d_build).to(self.device)
+        d_build = d_combat + build_channels_for_width(num_options)
+        self.network = BuildNetwork(n, m, d_build, num_options=num_options).to(self.device)
         self.optimizer = torch.optim.Adam(self.network.parameters(), lr=learning_rate)
         self.criterion = nn.MSELoss()
         self.memory = ReplayMemory(memory_size)
@@ -175,10 +233,11 @@ class BuildAgent:
             epsilon: Exploration rate
 
         Returns:
-            int: index into BUILD_OPTIONS
+            int: index into BUILD_OPTIONS (== self.options, which is a prefix
+            of it, so the index means the same thing at any width)
         """
-        build_state = encode_build_state(combat_state, city, game_env)
-        mask = get_valid_build_mask(city, self.device)
+        build_state = encode_build_state(combat_state, city, game_env, self.options)
+        mask = get_valid_build_mask(city, self.device, self.options)
 
         if random.random() < epsilon:
             valid = torch.where(mask > 0)[0].tolist()
@@ -208,7 +267,7 @@ class BuildAgent:
             # Check if this city still exists
             if not done and city in game_env.current_player.cities:
                 next_build_state = encode_build_state(
-                    next_combat_state, city, game_env
+                    next_combat_state, city, game_env, self.options
                 )
             else:
                 next_build_state = build_state.clone().zero_()

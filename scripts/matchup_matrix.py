@@ -145,20 +145,26 @@ from civulator.game.unit import (
     ArcherUnit,
     CatapultUnit,
     HorsemanUnit,
+    SlingerUnit,
     SpearmanUnit,
     SwordsmanUnit,
     WarriorUnit,
 )
 from civulator.meta import build_manifest
-from civulator.unit_model import BASE_RANGED_STRENGTH, PRODUCTION_COST
+from civulator.unit_model import BASE_RANGED_STRENGTH, PRODUCTION_COST, RANGE_VALUES
 
 # --- Headline scope (issue #65) ---------------------------------------------
 
+# The #65 headline scope. The Slinger (#67) is deliberately NOT here: which
+# units the headline matrix measures is a scientific-scope decision, not a
+# consequence of a unit existing. It is in UNIT_CLASSES below, so
+# `--units Slinger ...` measures it today.
 COMBAT_UNITS = ["Warrior", "Archer", "Swordsman", "Spearman", "Horseman", "Catapult"]
 EXCLUDED_CIVILIANS = ["Settler", "Worker"]  # combat_strength 0 -- see module docstring
 
 UNIT_CLASSES = {
     "Warrior": WarriorUnit,
+    "Slinger": SlingerUnit,
     "Archer": ArcherUnit,
     "Swordsman": SwordsmanUnit,
     "Spearman": SpearmanUnit,
@@ -230,7 +236,17 @@ def _is_ranged_type(unit_type):
 
 
 def _positions_for_attacker(attacker_type):
-    return (ATK_RANGED, DEF_RANGED) if _is_ranged_type(attacker_type) else (ATK_MELEE, DEF_MELEE)
+    """Where to stand the pair so the attacker can actually attack.
+
+    The ranged pair sits at hex distance 2, which only suits a shooter whose
+    range reaches that far. The Slinger (#67) is ranged with range 1: placed
+    at distance 2 it would record a duel it could never fire in, so it duels
+    from the distance-1 pair — still a ranged attack (no counterattack),
+    just at its own range.
+    """
+    if _is_ranged_type(attacker_type) and RANGE_VALUES.get(attacker_type, 1) >= 2:
+        return ATK_RANGED, DEF_RANGED
+    return ATK_MELEE, DEF_MELEE
 
 
 def _place(env, unit_cls, player_index, coords):

@@ -45,6 +45,7 @@ NUM_UNIT_SLOTS = 4  # Military, Civilian, Siege Support, Great Person
 # trained .pth.
 UNIT_SLOT = {
     "Warrior": 0,      # military
+    "Slinger": 0,
     "Archer": 0,
     "Swordsman": 0,
     "Spearman": 0,
@@ -66,6 +67,7 @@ UNIT_SLOT = {
 # shape into config would commit to the wrong shape.
 MOVEMENT_DOMAIN = {
     "Warrior": "land",
+    "Slinger": "land",
     "Archer": "land",
     "Swordsman": "land",
     "Spearman": "land",
@@ -75,6 +77,21 @@ MOVEMENT_DOMAIN = {
     "Catapult": "land",
     "BatteringRam": "land",
     "SiegeTower": "land",
+}
+
+
+# Unit types that have complete stats but are deliberately NOT in
+# agents/build_agent.py's BUILD_OPTIONS (issue #67). Statted-but-unbuildable
+# is exactly the failure this registry exists to make explicit rather than
+# implicit: the Swordsman sat in the tables unbuildable for an entire epoch
+# because nothing said whether that was a decision or an oversight.
+#
+# tests/test_build_options.py asserts the partition is total: every statted
+# unit type is either a BUILD_OPTIONS entry or named here.
+DEFERRED_BUILD_UNITS = {
+    # Worker: tile improvements exist (WorkerUnit.build_improvement) but no
+    # agent has an improvement action, so producing one could not pay off.
+    "Worker",
 }
 
 
@@ -432,14 +449,19 @@ class WarriorUnit(Unit):
         super().__init__(player, coordinates, "Warrior")
 
 
-class ArcherUnit(Unit):
-    """Basic ranged combat unit."""
+class RangedUnit(Unit):
+    """A unit that attacks at range instead of meleeing.
 
-    def __init__(self, player, coordinates):
-        super().__init__(player, coordinates, "Archer")
+    The one implementation of "shoot if in range and in sight" — the Archer,
+    the Slinger (#67) and the Catapult all resolve their attack through this
+    method, so a change to ranged attack resolution cannot land on one of
+    them and miss the others.
+
+    Range and line of sight are read per unit type, so a range-1 shooter (the
+    Slinger) and a range-2 one (Archer, Catapult) share the same code path.
+    """
 
     def attack(self, target, game_env):
-        """Archers perform ranged attacks."""
         distance = game_env.map.distance_function(self.coordinates, target.coordinates)
         if distance > self.get_range():
             return 0, 0, False, False
@@ -449,6 +471,25 @@ class ArcherUnit(Unit):
             return 0, 0, False, False
 
         return super().attack(target, game_env, is_ranged=True)
+
+
+class SlingerUnit(RangedUnit):
+    """Ancient-era ranged starter (issue #67).
+
+    Civ 6's Slinger: strength 5, ranged 15, range 1, movement 2, 35
+    production — weaker and shorter-ranged than the Archer it upgrades into,
+    but the cheapest way to put ranged damage on the board.
+    """
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Slinger")
+
+
+class ArcherUnit(RangedUnit):
+    """Basic ranged combat unit."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Archer")
 
 
 class SwordsmanUnit(Unit):
@@ -472,23 +513,11 @@ class HorsemanUnit(Unit):
         super().__init__(player, coordinates, "Horseman")
 
 
-class CatapultUnit(Unit):
+class CatapultUnit(RangedUnit):
     """Siege unit effective against cities."""
 
     def __init__(self, player, coordinates):
         super().__init__(player, coordinates, "Catapult")
-
-    def attack(self, target, game_env):
-        """Catapults perform bombard attacks."""
-        distance = game_env.map.distance_function(self.coordinates, target.coordinates)
-        if distance > self.get_range():
-            return 0, 0, False, False
-
-        has_los = game_env.check_line_of_sight(self.coordinates, target.coordinates)
-        if not has_los and distance > 1:
-            return 0, 0, False, False
-
-        return super().attack(target, game_env, is_ranged=True)
 
 
 class SettlerUnit(Unit):

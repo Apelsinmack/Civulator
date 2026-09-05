@@ -5,6 +5,96 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
+## Unreleased
+
+Version number deliberately not bumped: the next number is an open question
+(#83 — "v0.2.0" was said while the code is at 0.6.2). Everything below is a
+**rule change**, not a refactor.
+
+### Slinger added, Swordsman made buildable (#67)
+
+**Rule change, effect NOT yet measured.** Two holes in the build system, one
+of which had been silently costing an entire training epoch.
+
+**1. The Swordsman was unbuildable.** It carried a complete stat line — 35
+combat strength, 90 production, movement 2, military slot, the +5 vs Spearman
+class bonus — and was absent from `BUILD_OPTIONS`. Derived from the tables it
+is the strongest melee unit in the game, and no agent could ever produce it;
+it appears in no build-mix statistic because it could not be built. It is now
+a build option.
+
+**2. The Slinger did not exist.** Civ 6's Ancient-era ranged starter is now a
+unit type, present in all six unit tables, in `_create_unit`, in the encoder's
+`CLASS_INDEX`, and in `BUILD_OPTIONS`.
+
+| stat | Slinger | (Archer, for comparison) |
+|---|---|---|
+| combat strength | 5 | 15 |
+| ranged strength | 15 | 25 |
+| range | **1** | 2 |
+| movement | 2 | 2 |
+| production | 35 | 60 |
+
+**Source, and where the sources conflict.** Values are Civ 6 Ancient-era from
+the Civilization Wiki
+([Slinger (Civ6)](https://civilization.fandom.com/wiki/Slinger_(Civ6))): 5 / 15
+/ range 1 / movement 2 / 35 production. The **Civ 6 Analyst**
+([well-of-souls.com](https://www.well-of-souls.com/civ/civ6_units.html)) quotes
+production on a different, smaller scale — Slinger 25, Archer 33 — which is not
+comparable to this repo's costs (Warrior 40, Archer 60, Catapult 120 are all on
+the wiki scale). A third figure, 17, appears in web summaries of a different
+wiki. We took the wiki scale, because it is the one every existing unit here is
+already on; mixing scales would have made the Slinger cheap for the wrong
+reason. This is the same honesty the v0.6.2 entry applied to the Archer's cost.
+
+**Range 1 is the point of the unit.** The Slinger shoots, so it takes no
+counterattack — but only into adjacent tiles. It is strictly the cheap, weak
+predecessor of the Archer: cheaper, weaker, shorter-ranged.
+
+**Ungated, deliberately.** Neither unit has an availability gate beyond
+production cost. Research/tech gating is being designed separately (#41/#76).
+An ungated unit is a genuinely state-changing action, so CLAUDE.md's mask
+invariant holds: `get_valid_build_mask` never offers an option that cannot
+change the city's state. In Civ 6 the Swordsman is a *Classical*-era unit
+behind Iron Working; admitting it with no tech tree in front of it flattens the
+Ancient-era counter web, and that is a known, accepted consequence — it is the
+natural answer to the Spearman dominance measured in #60 (48% of 2674 builds,
+`stats/eval_duel_53ch_net128x6_1000ep_vs_duel_25ch_1000ep_1788499820.json`)
+and it was unreachable.
+
+**What this is supposed to produce.** Derived from the tables and the damage
+formula, not measured: the Swordsman beats every other unit except an even
+fight against the Horseman, so the build mix should stop being 48% Spearman.
+The Slinger is the cheapest way onto the board with ranged damage (35 vs the
+Warrior's 40) at the price of needing to stand adjacent. Whether either changes
+the measured build mix is the open question; nothing here should be reported as
+an improvement until a run answers it.
+
+**Archived weights stay loadable.** `BUILD_OPTIONS` grew 7 → 9, which changes
+the `BuildNetwork` output width and input depth, so a checkpoint saved before
+this change no longer matches a freshly built agent. Rather than brick every
+artifact in `weights/trained/`, options are **append-only** (index k always
+means the same option) and `scripts/evaluate.py` now infers the build head's
+width from the saved `fc` layer, exactly as it already inferred `conv_channels`
+for the combat net. A pre-#67 run therefore keeps playing its own seven-option
+policy instead of being padded with fabricated Q-values for options it never
+saw. `test_evaluate.py`'s end-to-end load of `weights/trained/duel_25ch_1000ep.pth`
+(the #39 frozen baseline) is the gate.
+
+**Not comparable across the change**, in the v0.6.2 sense: policies trained
+against a seven-option build space are tuned to a game that no longer exists.
+They still load and run, which is what makes a before/after possible.
+
+**Deliberately left out**: the Slinger is not in `scripts/matchup_matrix.py`'s
+`COMBAT_UNITS` headline scope (it is in that script's `UNIT_CLASSES`, so
+`--units Slinger ...` measures it today). Which units the #65 headline matrix
+covers is a scientific-scope decision, not a consequence of a unit existing.
+The harness did need one fix to measure it at all: it placed every ranged
+attacker at hex distance 2, where a range-1 shooter would record a duel it
+could never fire in.
+
+---
+
 ## v0.6.2 — Civ 6 Ancient-era combat alignment (2026-09-04)
 
 **Rule change, effect NOT yet measured.** The unit counter web existed in code

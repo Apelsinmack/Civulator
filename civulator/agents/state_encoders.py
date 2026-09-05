@@ -127,9 +127,14 @@ class EnhancedStateEncoder(StateEncoder):
         pre-fog encoder (depth 25).
     """
 
+    # Class channel per unit type. Units that share a battlefield role share a
+    # channel — the Swordsman rides in the Warrior's melee channel and the
+    # Slinger (#67) in the Archer's ranged channel — because a new index would
+    # change the channel count and invalidate every trained .pth. -1 means "no
+    # class channel" (civilians).
     CLASS_INDEX = {
         "Warrior": 0, "Swordsman": 0, "Spearman": 1,
-        "Archer": 2, "Horseman": 3, "Catapult": 4,
+        "Slinger": 2, "Archer": 2, "Horseman": 3, "Catapult": 4,
         "Settler": -1, "Worker": -1,
     }
 

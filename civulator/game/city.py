@@ -3,7 +3,7 @@
 from ..terrain_model import can_enter
 from ..unit_model import CITY_DEFENSE_STRENGTH, CITY_HEALTH
 from .unit import (
-    Unit, WarriorUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
+    Unit, WarriorUnit, SlingerUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
     HorsemanUnit, CatapultUnit, SettlerUnit, WorkerUnit, movement_domain,
 )
 
@@ -237,6 +237,7 @@ def _create_unit(unit_type, player, coordinates):
     """Factory function to create the appropriate unit subclass."""
     unit_classes = {
         "Warrior": WarriorUnit,
+        "Slinger": SlingerUnit,
         "Archer": ArcherUnit,
         "Swordsman": SwordsmanUnit,
         "Spearman": SpearmanUnit,

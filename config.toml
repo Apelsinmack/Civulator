@@ -495,6 +495,16 @@ ranged_strength = 0
 range = 1
 production_cost = 40
 
+# Slinger: the Civ 6 Ancient-era ranged starter (issue #67). Range 1 —
+# it shoots only into adjacent tiles, unlike the Archer's 2. Ungated
+# deliberately: research does not exist yet (#41/#76).
+[units.Slinger]
+max_movement = 2
+combat_strength = 5
+ranged_strength = 15
+range = 1
+production_cost = 35
+
 [units.Archer]
 max_movement = 2
 combat_strength = 15
