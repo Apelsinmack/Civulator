@@ -464,6 +464,14 @@ def render_report(result):
             f"(terrain={cond['terrain']}, fortified={cond['fortified']}, damaged={cond['damaged']})"
         )
         out.append("")
+        out.append("### Mean damage dealt per attack")
+        out.append(
+            "Ranged attackers (no counterattack) have no exchange ratio, so this is the "
+            "only grid that describes them -- read it alongside the ratio grid below."
+        )
+        out.append("")
+        out.append(render_grid(result["units"], cond["pairings"], "mean_damage_dealt"))
+        out.append("")
         out.append("### Exchange ratio (mean damage dealt / mean damage taken)")
         out.append(render_grid(result["units"], cond["pairings"], "exchange_ratio"))
         out.append("")
