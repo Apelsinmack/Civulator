@@ -180,6 +180,37 @@ this boundary is visible at load time, not just here.
   - **6 outright eliminations, all won by this model** — the first non-draw eliminations of the v0.6 epoch; the other 50 early endings are mutual annihilations
 - **Build shift**: **Spearman 1153 of 2502 items (46%)** vs the baseline's 151 in the same games (baseline: Settler 473). Spearman is the strength-per-production optimum among cheap units (25 str / 50 prod, vs Warrior 20/40) — with terrain defense now visible in the state, the agent found the cheap-strong-defensive unit
 - **Stats**: `stats/baseline_baseline_net128x6_1000ep_1788471884.json` + timestamped `win_history`/`win_rate_plot`/`build_orders_1788471884.*` + `stats/eval_duel_53ch_net128x6_1000ep_vs_duel_25ch_1000ep_1788477191.json`
+
+### duel_54ch_settle_1000ep.pth — settle-site channel (#8), and the first run under v0.6.2
+
+- **Naming**: 54ch = `SettleSiteStateEncoder` (the 53ch `full` stack + one channel marking every tile where a city may legally be founded, #8); conv (128,)×6
+- **Date**: 2026-09-04 21:39 → 2026-09-05 12:09 on Home Desktop — 14h29m42s, **52.18 s/episode** (against the 53ch run's 100.86 for a model with one *more* channel; the #51 no-op-action fix roughly halved training cost). `truncated_episodes: 0` — the livelock is gone
+- **Final win distribution**: P0=302, P1=674, draws=24 — the largest seat asymmetry recorded
+- **Evaluation** (protocol v1, 200 games vs `duel_25ch_1000ep`, `stats/eval_duel_54ch_settle_1000ep_vs_duel_25ch_1000ep_1788604215.json`): **120 / 67 / 13 — 0.642 of decisive games (n=187, z ≈ 3.9)**, zero truncations. Seat-split is extreme: as seat 1 it wins 84/14, as seat 0 it *loses* 36/53
+- **Behaviour**: 57 cities founded, 5 captured, 11 kills, 15 losses (baseline: 1 city founded, 0 captured)
+
+> **⚠ THREE CONFOUNDS — this run does not measure the settle channel.** Stated
+> here rather than left for a reader to reconstruct:
+>
+> 1. **Two variables changed** against `duel_53ch_net128x6`: the settle channel
+>    *and* the v0.6.2 combat rebalance, whose constants were sitting
+>    uncommitted in the working tree when the run launched.
+> 2. **Rule-familiarity asymmetry** (#78): it trained under v0.6.2 and is
+>    evaluated under v0.6.2, while the frozen baseline trained under
+>    pre-rebalance rules. Some of the margin is that advantage, not policy.
+> 3. **Untrustworthy embedded manifest**: the run predates the #75 fix, so its
+>    manifest records a save-time commit and no dirty flag. The true launch
+>    state was **HEAD d3b8c33 with a dirty tree** (`civulator/game/unit.py`
+>    carrying the v0.6.2 constants, `__init__.py` at 0.6.2).
+>
+> Against the 53ch model's 0.887 it looks clearly weaker, and below even the
+> weakest checkpoint of that run (0.767 at episode 500) — but the checkpoint
+> curve showed swings of that size within a single run, so no causal claim
+> about the settle channel is available from one point. A clean test needs a
+> 53ch control trained under v0.6.2 (~13h at the new speed).
+
+- **What it does answer**: v0.6.2's CHANGELOG said "Measured effect: pending… whether the rebalance moves that mix is the open question." It moves it decisively. **Spearman 1290 → 187 builds; Horseman 320 → 750** — the agent abandoned the unit whose production cost rose 50→65 and switched to cavalry. A state channel about city sites is not a plausible cause of a unit-cost-driven build flip, so this is attributable to the rebalance with reasonable confidence.
+- **Stats**: `stats/baseline_baseline_settle_1000ep_1788602958.json` + timestamped `win_history`/`win_rate_plot`/`build_orders`
 - **Re-evaluated 2026-09-04 after the #51 livelock fix** (`stats/eval_duel_53ch_net128x6_1000ep_vs_duel_25ch_1000ep_1788499820.json`, same protocol v1 settings): **172 / 22 / 6, zero truncated games, 88.7% of decisive games (n=194)**. The pre-fix run above lost ~50 games to livelocks scored as draws; both readings are kept, since the pre-fix numbers are what the pre-fix code produced.
   - 13 games ended before the cap (earliest turn 57); mean length 245.4
   - **Expansion, not conquest, is how it wins**: cities founded **92** vs the baseline's **0** (in the same 200 games, while the baseline produced 500 Settlers), cities captured 13 vs 0, enemy civilians captured 53 vs 0. It *loses* the unit exchange — 69 kills against 169 losses — and wins anyway, because a city is worth ten units in the turn-cap score
