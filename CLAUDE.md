@@ -1,6 +1,6 @@
 # Civulator - Project CLAUDE.md
 
-> **Last updated**: 2026-09-05 — canonical-systems rows name seams, not instances (see the note under the table); #64 combat/unit constants moved to `config.toml` (`civulator/unit_model.py`), bit-identical. Prior: 2026-08-26 — #42 mask vectorization + #40 terrain-aware encoder (52ch) with encoder registry. Encoder spec: `docs/terrain_encoder_design.md`.
+> **Last updated**: 2026-09-05 — #65 matchup-matrix harness (`scripts/matchup_matrix.py`): measures every unit pairing through the real engine instead of deriving it from constants; new "Rules measurement" row contrasts it with the Evaluation harness row. Prior: 2026-09-05 — canonical-systems rows name seams, not instances (see the note under the table); #64 combat/unit constants moved to `config.toml` (`civulator/unit_model.py`), bit-identical. Prior: 2026-08-26 — #42 mask vectorization + #40 terrain-aware encoder (52ch) with encoder registry. Encoder spec: `docs/terrain_encoder_design.md`.
 
 ## What Is This?
 
@@ -59,6 +59,7 @@ One line per system built for reuse. If what you need is here, use it; if it alm
 | Artifact manifests | `civulator/meta.py` (`build_manifest` / `check_version` / `save_weights` / `load_weights`) | Everyone saving or loading weights/scenarios/stats embeds and reads manifests through this module; every scenario/recording loader calls `check_version` and rebuilds worlds from the manifest's pinned mapgen params |
 | Combat-training tools | Painter: `scripts/scenario_painter.py`. Recorder: `scripts/order_recorder.py` on `civulator/tools/recording.py` (`RecordingSession`) | The only authoring path for scenarios and demonstrations — recorded data stays in the agent's exact action space. Extend these; never build a second editor/recorder |
 | Evaluation harness | `scripts/evaluate.py` (protocol v1 — ratification pending; seeded paired-sides head-to-head, per-seat weights, own encoder per side) | The only way to measure agent-vs-agent strength in the v0.6 epoch; `tournament.py`'s play_match is pre-0.6 legacy. Extend this; never write a second eval loop |
+| Rules measurement | `scripts/matchup_matrix.py` (issue #65; `GameEnvironment._execute_attack`, no agent/policy/episode anywhere in it) | The only way to measure what the COMBAT RULES themselves do — every ordered unit pairing, one attack exchange at a time. Contrast with the Evaluation harness row above, which measures AGENTS playing full games: that seam answers "which trained policy is stronger", this one answers "what does a Warrior vs. a Spearman actually do". Extend this for a new unit/condition; never give `evaluate.py` a per-attack rules mode or this script a policy/turn loop — they must never merge |
 
 ## Tech stack
 
