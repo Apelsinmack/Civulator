@@ -21,7 +21,8 @@ Config schema (config.toml):
     ...
 
 This module is the only interpreter of `[units.*]` / `[combat]` / `[city]`
-health+defense: civulator/game/unit.py and civulator/game/city.py import
+health+defense / `[buildings.*]`: civulator/game/unit.py and
+civulator/game/city.py import
 from it and must not read those CFG tables directly, and no new hardcoded
 combat number should appear anywhere else (CLAUDE.md canonical-systems
 table). `NUM_UNIT_SLOTS`/`UNIT_SLOT` and `MOVEMENT_DOMAIN` are deliberately
@@ -47,6 +48,13 @@ BASE_RANGED_STRENGTH = {name: table["ranged_strength"] for name, table in _UNITS
 RANGE_VALUES = {name: table["range"] for name, table in _UNITS_CFG.items()}
 PRODUCTION_COST = {name: table["production_cost"] for name, table in _UNITS_CFG.items()}
 
+# Unit types in the siege class (issue #66). Optional `siege_class` key in a
+# `[units.*]` table; absent means false. The siege class is exempt from
+# RANGED_CITY_PENALTY below — breaking fortifications is what the class is for.
+SIEGE_CLASS = frozenset(
+    name for name, table in _UNITS_CFG.items() if table.get("siege_class", False)
+)
+
 # --- Combat formula / modifier constants (get_combat_strength, get_ranged_strength,
 # calculate_damage, heal — game/unit.py) ---
 
@@ -62,8 +70,27 @@ DAMAGE_ROLL_MIN = _COMBAT_CFG["damage_roll_min"]
 DAMAGE_ROLL_MAX = _COMBAT_CFG["damage_roll_max"]
 HEAL_FORTIFIED = _COMBAT_CFG["heal_fortified"]
 HEAL_NORMAL = _COMBAT_CFG["heal_normal"]
+# Per flanking unit adjacent to the defender (issue #59); 0 disables the rule.
+FLANKING_BONUS = _COMBAT_CFG["flanking_bonus"]
 
 # --- City combat numbers (game/city.py City.__init__) ---
 
 CITY_HEALTH = _CITY_CFG["health"]
 CITY_DEFENSE_STRENGTH = _CITY_CFG["defense_strength"]
+
+# --- Buildings (issue #7) ---
+#
+# `City.BUILDING_COSTS` is an alias of BUILDING_COSTS below and
+# `City.get_combat_strength` sums BUILDING_DEFENSE_BONUS over the buildings a
+# city owns, so a building's price and its defensive effect are one entry in
+# config.toml rather than a cost dict in city.py and a chain of `if building ==
+# ...` literals a few lines under it.
+
+_BUILDINGS_CFG = CFG.get("buildings", {})
+
+BUILDING_COSTS = {name: table["production_cost"] for name, table in _BUILDINGS_CFG.items()}
+BUILDING_DEFENSE_BONUS = {
+    name: table["defense_bonus"]
+    for name, table in _BUILDINGS_CFG.items()
+    if table.get("defense_bonus")
+}

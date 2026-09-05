@@ -5,6 +5,306 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
+## Unreleased
+
+Version number deliberately not bumped: the next number is an open question
+(#83 — "v0.2.0" was said while the code is at 0.6.2). Everything below is a
+**rule change**, not a refactor.
+
+### Siege vs cities: the siege class is exempt from the flat penalty; the two support units get stats (#66)
+
+**Rule change, effect NOT yet measured.** Erik, 2026-09-04: *"Catapults are
+good against city walls etc."* They were not — the code penalised them.
+
+`get_ranged_strength` subtracted a flat 17 from **every** ranged unit attacking
+a city, the siege unit included. That penalty is a stand-in for a wall model we
+have not built, and Civ 6 does the opposite of what it did: ordinary ranged
+units do half damage to walls and **the siege class does full damage** — that
+is the class's entire identity
+([City combat (Civ6)](https://civilization.fandom.com/wiki/City_combat_(Civ6))).
+The `-17` was evidently tuned against our old Catapult ranged strength of 45,
+and v0.6.2's correction to Civ 6's 35 left it bombarding from a deficit.
+
+**The siege class is now exempt from the penalty.** Membership is declared per
+unit type — `siege_class = true` in `config.toml` `[units.Catapult]` — so a
+second siege unit is a config line, not a name added to an `if`. Non-siege
+ranged units still pay the 17.
+
+**Derived effect** (shots to raze a 200 HP city, mean roll — derivation, not
+measurement; city defence 20, or 50 with #7's Walls):
+
+| attacker | vs bare city | vs walled city |
+|---|---|---|
+| Catapult, before | 27.7 dmg / 7.2 shots | 8.3 dmg / 24.0 shots |
+| Catapult, **now** | **54.7 dmg / 3.7 shots** | **16.5 dmg / 12.1 shots** |
+| Archer (unchanged) | 18.6 dmg / 10.8 shots | 5.6 dmg / 35.8 shots |
+
+The Catapult goes from 1.5x the Archer's damage against a bare city to 2.9x,
+and walls still blunt it — the exemption is an advantage, not immunity.
+
+**BatteringRam and SiegeTower have stats.** Both had occupied `UNIT_SLOT` 2
+since the stacking design landed and appeared in no other table: names with a
+slot and nothing else. They now have complete entries in all six unit tables,
+a `SiegeSupportUnit` class, a `_create_unit` entry, and a `CLASS_INDEX` of -1.
+
+| unit | strength | movement | production | Civ 6 era / tech |
+|---|---|---|---|---|
+| Battering Ram | 0 | 2 | 65 | Ancient, Masonry |
+| Siege Tower | 0 | 2 | 100 | **Classical**, Construction |
+
+Source: the in-game Civilopedia (standard rules), via
+[civilopedia.net](https://www.civilopedia.net/en-US/standard-rules/units/unit_battering_ram).
+Combat strength 0 is the Civ 6 Analyst's value for both. Note the Siege Tower
+is *Classical*, not Ancient, so its stats are Civ 6 correct but not
+Ancient-era; the Civ 6 Analyst's production column is on a different, smaller
+scale than this repo's costs and was not used (same conflict as the Slinger
+entry above).
+
+They are in `DEFERRED_BUILD_UNITS`, **not** `BUILD_OPTIONS`.
+
+**What was deliberately NOT implemented, and why.** The issue itself scopes
+this into two rungs and recommends the first only:
+
+1. **The wall model** — city walls as their own HP pool with a per-attacker-
+   class damage multiplier (melee ~15% to walls and none to the city behind,
+   ranged half, siege full, later wall tiers negating support units) —
+   replacing the flat penalty outright. Not implemented. It needs design
+   decisions the issue does not settle: how many wall HP, whether walls repair,
+   what happens to `City.health` while walls stand, and how a wall pool is
+   encoded for an agent. The exemption above is the honest approximation until
+   then, and it is strictly closer to Civ 6 than what it replaces.
+2. **The support units' adjacency mechanic** — a Battering Ram making adjacent
+   melee units do full damage to walls, a Siege Tower letting them ignore walls
+   — plus the encoder channels and mask work to make it usable. Not
+   implemented; the issue calls it "its own rung afterwards", and a Battering
+   Ram is meaningless until walls mean something. `test_siege_vs_city.py`
+   asserts that a Ram beside a city changes nothing today, so the mechanic
+   arriving has to change that test on purpose.
+
+**Also unaddressed**: the issue asks for city HP / defence strength to move to
+`config.toml` in the same pass. That already happened in #64 (`[city] health`,
+`[city] defense_strength`).
+
+**And the caveat from #7 applies here too**: no engine order targets a city, so
+none of this is reachable in self-play yet. It is reachable — and tested — in
+the combat path that the scenario/recording tool uses.
+
+### Flanking bonus: +2 per friendly unit adjacent to the defender (#59)
+
+**Rule change, effect NOT yet measured.** The motivation is measured: the
+2026-09-04 cross-model evaluation found six of eight trained models recording
+**zero kills across 200 games**, and the one model that does fight losing its
+exchanges **69:169** while winning on cities. Attacking is close to pure
+downside — a defender on good terrain, possibly fortified, wins the exchange,
+and the score rewards keeping units alive rather than trading them. Flanking is
+one of the few levers that changes that arithmetic *inside* the combat system,
+and it makes a coordinated two-unit attack better than two separate ones, which
+is exactly the behaviour no agent has yet learned.
+
+**Who gets the bonus: the unit that is striking.** `get_combat_strength` adds
+`flanking_bonus` per neighbouring tile of its target that holds one of the
+striker's own combat-capable units. That means:
+
+- the **attacker** gets it, counting its units around the defender — the rule
+  as #59 states it;
+- the **melee counterattack** gets it symmetrically, because that is the
+  defender striking back, counting *its* units around the attacker;
+- a unit's **defensive** strength never gets it.
+
+The asymmetry is deliberate and is not v0.6.2's bug in a new costume. #63's
+lesson was that a modifier must be applied in every role it belongs in — the
+Spearman's anti-cavalry bonus is a property of the *pairing*, so it belongs in
+both roles. Flanking is a property of *pressure on the target of a blow*, so it
+belongs to whoever is landing the blow. Applying it to defence as well would
+reward standing in a crowd, which is the opposite of the behaviour the issue is
+trying to buy.
+
+One consequence worth stating: `Unit.attack` computes the attacker's strength
+once and reuses it as the attacker's defence during the counterattack (the same
+mechanic v0.6.2 documented for class bonuses). So a flanked attacker both hits
+harder and takes less. That compounds the incentive to coordinate, which is
+intended, and it is a property of the existing combat path rather than
+something added here.
+
+**Counted per tile, not per unit.** Tiles stack up to four units in different
+slots; a stack is one position pressing on the defender, not three. Civilians
+(combat strength 0) do not flank. Adjacency comes from `Map.get_adjacent_coords`
+and therefore from `civulator/hexmath.py`, wrap included — no neighbour
+arithmetic is written in `unit.py`, which is the invariant #24 was caused by
+breaking.
+
+**Value and off switch.** `[combat] flanking_bonus = 2`. Civ 6 uses +2 per
+flanking unit and our strength scale is Civ 6's, so the number transfers
+directly. **0 disables the rule entirely**, including the adjacency scan — the
+minimum version of the tech/culture gate Erik eventually wants (#41/#76), and
+what keeps this epoch's behaviour reproducible. It sits in `[combat]` rather
+than `[game]`, where the issue's shorthand put it, because
+`civulator/unit_model.py` is the only interpreter of the combat tables (#64);
+a number in `[game]` would need a direct `CFG` read inside `game/unit.py`.
+
+**Derived effect** (Warrior vs Warrior, flat, no fortification, mean roll —
+derivation, not measurement; ratio is damage dealt / damage taken in one
+exchange):
+
+| flanking units | attacker strength | dealt | taken | ratio |
+|---|---|---|---|---|
+| 0 | 20 | 30.00 | 30.00 | 1.00 |
+| 1 | 22 | 32.50 | 27.69 | **1.17** |
+| 2 | 24 | 35.21 | 25.56 | **1.38** |
+| 3 | 26 | 38.14 | 23.60 | **1.62** |
+
+The comparison the rule exists for: two Warriors attacking the same defender
+from adjacent tiles deal **65.0** and take **55.4**, against **60.0 / 60.0** for
+the same two Warriors attacking separately.
+
+**Measured effect: pending.** Kills per 200 games against the frozen baseline
+is an instrumented metric, so the before/after is cheap to produce; whether
+agents can *discover* the rule (they must represent "my other unit is adjacent
+to that enemy") is the open question that makes this an experiment rather than
+a balance tweak. Nothing here should be reported as an improvement until a run
+answers it.
+
+### Walls: +30 city defence, buildable, and applied in combat (#7)
+
+**Rule change, effect NOT yet measured — and see the caveat below, which is the
+most important sentence in this entry.**
+
+Walls were half-present: a cost in `City.BUILDING_COSTS` and a `+30` literal
+inside `City.get_combat_strength`, with no way for any agent to build them.
+Wired end to end:
+
+- cost and defence bonus moved to `config.toml` `[buildings.*]`, interpreted by
+  `civulator/unit_model.py` — the same discipline #64 applied to the unit
+  tables. `City.BUILDING_COSTS` is now an alias, not a second copy.
+- `City.get_combat_strength` sums each standing building's configured
+  `defense_bonus` instead of a chain of `if building == ...` literals.
+- `Walls` added to `BUILD_OPTIONS`; the mask offers it only while the city does
+  not already have it (producing a building it owns could not change its
+  state — CLAUDE.md's mask invariant, #51).
+
+**Derived effect** (mean roll, 200 HP city, defence 20 → 50 — derivation, not
+measurement):
+
+| attacker | attacks to raze, no walls | with walls |
+|---|---|---|
+| Warrior (melee 20) | 6.7 | **22.1** |
+| Archer (ranged 25 − 17) | 10.8 | **35.8** |
+| Catapult (ranged 35 − 17) | 7.2 | **24.0** |
+
+And the melee attacker's side of it: a city counterattacks with the same
+strength it defends at, so a Warrior that hits a bare city takes 30 damage and
+one that hits a walled city takes **99.6** — it dies on its first attack.
+Walls do not merely slow a melee assault; at these numbers they end it. That
+is a consequence of the existing combat path (a defender always counterattacks
+melee), not a new rule, and it is a strong argument for #66's wall model, where
+the siege class is the answer rather than an arithmetic wall nobody can climb.
+
+**Caveat — Walls currently buy nothing in self-play.** No engine order targets
+a city. `GameEnvironment.step` routes an order to `_execute_attack` only when
+`_get_enemy_unit_at` finds a *unit*; a city changes hands by a unit **moving
+onto its tile**, and `City.health` is never reduced by anything in the live
+game. So the +30 is real, tested, and applied by the one combat path — and
+today that path is reached only by the scenario/recording tool and by direct
+calls. Until a city-attack order exists, **Walls is a strictly wasted build
+option in a training run**, and any measured effect of this change will be
+negative for that reason alone. This is a gap worth its own issue; it is
+recorded here rather than papered over, and it is the reason no effect is
+claimed.
+
+**A latent crash, fixed.** `get_combat_strength` and `get_ranged_strength` read
+`target.unit_type` to apply class bonuses. A `City` has no `unit_type`, so
+*every* attack on a city raised `AttributeError`. Nothing noticed, because
+nothing ever attacked a city. Both sites now read through `getattr`; a city
+matches no unit-class bonus, which is the correct answer.
+
+**Removed as dead code**: `elif building == "Castle": strength += 20`. Castle
+has no cost, no build option, and no path into a city's `buildings` list —
+it was not a rule, it was an unreachable literal.
+
+### Slinger added, Swordsman made buildable (#67)
+
+**Rule change, effect NOT yet measured.** Two holes in the build system, one
+of which had been silently costing an entire training epoch.
+
+**1. The Swordsman was unbuildable.** It carried a complete stat line — 35
+combat strength, 90 production, movement 2, military slot, the +5 vs Spearman
+class bonus — and was absent from `BUILD_OPTIONS`. Derived from the tables it
+is the strongest melee unit in the game, and no agent could ever produce it;
+it appears in no build-mix statistic because it could not be built. It is now
+a build option.
+
+**2. The Slinger did not exist.** Civ 6's Ancient-era ranged starter is now a
+unit type, present in all six unit tables, in `_create_unit`, in the encoder's
+`CLASS_INDEX`, and in `BUILD_OPTIONS`.
+
+| stat | Slinger | (Archer, for comparison) |
+|---|---|---|
+| combat strength | 5 | 15 |
+| ranged strength | 15 | 25 |
+| range | **1** | 2 |
+| movement | 2 | 2 |
+| production | 35 | 60 |
+
+**Source, and where the sources conflict.** Values are Civ 6 Ancient-era from
+the Civilization Wiki
+([Slinger (Civ6)](https://civilization.fandom.com/wiki/Slinger_(Civ6))): 5 / 15
+/ range 1 / movement 2 / 35 production. The **Civ 6 Analyst**
+([well-of-souls.com](https://www.well-of-souls.com/civ/civ6_units.html)) quotes
+production on a different, smaller scale — Slinger 25, Archer 33 — which is not
+comparable to this repo's costs (Warrior 40, Archer 60, Catapult 120 are all on
+the wiki scale). A third figure, 17, appears in web summaries of a different
+wiki. We took the wiki scale, because it is the one every existing unit here is
+already on; mixing scales would have made the Slinger cheap for the wrong
+reason. This is the same honesty the v0.6.2 entry applied to the Archer's cost.
+
+**Range 1 is the point of the unit.** The Slinger shoots, so it takes no
+counterattack — but only into adjacent tiles. It is strictly the cheap, weak
+predecessor of the Archer: cheaper, weaker, shorter-ranged.
+
+**Ungated, deliberately.** Neither unit has an availability gate beyond
+production cost. Research/tech gating is being designed separately (#41/#76).
+An ungated unit is a genuinely state-changing action, so CLAUDE.md's mask
+invariant holds: `get_valid_build_mask` never offers an option that cannot
+change the city's state. In Civ 6 the Swordsman is a *Classical*-era unit
+behind Iron Working; admitting it with no tech tree in front of it flattens the
+Ancient-era counter web, and that is a known, accepted consequence — it is the
+natural answer to the Spearman dominance measured in #60 (48% of 2674 builds,
+`stats/eval_duel_53ch_net128x6_1000ep_vs_duel_25ch_1000ep_1788499820.json`)
+and it was unreachable.
+
+**What this is supposed to produce.** Derived from the tables and the damage
+formula, not measured: the Swordsman beats every other unit except an even
+fight against the Horseman, so the build mix should stop being 48% Spearman.
+The Slinger is the cheapest way onto the board with ranged damage (35 vs the
+Warrior's 40) at the price of needing to stand adjacent. Whether either changes
+the measured build mix is the open question; nothing here should be reported as
+an improvement until a run answers it.
+
+**Archived weights stay loadable.** `BUILD_OPTIONS` grew 7 → 9, which changes
+the `BuildNetwork` output width and input depth, so a checkpoint saved before
+this change no longer matches a freshly built agent. Rather than brick every
+artifact in `weights/trained/`, options are **append-only** (index k always
+means the same option) and `scripts/evaluate.py` now infers the build head's
+width from the saved `fc` layer, exactly as it already inferred `conv_channels`
+for the combat net. A pre-#67 run therefore keeps playing its own seven-option
+policy instead of being padded with fabricated Q-values for options it never
+saw. `test_evaluate.py`'s end-to-end load of `weights/trained/duel_25ch_1000ep.pth`
+(the #39 frozen baseline) is the gate.
+
+**Not comparable across the change**, in the v0.6.2 sense: policies trained
+against a seven-option build space are tuned to a game that no longer exists.
+They still load and run, which is what makes a before/after possible.
+
+**Deliberately left out**: the Slinger is not in `scripts/matchup_matrix.py`'s
+`COMBAT_UNITS` headline scope (it is in that script's `UNIT_CLASSES`, so
+`--units Slinger ...` measures it today). Which units the #65 headline matrix
+covers is a scientific-scope decision, not a consequence of a unit existing.
+The harness did need one fix to measure it at all: it placed every ranged
+attacker at hex distance 2, where a range-1 shooter would record a duel it
+could never fire in.
+
+---
+
 ## v0.6.2 — Civ 6 Ancient-era combat alignment (2026-09-04)
 
 **Rule change, effect NOT yet measured.** The unit counter web existed in code

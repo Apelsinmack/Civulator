@@ -81,29 +81,54 @@ EXPECTED_PRODUCTION_COST = {
 }
 
 
+def _assert_pins_hold(actual, expected, label):
+    """Every unit type #64 moved must still carry the value it moved with.
+
+    Deliberately a subset check, not dict equality (changed 2026-09-05 when
+    #67 added the Slinger): #64's claim is that the *move* changed nothing,
+    which is a claim about the units that existed when it landed. A later
+    rule change that adds a NEW unit type must not have to edit this oracle
+    to stay green — but it must also not be able to alter a pinned value
+    without this file failing, which the per-key comparison below preserves.
+    """
+    for name, value in expected.items():
+        assert name in actual, f"{label}: unit type {name!r} disappeared"
+        assert actual[name] == value, (
+            f"{label}: {name} is {actual[name]}, pinned at {value} by #64"
+        )
+
+
 def test_max_movement_table_unchanged():
-    assert Unit.MAX_MOVEMENT == EXPECTED_MAX_MOVEMENT
-    assert unit_model.MAX_MOVEMENT == EXPECTED_MAX_MOVEMENT
+    _assert_pins_hold(Unit.MAX_MOVEMENT, EXPECTED_MAX_MOVEMENT, "MAX_MOVEMENT")
+    _assert_pins_hold(unit_model.MAX_MOVEMENT, EXPECTED_MAX_MOVEMENT, "MAX_MOVEMENT")
 
 
 def test_base_combat_strength_table_unchanged():
-    assert Unit.BASE_COMBAT_STRENGTH == EXPECTED_BASE_COMBAT_STRENGTH
-    assert unit_model.BASE_COMBAT_STRENGTH == EXPECTED_BASE_COMBAT_STRENGTH
+    _assert_pins_hold(
+        Unit.BASE_COMBAT_STRENGTH, EXPECTED_BASE_COMBAT_STRENGTH, "BASE_COMBAT_STRENGTH"
+    )
+    _assert_pins_hold(
+        unit_model.BASE_COMBAT_STRENGTH, EXPECTED_BASE_COMBAT_STRENGTH, "BASE_COMBAT_STRENGTH"
+    )
 
 
 def test_base_ranged_strength_table_unchanged():
-    assert Unit.BASE_RANGED_STRENGTH == EXPECTED_BASE_RANGED_STRENGTH
-    assert unit_model.BASE_RANGED_STRENGTH == EXPECTED_BASE_RANGED_STRENGTH
+    _assert_pins_hold(
+        Unit.BASE_RANGED_STRENGTH, EXPECTED_BASE_RANGED_STRENGTH, "BASE_RANGED_STRENGTH"
+    )
+    _assert_pins_hold(
+        unit_model.BASE_RANGED_STRENGTH, EXPECTED_BASE_RANGED_STRENGTH, "BASE_RANGED_STRENGTH"
+    )
 
 
 def test_range_values_table_unchanged():
-    assert Unit.RANGE_VALUES == EXPECTED_RANGE_VALUES
-    assert unit_model.RANGE_VALUES == EXPECTED_RANGE_VALUES
+    _assert_pins_hold(Unit.RANGE_VALUES, EXPECTED_RANGE_VALUES, "RANGE_VALUES")
+    _assert_pins_hold(unit_model.RANGE_VALUES, EXPECTED_RANGE_VALUES, "RANGE_VALUES")
 
 
 def test_production_cost_table_unchanged():
-    assert Unit.PRODUCTION_COST == EXPECTED_PRODUCTION_COST
-    assert unit_model.PRODUCTION_COST == EXPECTED_PRODUCTION_COST
+    _assert_pins_hold(Unit.PRODUCTION_COST, EXPECTED_PRODUCTION_COST, "PRODUCTION_COST")
+    _assert_pins_hold(unit_model.PRODUCTION_COST, EXPECTED_PRODUCTION_COST, "PRODUCTION_COST")
 
 
 # --- 2-7. Combat formula / modifier constants ---

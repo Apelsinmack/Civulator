@@ -164,33 +164,37 @@ def test_warrior_is_cheaper_than_spearman_for_the_same_effective_strength():
     assert Unit.PRODUCTION_COST["Spearman"] < Unit.PRODUCTION_COST["Horseman"]
 
 
-def test_catapult_now_bombards_cities_from_a_strength_deficit():
-    """Pins a known, accepted consequence of this patch, so #66 has to change
-    it deliberately rather than by accident.
+def test_the_catapults_v0_6_2_city_deficit_has_been_resolved_by_66():
+    """UPDATED 2026-09-05 by #66, which is exactly what this test asked for.
 
-    Copying Civ 6's ranged strength (45 -> 35) while keeping our ad-hoc flat
-    `-17` vs cities drops the Catapult to 18 against a city defence of 20: it
-    now attacks cities from a *deficit*, where before it had 28 against 20.
-    Razing a 200 HP city goes from ~4.8 shots to ~7.2.
+    v0.6.2 copied Civ 6's Catapult ranged strength (45 -> 35) while keeping our
+    ad-hoc flat `-17` vs cities, dropping the Catapult to 18 against a city
+    defence of 20 — bombarding from a *deficit*, ~7.2 shots to raze a 200 HP
+    city. That was recorded as an accepted regression, and this test was
+    written to pin it so that "#66 has to change it deliberately rather than by
+    accident", with the instruction: "if this now passes, the -17 penalty or
+    the city defence strength changed and this test should be updated together
+    with that decision".
 
-    Civ 6 has no such flat penalty — it models walls, and exempts the siege
-    class from the reduction other units suffer. The `-17` was evidently tuned
-    against our old 45. Replacing it with a real wall model is #66; until then
-    the Catapult is still the better of the two siege options, just a weak one.
+    #66 made that change deliberately: the flat penalty stands in for a wall
+    model we have not built, and Civ 6 exempts the siege class from exactly
+    this reduction. The Catapult now bombards at its full 35 against a bare
+    city's 20 (~3.7 shots), while the Archer still suffers the -17. The
+    assertion this file cares about — the Catapult is the better city attacker
+    — is unchanged and strengthened.
     """
     env = make_flat_env()
     catapult = place(env, CatapultUnit, 0, (3, 3))
     archer = place(env, ArcherUnit, 0, (5, 5))
 
-    city_defence = 20  # City.defense_strength, city.py:37
+    city_defence = 20  # config.toml [city] defense_strength
     cat = catapult.get_ranged_strength(is_city=True)
     arc = archer.get_ranged_strength(is_city=True)
 
-    assert cat == 35 - 17 == 18
-    assert arc == 25 - 17 == 8
+    assert cat == 35, "siege class is exempt from the flat city penalty (#66)"
+    assert arc == 25 - 17 == 8, "non-siege ranged units still pay it"
     assert cat > arc, "the Catapult must remain the better city attacker"
-    assert cat < city_defence, (
-        "expected the known #66 deficit; if this now passes, the -17 penalty "
-        "or the city defence strength changed and this test should be updated "
-        "together with that decision"
+    assert cat > city_defence, (
+        "the v0.6.2 deficit is resolved: a siege unit now attacks a bare city "
+        "from an advantage, which is what a siege unit is for"
     )

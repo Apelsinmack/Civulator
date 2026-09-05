@@ -173,7 +173,14 @@ def _load_side(weights_path, encoder_name, n, m, num_players, device):
     build_agents_by_seat = {}
     for entry in payload["build_agents"]:
         seat = entry["player_index"]
-        build_agent = BuildAgent(n, m, d)
+        # Same discipline as conv_channels above: the build head's WIDTH comes
+        # from the checkpoint, not from today's BUILD_OPTIONS. A run trained
+        # before a rule change added a build option keeps playing its own
+        # option list (a prefix of the current one — options are append-only),
+        # so an archived artifact stays evaluable instead of failing to load
+        # with a size mismatch (#67).
+        num_options = entry["model_state_dict"]["fc.weight"].shape[0]
+        build_agent = BuildAgent(n, m, d, num_options=num_options)
         build_agent.network.load_state_dict(entry["model_state_dict"])
         build_agent.network.eval()
         build_agents_by_seat[seat] = build_agent

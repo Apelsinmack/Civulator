@@ -16,6 +16,7 @@ from ..unit_model import (
     DAMAGE_EXPONENT_COEFFICIENT,
     DAMAGE_ROLL_MAX,
     DAMAGE_ROLL_MIN,
+    FLANKING_BONUS,
     FORTIFICATION_BONUS,
     HEAL_FORTIFIED,
     HEAL_NORMAL,
@@ -25,6 +26,7 @@ from ..unit_model import (
     PRODUCTION_COST as _PRODUCTION_COST,
     RANGED_CITY_PENALTY,
     RANGE_VALUES as _RANGE_VALUES,
+    SIEGE_CLASS,
 )
 
 # Rivers cost this much extra to cross, per edge (design doc D23) — the single
@@ -45,6 +47,7 @@ NUM_UNIT_SLOTS = 4  # Military, Civilian, Siege Support, Great Person
 # trained .pth.
 UNIT_SLOT = {
     "Warrior": 0,      # military
+    "Slinger": 0,
     "Archer": 0,
     "Swordsman": 0,
     "Spearman": 0,
@@ -66,6 +69,7 @@ UNIT_SLOT = {
 # shape into config would commit to the wrong shape.
 MOVEMENT_DOMAIN = {
     "Warrior": "land",
+    "Slinger": "land",
     "Archer": "land",
     "Swordsman": "land",
     "Spearman": "land",
@@ -75,6 +79,29 @@ MOVEMENT_DOMAIN = {
     "Catapult": "land",
     "BatteringRam": "land",
     "SiegeTower": "land",
+}
+
+
+# Unit types that have complete stats but are deliberately NOT in
+# agents/build_agent.py's BUILD_OPTIONS (issue #67). Statted-but-unbuildable
+# is exactly the failure this registry exists to make explicit rather than
+# implicit: the Swordsman sat in the tables unbuildable for an entire epoch
+# because nothing said whether that was a decision or an oversight.
+#
+# tests/test_build_options.py asserts the partition is total: every statted
+# unit type is either a BUILD_OPTIONS entry or named here.
+DEFERRED_BUILD_UNITS = {
+    # Worker: tile improvements exist (WorkerUnit.build_improvement) but no
+    # agent has an improvement action, so producing one could not pay off.
+    "Worker",
+    # BatteringRam / SiegeTower: stats exist (issue #66) but their Civ 6
+    # mechanic — an adjacency that changes how ANOTHER unit's attack resolves
+    # against a city's walls — does not, and cannot until there is a wall model
+    # to break. Offering them today would be a build option that cannot pay
+    # off. They come out of here in the same patch that gives them the
+    # adjacency rule.
+    "BatteringRam",
+    "SiegeTower",
 }
 
 
@@ -164,6 +191,14 @@ class Unit:
     def get_production_cost(self):
         return self.PRODUCTION_COST.get(self.unit_type, 40)
 
+    def is_siege_class(self):
+        """Whether this unit belongs to the siege class (issue #66).
+
+        Declared per unit type by `siege_class` in config.toml `[units.*]`, so
+        a second siege unit is a config line rather than a name in an `if`.
+        """
+        return self.unit_type in SIEGE_CLASS
+
     def reset_movement(self):
         """Reset movement points at the start of a new turn.
 
@@ -227,13 +262,66 @@ class Unit:
         # (issue #63). Gating them behind is_attacking meant a Spearman standing
         # still and being charged got no anti-cavalry bonus, which is the one
         # thing the unit exists to do. Civ 6 applies these in both directions.
-        if target:
-            if self.unit_type == "Spearman" and target.unit_type == "Horseman":
+        #
+        # `target` may be a City, which has no unit_type — class bonuses are
+        # unit-vs-unit, so a city simply matches none of them. Read through
+        # getattr rather than assuming: before #7 made Walls buildable no
+        # engine order ever aimed at a city, and this line raised
+        # AttributeError the moment one did.
+        target_type = getattr(target, "unit_type", None)
+        if target_type is not None:
+            if self.unit_type == "Spearman" and target_type == "Horseman":
                 strength += ANTI_CAVALRY_BONUS
-            if self.unit_type in ["Warrior", "Swordsman"] and target.unit_type == "Spearman":
+            if self.unit_type in ["Warrior", "Swordsman"] and target_type == "Spearman":
                 strength += MELEE_VS_SPEARMAN_BONUS
 
+        # Flanking (issue #59): the unit that is STRIKING gets a bonus per
+        # neighbouring tile of its target that holds one of its own
+        # combat-capable units. See flanking_count for the exact rule and for
+        # why it is the striker rather than the defender who gets it.
+        if is_attacking and FLANKING_BONUS:
+            strength += FLANKING_BONUS * self.flanking_count(target)
+
         return max(0, strength)
+
+    def flanking_count(self, target):
+        """How many tiles adjacent to `target` hold a flanking unit of ours.
+
+        Counted per TILE, not per unit: a tile can stack up to four units in
+        different slots (a Warrior, a Settler, a siege support), and a stack is
+        one position pressing on the defender, not three. A tile counts when it
+        holds at least one unit that
+
+        - belongs to this unit's player,
+        - is not this unit itself (Civ 6 counts the *other* units around the
+          defender; the attacker is already in the exchange), and
+        - has a base combat strength above 0, so Settlers and Workers being
+          escorted alongside an army do not flank.
+
+        Adjacency comes from `Map.get_adjacent_coords`, which delegates to the
+        canonical hex kernels in `civulator/hexmath.py` — wrap included. No
+        neighbour arithmetic is written here; that is the invariant the
+        ranged-attack bug (#24) was caused by breaking.
+
+        Returns 0 whenever the answer cannot be known (no environment, or a
+        target with no position), so a unit built outside a game never raises.
+        """
+        env = self.player.game_env if self.player is not None else None
+        target_coords = getattr(target, "coordinates", None)
+        if env is None or target_coords is None:
+            return 0
+
+        count = 0
+        for pos in env.map.get_adjacent_coords(target_coords):
+            for other in env.get_units_at(pos):
+                if (
+                    other is not self
+                    and other.player is self.player
+                    and other.get_base_combat_strength() > 0
+                ):
+                    count += 1
+                    break
+        return count
 
     def get_ranged_strength(self, target=None, is_city=False):
         """Calculate ranged strength including modifiers."""
@@ -246,10 +334,18 @@ class Unit:
         hp_penalty = HP_PENALTY_COEFFICIENT * (100 - self.health) / 100
         strength += hp_penalty
 
-        if is_city:
-            strength -= RANGED_CITY_PENALTY  # Penalty against cities
+        # Penalty against cities — but not for the siege class (issue #66).
+        # The flat penalty stands in for a wall model we have not built, and
+        # was being applied to the one class Civ 6 exempts from exactly this
+        # reduction: a Catapult exists to break fortifications, and until #66's
+        # wall model lands the honest approximation is that it does so at full
+        # strength while other ranged units do not.
+        if is_city and not self.is_siege_class():
+            strength -= RANGED_CITY_PENALTY
 
-        if target and target.unit_type == "Horseman" and self.unit_type == "Archer":
+        # getattr, not target.unit_type: the target may be a City (see the
+        # note in get_combat_strength).
+        if getattr(target, "unit_type", None) == "Horseman" and self.unit_type == "Archer":
             strength -= ARCHER_VS_HORSEMAN_PENALTY  # Archers less effective vs cavalry
 
         return max(0, strength)
@@ -432,14 +528,19 @@ class WarriorUnit(Unit):
         super().__init__(player, coordinates, "Warrior")
 
 
-class ArcherUnit(Unit):
-    """Basic ranged combat unit."""
+class RangedUnit(Unit):
+    """A unit that attacks at range instead of meleeing.
 
-    def __init__(self, player, coordinates):
-        super().__init__(player, coordinates, "Archer")
+    The one implementation of "shoot if in range and in sight" — the Archer,
+    the Slinger (#67) and the Catapult all resolve their attack through this
+    method, so a change to ranged attack resolution cannot land on one of
+    them and miss the others.
+
+    Range and line of sight are read per unit type, so a range-1 shooter (the
+    Slinger) and a range-2 one (Archer, Catapult) share the same code path.
+    """
 
     def attack(self, target, game_env):
-        """Archers perform ranged attacks."""
         distance = game_env.map.distance_function(self.coordinates, target.coordinates)
         if distance > self.get_range():
             return 0, 0, False, False
@@ -449,6 +550,25 @@ class ArcherUnit(Unit):
             return 0, 0, False, False
 
         return super().attack(target, game_env, is_ranged=True)
+
+
+class SlingerUnit(RangedUnit):
+    """Ancient-era ranged starter (issue #67).
+
+    Civ 6's Slinger: strength 5, ranged 15, range 1, movement 2, 35
+    production — weaker and shorter-ranged than the Archer it upgrades into,
+    but the cheapest way to put ranged damage on the board.
+    """
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Slinger")
+
+
+class ArcherUnit(RangedUnit):
+    """Basic ranged combat unit."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Archer")
 
 
 class SwordsmanUnit(Unit):
@@ -472,23 +592,43 @@ class HorsemanUnit(Unit):
         super().__init__(player, coordinates, "Horseman")
 
 
-class CatapultUnit(Unit):
+class CatapultUnit(RangedUnit):
     """Siege unit effective against cities."""
 
     def __init__(self, player, coordinates):
         super().__init__(player, coordinates, "Catapult")
 
-    def attack(self, target, game_env):
-        """Catapults perform bombard attacks."""
-        distance = game_env.map.distance_function(self.coordinates, target.coordinates)
-        if distance > self.get_range():
-            return 0, 0, False, False
 
-        has_los = game_env.check_line_of_sight(self.coordinates, target.coordinates)
-        if not has_los and distance > 1:
-            return 0, 0, False, False
+class SiegeSupportUnit(Unit):
+    """A support unit that occupies UNIT_SLOT 2 and fights with nobody.
 
-        return super().attack(target, game_env, is_ranged=True)
+    Civ 6's Battering Ram and Siege Tower change how an ADJACENT friendly
+    melee unit's attack resolves against a city's walls; they have no attack of
+    their own and combat strength 0. Issue #66 gives them their stats; the
+    adjacency mechanic is deliberately still missing, because a Battering Ram
+    is meaningless until walls mean something (#7 makes walls buildable, but a
+    wall model with per-class damage is a separate rung). They are in
+    DEFERRED_BUILD_UNITS until that lands.
+
+    This class exists so the mechanic has one place to arrive and so
+    `_create_unit` does not silently fall back to the bare `Unit`.
+    """
+
+
+class BatteringRamUnit(SiegeSupportUnit):
+    """Ancient-era siege support (Civ 6: Masonry). Full damage to Ancient Walls
+    for adjacent attacking melee units — mechanic not implemented."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "BatteringRam")
+
+
+class SiegeTowerUnit(SiegeSupportUnit):
+    """Classical-era siege support (Civ 6: Construction). Adjacent melee units
+    ignore walls and hit the city directly — mechanic not implemented."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "SiegeTower")
 
 
 class SettlerUnit(Unit):

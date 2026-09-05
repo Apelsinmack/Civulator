@@ -495,6 +495,16 @@ ranged_strength = 0
 range = 1
 production_cost = 40
 
+# Slinger: the Civ 6 Ancient-era ranged starter (issue #67). Range 1 —
+# it shoots only into adjacent tiles, unlike the Archer's 2. Ungated
+# deliberately: research does not exist yet (#41/#76).
+[units.Slinger]
+max_movement = 2
+combat_strength = 5
+ranged_strength = 15
+range = 1
+production_cost = 35
+
 [units.Archer]
 max_movement = 2
 combat_strength = 15
@@ -543,6 +553,36 @@ combat_strength = 23
 ranged_strength = 35
 range = 2
 production_cost = 120
+# siege_class (issue #66): exempt from [combat] ranged_city_penalty. Breaking
+# fortifications is the siege class's entire identity in Civ 6, and the flat
+# penalty was being applied to the one class Civ 6 exempts. Optional key,
+# absent = false; the only interpreter is civulator/unit_model.py.
+siege_class = true
+
+# --- Siege support (issue #66) ----------------------------------------------
+# Stats only. Both units have occupied UNIT_SLOT 2 since the stacking design
+# landed, with no numbers anywhere else — names with a slot and nothing else.
+# Civ 6 support units carry combat strength 0 (they are escorted, not fought
+# with) and are the reason the siege support slot exists.
+#
+# Their Civ 6 mechanic — an adjacency that changes how ANOTHER unit's attack
+# resolves against a city's walls — is deliberately NOT implemented; see the
+# CHANGELOG. They are therefore in game/unit.py's DEFERRED_BUILD_UNITS and not
+# in BUILD_OPTIONS: offering an agent a unit that does nothing would be a build
+# option that cannot pay off.
+[units.BatteringRam]
+max_movement = 2
+combat_strength = 0
+ranged_strength = 0
+range = 0
+production_cost = 65
+
+[units.SiegeTower]
+max_movement = 2
+combat_strength = 0
+ranged_strength = 0
+range = 0
+production_cost = 100
 
 # --- Combat formula constants (Civ6-inspired modifier stacking, #60/#63) ---
 [combat]
@@ -562,10 +602,48 @@ damage_roll_min = 0.8
 damage_roll_max = 1.2
 heal_fortified = 20              # HP healed per turn when fortified
 heal_normal = 10                 # HP healed per turn otherwise
+# Flanking (issue #59): strength bonus per adjacent tile around the DEFENDER
+# that holds a combat-capable friendly unit of the striking unit's player.
+# Civ 6 uses +2 per flanking unit and our strength scale is Civ 6's, so the
+# value transfers directly. Set to 0 to disable flanking entirely — the rule
+# then costs nothing, not even the adjacency scan. Erik wants this gated
+# behind tech/culture eventually (#41/#76); a config value is the minimum
+# version of that gate and keeps this epoch's behaviour reproducible.
+#
+# Lives in [combat], not [game], despite the issue's wording: combat modifiers
+# are read by civulator/unit_model.py, which is the only interpreter of the
+# combat tables (#64, CLAUDE.md canonical-systems table). A number in [game]
+# would need a direct CFG read inside game/unit.py to reach the combat path.
+flanking_bonus = 2
 
 [city]
 health = 200
 defense_strength = 20
+
+# --- Buildings (issue #7) ---------------------------------------------------
+# One table per building: `production_cost` is what a city pays for it, and
+# `defense_bonus` (optional, default 0) is added to the city's defensive combat
+# strength for as long as it stands. Read only by civulator/unit_model.py;
+# City.BUILDING_COSTS and City.get_combat_strength are aliases of what it
+# interprets, never a second copy of these numbers.
+[buildings.Granary]
+production_cost = 60
+
+[buildings.Monument]
+production_cost = 50
+
+# Walls: +30 defence, Civ 6's Ancient Walls (see CHANGELOG). The one building
+# that changes combat, and the reason the [buildings.*] table has a
+# defense_bonus column at all.
+[buildings.Walls]
+production_cost = 100
+defense_bonus = 30
+
+[buildings.Workshop]
+production_cost = 120
+
+[buildings.Factory]
+production_cost = 240
 
 [training]
 episodes = 64
