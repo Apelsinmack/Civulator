@@ -1,0 +1,1181 @@
+{
+  "units": [
+    "Warrior",
+    "Archer",
+    "Swordsman",
+    "Spearman",
+    "Horseman",
+    "Catapult"
+  ],
+  "excluded_civilians": [
+    "Settler",
+    "Worker"
+  ],
+  "duels_per_pairing": 200,
+  "seed": 652026,
+  "board": {
+    "rows": 16,
+    "cols": 16
+  },
+  "positions": {
+    "melee": {
+      "attacker": [
+        5,
+        5
+      ],
+      "defender": [
+        5,
+        6
+      ]
+    },
+    "ranged": {
+      "attacker": [
+        10,
+        5
+      ],
+      "defender": [
+        10,
+        7
+      ]
+    }
+  },
+  "conditions": [
+    {
+      "name": "headline",
+      "terrain": "flat",
+      "fortified": false,
+      "damaged": false,
+      "pairings": [
+        {
+          "attacker": "Warrior",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 30.013841834496706,
+          "mean_damage_taken": 29.87725011812523,
+          "exchange_ratio": 1.00457176332599,
+          "cost_normalized_ratio": 1.00457176332599
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 36.76957288350544,
+          "mean_damage_taken": 24.534313142426168,
+          "exchange_ratio": 1.4986999093902225,
+          "cost_normalized_ratio": 2.2480498640853335
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 16.580963229698025,
+          "mean_damage_taken": 54.77307256797459,
+          "exchange_ratio": 0.30272107172955626,
+          "cost_normalized_ratio": 0.6811224113915015
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 30.684721255609766,
+          "mean_damage_taken": 29.783000849462113,
+          "exchange_ratio": 1.0302763449091443,
+          "cost_normalized_ratio": 1.6741990604773596
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 16.503104875225723,
+          "mean_damage_taken": 55.06279824625269,
+          "exchange_ratio": 0.29971424266199265,
+          "cost_normalized_ratio": 0.5994284853239854
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 26.620056313051805,
+          "mean_damage_taken": 33.76239591300506,
+          "exchange_ratio": 0.7884528213472531,
+          "cost_normalized_ratio": 2.365358464041759
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 36.83398646199015,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 44.709513810352604,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 20.079628407772663,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 30.147770772515795,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 16.59369612944849,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 32.544622360488795,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 54.85100007574014,
+          "mean_damage_taken": 16.3878170213163,
+          "exchange_ratio": 3.3470595872771343,
+          "cost_normalized_ratio": 1.4875820387898375
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 66.67544730185287,
+          "mean_damage_taken": 13.575632431648394,
+          "exchange_ratio": 4.911406347921939,
+          "cost_normalized_ratio": 3.274270898614626
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 29.894806123799643,
+          "mean_damage_taken": 29.891048038084993,
+          "exchange_ratio": 1.00012572612743,
+          "cost_normalized_ratio": 1.00012572612743
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 54.03225174362934,
+          "mean_damage_taken": 16.79834133333797,
+          "exchange_ratio": 3.2165230287586186,
+          "cost_normalized_ratio": 2.3230444096590026
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 29.964895322173835,
+          "mean_damage_taken": 29.86247504191473,
+          "exchange_ratio": 1.0034297317993686,
+          "cost_normalized_ratio": 0.8919375393772165
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 49.16896396695202,
+          "mean_damage_taken": 18.496983691052648,
+          "exchange_ratio": 2.6582152413712734,
+          "cost_normalized_ratio": 3.5442869884950308
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 29.821353534604423,
+          "mean_damage_taken": 29.741158096762373,
+          "exchange_ratio": 1.0026964463717631,
+          "cost_normalized_ratio": 0.6170439669980081
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 44.679924244478734,
+          "mean_damage_taken": 20.328869307713454,
+          "exchange_ratio": 2.1978558457024304,
+          "cost_normalized_ratio": 2.028790011417628
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 16.342293846588852,
+          "mean_damage_taken": 54.16940512022379,
+          "exchange_ratio": 0.3016886342081605,
+          "cost_normalized_ratio": 0.41772272428822227
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 30.009474061061628,
+          "mean_damage_taken": 29.864879697421564,
+          "exchange_ratio": 1.0048416188213392,
+          "cost_normalized_ratio": 1.0048416188213392
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 29.610976626514457,
+          "mean_damage_taken": 29.828311259136534,
+          "exchange_ratio": 0.9927138137075894,
+          "cost_normalized_ratio": 1.2218016168708794
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 32.08661120486375,
+          "mean_damage_taken": 27.894955864540858,
+          "exchange_ratio": 1.150265709710306,
+          "cost_normalized_ratio": 2.1235674640805646
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 54.93538379391717,
+          "mean_damage_taken": 16.608613148924483,
+          "exchange_ratio": 3.307644250686554,
+          "cost_normalized_ratio": 1.6538221253432772
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 67.22305696833861,
+          "mean_damage_taken": 13.44303123547033,
+          "exchange_ratio": 5.000587723917959,
+          "cost_normalized_ratio": 3.7504407929384698
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 29.82038687387947,
+          "mean_damage_taken": 29.543569669048303,
+          "exchange_ratio": 1.0093697954557326,
+          "cost_normalized_ratio": 1.1355410198876994
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 30.326727816509084,
+          "mean_damage_taken": 30.11862800532952,
+          "exchange_ratio": 1.0069093390025183,
+          "cost_normalized_ratio": 0.8181138379395461
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 30.05459504000377,
+          "mean_damage_taken": 29.28559028319083,
+          "exchange_ratio": 1.0262588101990324,
+          "cost_normalized_ratio": 1.0262588101990324
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 47.90611764765403,
+          "mean_damage_taken": 18.83312451384825,
+          "exchange_ratio": 2.5437158668190194,
+          "cost_normalized_ratio": 3.8155738002285298
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 54.596119743196475,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 67.29299502767823,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 29.795759098380802,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 44.36204129975489,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 29.918975254409016,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 48.79751392738999,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        }
+      ]
+    }
+  ],
+  "manifest": {
+    "game_version": "0.6.2",
+    "git_commit": "39edce5",
+    "git_dirty": true,
+    "config": {
+      "map": {
+        "rows": 24,
+        "columns": 48,
+        "type": "earthlike",
+        "size": "standard",
+        "max_world_retries": 10,
+        "earthlike": {
+          "continent_wavelength": 3,
+          "octaves": "auto",
+          "mountain_wavelength": 5,
+          "mountain_belt_percent": 0.35,
+          "mountain_amp_coast": 0.0,
+          "mountain_amp_relief": 1.5,
+          "warp_amp": 4.0,
+          "warp_octaves": 3,
+          "land_percent": 0.45,
+          "mountain_percent": 0.08,
+          "hill_percent": 0.2,
+          "smooth_iterations": 3,
+          "talus_slope": 0.08,
+          "diffusion_coeff": 0.4,
+          "lake_max_size": 12,
+          "temp_wobble_amp": 0.3,
+          "temp_wobble_wavelength": 4,
+          "temp_lapse_rate": 0.8,
+          "temp_snow_percentile": 0.25,
+          "temp_tundra_percentile": 0.3,
+          "moisture_wavelength": 5,
+          "moisture_octaves": 4,
+          "moisture_desert_percentile": 0.36,
+          "moisture_plains_percentile": 0.56,
+          "river_percent": 0.18,
+          "river_moisture_bonus": 0.1,
+          "river_min_length": 2,
+          "river_pd_epsilon": 0.0001,
+          "river_altitude_jitter": 1e-07,
+          "feature_chance": {
+            "woods": 0.35,
+            "rainforest": 0.5,
+            "marsh": 0.15,
+            "ice": 0.7,
+            "reef": 0.3,
+            "oasis": 0.2
+          }
+        },
+        "sizes": {
+          "duel": {
+            "rows": 12,
+            "cols": 24,
+            "default_players": 2,
+            "max_players": 3
+          },
+          "tiny": {
+            "rows": 16,
+            "cols": 32,
+            "default_players": 3,
+            "max_players": 4
+          },
+          "small": {
+            "rows": 20,
+            "cols": 40,
+            "default_players": 4,
+            "max_players": 6
+          },
+          "standard": {
+            "rows": 24,
+            "cols": 48,
+            "default_players": 6,
+            "max_players": 8
+          },
+          "large": {
+            "rows": 32,
+            "cols": 64,
+            "default_players": 8,
+            "max_players": 12
+          },
+          "huge": {
+            "rows": 42,
+            "cols": 84,
+            "default_players": 12,
+            "max_players": 16
+          },
+          "colossal": {
+            "rows": 66,
+            "cols": 106,
+            "default_players": 12,
+            "max_players": 24
+          }
+        },
+        "starts": {
+          "ring2_weight": 0.5,
+          "fresh_water_weight": 8.0,
+          "coastal_weight": 4.0,
+          "min_passable_ring1": 3,
+          "d_min_players_factor": 3.5,
+          "d_min_floor": 3,
+          "food_total_min": 6.0,
+          "food_best_min": 2.5714285714285716,
+          "prod_total_min": 0.75,
+          "prod_best_min": 0.3
+        },
+        "terrain_weights": {
+          "Plains": 0.3,
+          "Grassland": 0.3,
+          "Desert": 0.1,
+          "Tundra": 0.1,
+          "Hills": 0.1,
+          "Woods": 0.05,
+          "Mountain": 0.05
+        },
+        "features": {
+          "woods_chance": 0.2,
+          "rainforest_chance": 0.1
+        }
+      },
+      "terrain": {
+        "base": {
+          "Grassland": {
+            "yields": [
+              2,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "land"
+          },
+          "Plains": {
+            "yields": [
+              1,
+              1
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "land"
+          },
+          "Desert": {
+            "yields": [
+              0,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "land"
+          },
+          "Tundra": {
+            "yields": [
+              1,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "land"
+          },
+          "Snow": {
+            "yields": [
+              0,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "land"
+          },
+          "Coast": {
+            "yields": [
+              1,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "water"
+          },
+          "Lake": {
+            "yields": [
+              2,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "water"
+          },
+          "Ocean": {
+            "yields": [
+              1,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "water"
+          }
+        },
+        "relief": {
+          "flat": {
+            "yields": [
+              0,
+              0
+            ],
+            "movement": 0,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ]
+          },
+          "hills": {
+            "yields": [
+              0,
+              1
+            ],
+            "movement": 1,
+            "defense": 3,
+            "los": [
+              1,
+              1
+            ]
+          },
+          "mountain": {
+            "yields": [
+              0,
+              0
+            ],
+            "movement": 0,
+            "defense": 0,
+            "los": [
+              3,
+              0
+            ],
+            "impassable": true
+          }
+        },
+        "feature": {
+          "Woods": {
+            "yields": [
+              0,
+              1
+            ],
+            "movement": 1,
+            "defense": 3,
+            "los": [
+              1,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Plains",
+                "Grassland",
+                "Tundra"
+              ],
+              "relief": [
+                "flat",
+                "hills"
+              ]
+            }
+          },
+          "Rainforest": {
+            "yields": [
+              1,
+              0
+            ],
+            "movement": 1,
+            "defense": 3,
+            "los": [
+              1,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Plains"
+              ],
+              "relief": [
+                "flat",
+                "hills"
+              ]
+            }
+          },
+          "Marsh": {
+            "yields": [
+              1,
+              0
+            ],
+            "movement": 1,
+            "defense": -2,
+            "los": [
+              0,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Grassland"
+              ],
+              "relief": [
+                "flat"
+              ]
+            }
+          },
+          "Floodplains": {
+            "yields": [
+              3,
+              0
+            ],
+            "movement": 0,
+            "defense": -2,
+            "los": [
+              0,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Desert"
+              ],
+              "relief": [
+                "flat"
+              ]
+            }
+          },
+          "Oasis": {
+            "yields": [
+              3,
+              0
+            ],
+            "movement": 0,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Desert"
+              ],
+              "relief": [
+                "flat"
+              ]
+            }
+          },
+          "Reef": {
+            "yields": [
+              1,
+              1
+            ],
+            "movement": 0,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Coast"
+              ]
+            }
+          },
+          "Ice": {
+            "yields": [
+              0,
+              0
+            ],
+            "movement": 0,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Coast",
+                "Ocean"
+              ]
+            }
+          }
+        },
+        "resource": {
+          "Wheat": {
+            "class": "bonus",
+            "yields": [
+              1,
+              0
+            ],
+            "chance": 0.05,
+            "on": [
+              {
+                "bases": [
+                  "Plains"
+                ],
+                "relief": [
+                  "flat"
+                ],
+                "features": [
+                  "none"
+                ]
+              },
+              {
+                "bases": [
+                  "Desert"
+                ],
+                "relief": [
+                  "flat"
+                ],
+                "features": [
+                  "Floodplains"
+                ]
+              }
+            ]
+          },
+          "Rice": {
+            "class": "bonus",
+            "yields": [
+              1,
+              0
+            ],
+            "chance": 0.04,
+            "on": {
+              "bases": [
+                "Grassland"
+              ],
+              "relief": [
+                "flat"
+              ],
+              "features": [
+                "none",
+                "Marsh"
+              ]
+            }
+          },
+          "Cattle": {
+            "class": "bonus",
+            "yields": [
+              1,
+              0
+            ],
+            "chance": 0.04,
+            "on": {
+              "bases": [
+                "Grassland"
+              ],
+              "relief": [
+                "flat"
+              ],
+              "features": [
+                "none"
+              ]
+            }
+          },
+          "Sheep": {
+            "class": "bonus",
+            "yields": [
+              0,
+              1
+            ],
+            "chance": 0.04,
+            "on": {
+              "relief": [
+                "hills"
+              ],
+              "features": [
+                "none"
+              ]
+            }
+          },
+          "Stone": {
+            "class": "bonus",
+            "yields": [
+              0,
+              1
+            ],
+            "chance": 0.04,
+            "on": {
+              "bases": [
+                "Grassland"
+              ],
+              "relief": [
+                "flat",
+                "hills"
+              ],
+              "features": [
+                "none"
+              ]
+            }
+          },
+          "Deer": {
+            "class": "bonus",
+            "yields": [
+              0,
+              1
+            ],
+            "chance": 0.04,
+            "on": [
+              {
+                "features": [
+                  "Woods"
+                ]
+              },
+              {
+                "bases": [
+                  "Tundra"
+                ]
+              }
+            ]
+          },
+          "Bananas": {
+            "class": "bonus",
+            "yields": [
+              1,
+              0
+            ],
+            "chance": 0.35,
+            "on": {
+              "features": [
+                "Rainforest"
+              ]
+            }
+          },
+          "Fish": {
+            "class": "bonus",
+            "yields": [
+              1,
+              0
+            ],
+            "chance": 0.008,
+            "on": {
+              "bases": [
+                "Coast",
+                "Lake"
+              ]
+            }
+          }
+        },
+        "river": {
+          "crossing_cost": 1
+        }
+      },
+      "improvements": {
+        "Farm": {
+          "on": [
+            {
+              "bases": [
+                "Plains",
+                "Grassland",
+                "Desert"
+              ],
+              "relief": [
+                "flat"
+              ]
+            },
+            {
+              "features": [
+                "Floodplains"
+              ]
+            }
+          ]
+        },
+        "Mine": {
+          "on": [
+            {
+              "relief": [
+                "hills"
+              ]
+            },
+            {
+              "bases": [
+                "Desert",
+                "Tundra",
+                "Snow"
+              ],
+              "relief": [
+                "flat"
+              ]
+            }
+          ]
+        },
+        "Plantation": {
+          "on": {
+            "bases": [
+              "Plains",
+              "Grassland",
+              "Desert"
+            ],
+            "relief": [
+              "flat"
+            ]
+          }
+        },
+        "Camp": {
+          "on": {
+            "bases": [
+              "Plains",
+              "Grassland",
+              "Tundra",
+              "Desert"
+            ],
+            "relief": [
+              "flat"
+            ]
+          }
+        },
+        "Pasture": {
+          "on": {
+            "bases": [
+              "Plains",
+              "Grassland",
+              "Desert",
+              "Tundra"
+            ],
+            "relief": [
+              "flat"
+            ]
+          }
+        },
+        "Quarry": {
+          "on": {
+            "bases": [
+              "Plains",
+              "Desert",
+              "Grassland",
+              "Tundra"
+            ],
+            "relief": [
+              "flat"
+            ]
+          }
+        },
+        "Fishing Boats": {
+          "on": {
+            "bases": [
+              "Coast",
+              "Lake"
+            ]
+          }
+        },
+        "Oil Well": {
+          "on": [
+            {
+              "bases": [
+                "Desert",
+                "Tundra",
+                "Snow"
+              ],
+              "relief": [
+                "flat"
+              ]
+            },
+            {
+              "bases": [
+                "Coast",
+                "Ocean"
+              ]
+            }
+          ]
+        }
+      },
+      "game": {
+        "num_players": 8,
+        "max_turns": 1000,
+        "starting_warriors": 3,
+        "min_city_distance": 3,
+        "city_score_weight": 10
+      },
+      "units": {
+        "Warrior": {
+          "max_movement": 2,
+          "combat_strength": 20,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 40
+        },
+        "Archer": {
+          "max_movement": 2,
+          "combat_strength": 15,
+          "ranged_strength": 25,
+          "range": 2,
+          "production_cost": 60
+        },
+        "Swordsman": {
+          "max_movement": 2,
+          "combat_strength": 35,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 90
+        },
+        "Spearman": {
+          "max_movement": 2,
+          "combat_strength": 25,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 65
+        },
+        "Horseman": {
+          "max_movement": 4,
+          "combat_strength": 35,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 80
+        },
+        "Settler": {
+          "max_movement": 2,
+          "combat_strength": 0,
+          "ranged_strength": 0,
+          "range": 0,
+          "production_cost": 120
+        },
+        "Worker": {
+          "max_movement": 2,
+          "combat_strength": 0,
+          "ranged_strength": 0,
+          "range": 0,
+          "production_cost": 50
+        },
+        "Catapult": {
+          "max_movement": 2,
+          "combat_strength": 23,
+          "ranged_strength": 35,
+          "range": 2,
+          "production_cost": 120
+        }
+      },
+      "combat": {
+        "anti_cavalry_bonus": 10,
+        "melee_vs_spearman_bonus": 5,
+        "ranged_city_penalty": 17,
+        "archer_vs_horseman_penalty": 5,
+        "fortification_bonus": [
+          3,
+          6
+        ],
+        "hp_penalty_coefficient": -10,
+        "damage_base": 30,
+        "damage_exponent_coefficient": 0.04,
+        "damage_roll_min": 0.8,
+        "damage_roll_max": 1.2,
+        "heal_fortified": 20,
+        "heal_normal": 10
+      },
+      "city": {
+        "health": 200,
+        "defense_strength": 20
+      },
+      "training": {
+        "episodes": 64,
+        "batch_size": 32,
+        "max_turns": 250,
+        "learning_rate": 0.001,
+        "gamma": 0.9,
+        "epsilon_start": 1.0,
+        "epsilon_end": 0.05,
+        "epsilon_decay_episodes": 800,
+        "target_update_freq": 100,
+        "encoder": "enhanced",
+        "fully_conv": true,
+        "fog_of_war": false,
+        "rewards": {
+          "invalid_action": -1,
+          "fortify": 0,
+          "damage_per_hp": 0.1,
+          "kill": 10,
+          "unit_lost": -5,
+          "capture_civilian": 15,
+          "capture_city": 80,
+          "found_city": 40,
+          "win": 100,
+          "loss": -100,
+          "draw": 0,
+          "proximity_weight": 0.5,
+          "proximity_radius": 0
+        }
+      }
+    },
+    "date": "2026-09-05T10:07:31.092076+00:00"
+  },
+  "elapsed_seconds": 0.18955549970269203
+}
