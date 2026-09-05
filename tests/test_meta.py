@@ -10,8 +10,16 @@ from civulator.meta import build_manifest, load_weights, save_weights
 
 
 def test_manifest_has_all_keys_and_matches_current_state():
+    # The shape gained `git_dirty` in issue #75: a commit hash alone does not
+    # identify the code that produced an artifact, because a run can be
+    # launched from a working tree with uncommitted edits (2026-09-04 — a
+    # 13-hour run trained under combat constants that were in no commit).
+    # Loaders only ever read `game_version`, so an added key is backward
+    # compatible; this pin exists to make schema changes deliberate.
+    assert set(build_manifest().keys()) == {
+        "game_version", "git_commit", "git_dirty", "config", "date",
+    }
     manifest = build_manifest()
-    assert set(manifest.keys()) == {"game_version", "git_commit", "config", "date"}
     assert manifest["game_version"] == civulator.__version__
     assert manifest["config"] == CFG
 

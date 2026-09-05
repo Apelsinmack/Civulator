@@ -45,6 +45,26 @@ def _git_commit():
         return "unknown"
 
 
+def _git_dirty():
+    """True when tracked files differ from HEAD, None when git can't be read.
+
+    A commit hash alone does not identify the code that ran: a 13-hour
+    training run can be launched from a working tree with uncommitted edits
+    (this happened on 2026-09-04 — a run trained under combat constants that
+    were never in any commit). The flag makes that visible in the artifact
+    instead of leaving the manifest quietly wrong (issue #75).
+    """
+    try:
+        out = subprocess.check_output(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=_find_repo_root(),
+            stderr=subprocess.DEVNULL,
+        )
+        return bool(out.decode().strip())
+    except Exception:
+        return None
+
+
 class VersionGateError(Exception):
     """Raised by `check_version` — and reused verbatim by anything that shares
     its refusal path (design doc §8, Systems (b) "Version gate" row: "the one
@@ -142,6 +162,7 @@ def build_manifest(mapgen_params=None):
     manifest = {
         "game_version": __version__,
         "git_commit": _git_commit(),
+        "git_dirty": _git_dirty(),
         "config": copy.deepcopy(CFG),
         "date": datetime.now(timezone.utc).isoformat(),
     }
@@ -150,14 +171,25 @@ def build_manifest(mapgen_params=None):
     return manifest
 
 
-def save_weights(state_dict, path):
+def save_weights(state_dict, path, manifest=None):
     """Save a state_dict (or checkpoint payload dict) with an embedded manifest.
 
     `state_dict` may be a plain torch state_dict, or a larger payload dict such as
     {"model_state_dict": ..., "optimizer_state_dict": ...} — whatever a call site
     used to pass straight to torch.save. It is wrapped as-is under "state_dict".
+
+    `manifest`: pass one built at RUN START for anything long-running (issue
+    #75). `build_manifest()` reads `git_commit` from the repo at the moment
+    it is called, so a training run that saves 13 hours after it launched
+    records whatever HEAD happens to be *then* — not the code that produced
+    the weights. `game_version` and `config` are bound at import and so
+    already describe launch time; the commit is the one field that drifts.
+    Omitted (the default) keeps the original behaviour for short-lived save
+    sites, which are the majority.
     """
-    torch.save({"state_dict": state_dict, "manifest": build_manifest()}, path)
+    if manifest is None:
+        manifest = build_manifest()
+    torch.save({"state_dict": state_dict, "manifest": manifest}, path)
 
 
 def load_weights(path, map_location=None):

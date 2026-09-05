@@ -101,7 +101,7 @@ from civulator.game import GameEnvironment, resolve_size_and_players
 from civulator.game.environment import REWARDS
 from civulator.agents import DQNAgent, BuildAgent, ReplayMemory, get_encoder
 from civulator.training import train_agents
-from civulator.meta import load_weights, save_weights
+from civulator.meta import build_manifest, load_weights, save_weights
 
 # --- The #39 pinned configuration (see module docstring) -------------------
 SIZE_PRESET = "duel"
@@ -244,7 +244,7 @@ def load_resume_weights(agents, build_agents, path):
     return manifest
 
 
-def save_final_weights(agents, build_agents, path):
+def save_final_weights(agents, build_agents, path, manifest=None):
     """The run's one combined, manifest-carrying artifact (civulator.meta.
     save_weights already embeds build_manifest() -- game_version,
     git_commit, config, date). Both players' combat AND build networks
@@ -278,7 +278,7 @@ def save_final_weights(agents, build_agents, path):
         ],
     }
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    save_weights(payload, path)
+    save_weights(payload, path, manifest=manifest)
 
 
 def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
@@ -330,12 +330,25 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
             resume_manifest = load_resume_weights(agents, build_agents, resume_path)
         env.max_turns = max_turns
 
+        # Manifest built HERE, at launch — not when the run saves (issue
+        # #75). build_manifest reads git_commit from the repo when called,
+        # so a 13-hour run that saves at the end records whatever HEAD is
+        # then; on 2026-09-04 a run also trained under uncommitted edits,
+        # which git_dirty now makes visible.
+        run_manifest = build_manifest()
+        print(f"[manifest] pinned at launch: game_version="
+              f"{run_manifest['game_version']} git_commit={run_manifest['git_commit']}"
+              f" git_dirty={run_manifest['git_dirty']}")
+        if run_manifest["git_dirty"]:
+            print("[manifest] WARNING: the working tree has uncommitted changes, so "
+                  "no commit describes the code training this run")
+
         def checkpoint_saver(completed):
             ck_path = os.path.join(
                 "weights", "checkpoints",
                 weights_filename.replace(".pth", f"_ck{completed}.pth"),
             )
-            save_final_weights(agents, build_agents, ck_path)
+            save_final_weights(agents, build_agents, ck_path, manifest=run_manifest)
             print(f"[checkpoint] episode {completed} -> {ck_path}")
 
         t0 = time.perf_counter()
@@ -354,7 +367,7 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
         elapsed = time.perf_counter() - t0
 
         weights_path = os.path.join("weights", "trained", weights_filename)
-        save_final_weights(agents, build_agents, weights_path)
+        save_final_weights(agents, build_agents, weights_path, manifest=run_manifest)
 
         stats_path = os.path.join(
             "stats",
@@ -381,6 +394,8 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
             "learning_rate": learning_rate,
             "gamma": gamma,
             "resumed_from": resume,
+            "launch_manifest": {k: run_manifest[k] for k in
+                                ("game_version", "git_commit", "git_dirty", "date")},
             "skipped_schedule_seeds": skipped_seeds,
             # Episodes cut off by the step-limit guard (#51): their entry in
             # win_history is an artifact of where the loop was cut, not a

@@ -215,7 +215,10 @@ def test_move_then_kill_writes_a_demonstration(tmp_path):
         demo = json.load(f)
 
     assert demo["scenario_file"] == "scenario_042.json"
-    assert set(demo["manifest"]) == {"game_version", "git_commit", "config", "date"}
+    # `git_dirty` added in #75 — see tests/test_meta.py for why the shape changed.
+    assert set(demo["manifest"]) == {
+        "game_version", "git_commit", "git_dirty", "config", "date",
+    }
     assert len(demo["actions"]) == 2
     assert demo["actions"][0]["select"] == list(start)
     assert demo["actions"][0]["move"] == list(step)
