@@ -151,6 +151,53 @@ is precisely the confound the literature documents:
 is an experiment variable in the #39-baseline series, and it must be reported as
 one.
 
+### Lever B is available at N = 1 — and that reorders the plan
+
+Added 2026-09-05 after Erik asked the obvious question the analysis had skipped:
+*why are we optimizing on every single action at all?*
+
+Nothing about lowering the replay ratio requires parallel games. Let *r* be the
+replay ratio relative to today's 1.0; the trainer change is a counter and a
+modulo at `trainer.py:325`. Then at N = 1:
+
+```
+per-action cost = L·r + A
+r = 0.25  →  1/(0.197 + 0.212) = 2.44×
+r = 0.10  →  1/(0.079 + 0.212) = 3.44×
+r → 0     →  1/A               = 4.72×  (the ceiling)
+```
+
+**Pure replay-ratio reduction at N = 1 is worth up to 4.7×, against 1.27× for
+pure vectorization at fixed r.** It is also roughly three lines of code. It is
+the highest-value, lowest-effort change on the board, and it is *not* what this
+document originally led with.
+
+The two levers then compose in a specific order, and only that order:
+
+| stage | L·r | A | speedup vs today |
+|---|---:|---:|---:|
+| today (r=1, N=1) | 0.788 | 0.212 | 1.00× |
+| r = 0.25, N = 1 | 0.197 | 0.212 | **2.44×** |
+| r = 0.25, N = 8 | 0.197 | 0.027 | **4.47×** |
+
+Lowering *r* raises A's share of the night from 21% to **52%**, and A is the part
+that vectorization amortizes. So the RR reduction does not merely precede the
+vector env — **it is what makes the vector env worth building.** At today's r,
+N = 8 buys 1.22×; after the RR change the same N = 8 buys 1.83×. Doing #22
+first would have measured the vectorization at its worst possible operating
+point and probably concluded, correctly but uselessly, that it does not pay.
+
+The same reordering also lowers risk: a lower replay ratio *reduces* exposure to
+the plasticity-loss / primacy-bias failure mode that afflicts high-RR agents
+(§4B), so the cheap change is also the conservative one.
+
+**Caveat — "one gradient step per Civ turn" is not yet a number we can state.**
+Erik's suggested unit ("at minimum one Civ turn") is the natural granularity, but
+`stats/*.json` records neither steps nor turns per episode, so actions-per-turn
+is unmeasured and *r* for that policy cannot be derived from any committed
+artifact. Gate 0 must capture it, and the run record should gain `steps`,
+`turns` and `optimize_count` fields — a small schema gap worth closing anyway.
+
 ---
 
 ## 5. Civ is sequential — what that actually constrains
@@ -266,8 +313,13 @@ happen.
 | P2 | Fuse the double target-network forward in `compute_loss` | **yes** | ~1.2–1.3× |
 | P3 | Remove per-optimize H2D staging (pinned buffer / device-side replay) | **yes** | modest |
 | P4 | CUDA graphs on `optimize()` | **yes** (same numerics) | the big neutral win |
-| P5 | `VectorGameEnvironment` + windowing inference batcher; `n_envs`/`replay_ratio` in config | **no — experiment** | ≈N×, conditional on gate 1 |
-| P6 | Measured comparison against the frozen #39 baseline: replay-ratio ladder at fixed wall-clock | — | the scientific record |
+| P5 | **`replay_ratio` in config + the modulo at `trainer.py:325`; `steps`/`turns`/`optimize_count` into the run record** | **no — experiment** | up to 4.7× at N=1 (§4B) |
+| P6 | Replay-ratio ladder at fixed wall-clock vs the frozen #39 baseline | — | picks *r*; the scientific record |
+| P7 | `VectorGameEnvironment` + windowing inference batcher; `n_envs` in config | **no — experiment** | ≈1.8× *on top of* P6's *r*, conditional on gate 1 |
+
+P5/P6 come **before** P7 deliberately: at today's replay ratio the vector env is
+operating at its worst point (1.22× at N=8) and would measure as not worth
+building; after P6 the same N=8 is worth 1.83×. See §4B.
 
 P2–P4 are safe to land as ordinary optimization patches with before/after
 profiling shares cited, per #34's rule of use. **P5 is a designed experiment and
