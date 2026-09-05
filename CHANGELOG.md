@@ -11,6 +11,81 @@ Version number deliberately not bumped: the next number is an open question
 (#83 — "v0.2.0" was said while the code is at 0.6.2). Everything below is a
 **rule change**, not a refactor.
 
+### Flanking bonus: +2 per friendly unit adjacent to the defender (#59)
+
+**Rule change, effect NOT yet measured.** The motivation is measured: the
+2026-09-04 cross-model evaluation found six of eight trained models recording
+**zero kills across 200 games**, and the one model that does fight losing its
+exchanges **69:169** while winning on cities. Attacking is close to pure
+downside — a defender on good terrain, possibly fortified, wins the exchange,
+and the score rewards keeping units alive rather than trading them. Flanking is
+one of the few levers that changes that arithmetic *inside* the combat system,
+and it makes a coordinated two-unit attack better than two separate ones, which
+is exactly the behaviour no agent has yet learned.
+
+**Who gets the bonus: the unit that is striking.** `get_combat_strength` adds
+`flanking_bonus` per neighbouring tile of its target that holds one of the
+striker's own combat-capable units. That means:
+
+- the **attacker** gets it, counting its units around the defender — the rule
+  as #59 states it;
+- the **melee counterattack** gets it symmetrically, because that is the
+  defender striking back, counting *its* units around the attacker;
+- a unit's **defensive** strength never gets it.
+
+The asymmetry is deliberate and is not v0.6.2's bug in a new costume. #63's
+lesson was that a modifier must be applied in every role it belongs in — the
+Spearman's anti-cavalry bonus is a property of the *pairing*, so it belongs in
+both roles. Flanking is a property of *pressure on the target of a blow*, so it
+belongs to whoever is landing the blow. Applying it to defence as well would
+reward standing in a crowd, which is the opposite of the behaviour the issue is
+trying to buy.
+
+One consequence worth stating: `Unit.attack` computes the attacker's strength
+once and reuses it as the attacker's defence during the counterattack (the same
+mechanic v0.6.2 documented for class bonuses). So a flanked attacker both hits
+harder and takes less. That compounds the incentive to coordinate, which is
+intended, and it is a property of the existing combat path rather than
+something added here.
+
+**Counted per tile, not per unit.** Tiles stack up to four units in different
+slots; a stack is one position pressing on the defender, not three. Civilians
+(combat strength 0) do not flank. Adjacency comes from `Map.get_adjacent_coords`
+and therefore from `civulator/hexmath.py`, wrap included — no neighbour
+arithmetic is written in `unit.py`, which is the invariant #24 was caused by
+breaking.
+
+**Value and off switch.** `[combat] flanking_bonus = 2`. Civ 6 uses +2 per
+flanking unit and our strength scale is Civ 6's, so the number transfers
+directly. **0 disables the rule entirely**, including the adjacency scan — the
+minimum version of the tech/culture gate Erik eventually wants (#41/#76), and
+what keeps this epoch's behaviour reproducible. It sits in `[combat]` rather
+than `[game]`, where the issue's shorthand put it, because
+`civulator/unit_model.py` is the only interpreter of the combat tables (#64);
+a number in `[game]` would need a direct `CFG` read inside `game/unit.py`.
+
+**Derived effect** (Warrior vs Warrior, flat, no fortification, mean roll —
+derivation, not measurement; ratio is damage dealt / damage taken in one
+exchange):
+
+| flanking units | attacker strength | dealt | taken | ratio |
+|---|---|---|---|---|
+| 0 | 20 | 30.00 | 30.00 | 1.00 |
+| 1 | 22 | 32.50 | 27.69 | **1.17** |
+| 2 | 24 | 35.21 | 25.56 | **1.38** |
+| 3 | 26 | 38.14 | 23.60 | **1.62** |
+
+The comparison the rule exists for: two Warriors attacking the same defender
+from adjacent tiles deal **65.0** and take **55.4**, against **60.0 / 60.0** for
+the same two Warriors attacking separately.
+
+**Measured effect: pending.** Kills per 200 games against the frozen baseline
+is an instrumented metric, so the before/after is cheap to produce; whether
+agents can *discover* the rule (they must represent "my other unit is adjacent
+to that enemy") is the open question that makes this an experiment rather than
+a balance tweak. Nothing here should be reported as an improvement until a run
+answers it.
+
 ### Walls: +30 city defence, buildable, and applied in combat (#7)
 
 **Rule change, effect NOT yet measured — and see the caveat below, which is the

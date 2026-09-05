@@ -63,6 +63,8 @@ DAMAGE_ROLL_MIN = _COMBAT_CFG["damage_roll_min"]
 DAMAGE_ROLL_MAX = _COMBAT_CFG["damage_roll_max"]
 HEAL_FORTIFIED = _COMBAT_CFG["heal_fortified"]
 HEAL_NORMAL = _COMBAT_CFG["heal_normal"]
+# Per flanking unit adjacent to the defender (issue #59); 0 disables the rule.
+FLANKING_BONUS = _COMBAT_CFG["flanking_bonus"]
 
 # --- City combat numbers (game/city.py City.__init__) ---
 

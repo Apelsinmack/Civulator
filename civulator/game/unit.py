@@ -16,6 +16,7 @@ from ..unit_model import (
     DAMAGE_EXPONENT_COEFFICIENT,
     DAMAGE_ROLL_MAX,
     DAMAGE_ROLL_MIN,
+    FLANKING_BONUS,
     FORTIFICATION_BONUS,
     HEAL_FORTIFIED,
     HEAL_NORMAL,
@@ -257,7 +258,53 @@ class Unit:
             if self.unit_type in ["Warrior", "Swordsman"] and target_type == "Spearman":
                 strength += MELEE_VS_SPEARMAN_BONUS
 
+        # Flanking (issue #59): the unit that is STRIKING gets a bonus per
+        # neighbouring tile of its target that holds one of its own
+        # combat-capable units. See flanking_count for the exact rule and for
+        # why it is the striker rather than the defender who gets it.
+        if is_attacking and FLANKING_BONUS:
+            strength += FLANKING_BONUS * self.flanking_count(target)
+
         return max(0, strength)
+
+    def flanking_count(self, target):
+        """How many tiles adjacent to `target` hold a flanking unit of ours.
+
+        Counted per TILE, not per unit: a tile can stack up to four units in
+        different slots (a Warrior, a Settler, a siege support), and a stack is
+        one position pressing on the defender, not three. A tile counts when it
+        holds at least one unit that
+
+        - belongs to this unit's player,
+        - is not this unit itself (Civ 6 counts the *other* units around the
+          defender; the attacker is already in the exchange), and
+        - has a base combat strength above 0, so Settlers and Workers being
+          escorted alongside an army do not flank.
+
+        Adjacency comes from `Map.get_adjacent_coords`, which delegates to the
+        canonical hex kernels in `civulator/hexmath.py` — wrap included. No
+        neighbour arithmetic is written here; that is the invariant the
+        ranged-attack bug (#24) was caused by breaking.
+
+        Returns 0 whenever the answer cannot be known (no environment, or a
+        target with no position), so a unit built outside a game never raises.
+        """
+        env = self.player.game_env if self.player is not None else None
+        target_coords = getattr(target, "coordinates", None)
+        if env is None or target_coords is None:
+            return 0
+
+        count = 0
+        for pos in env.map.get_adjacent_coords(target_coords):
+            for other in env.get_units_at(pos):
+                if (
+                    other is not self
+                    and other.player is self.player
+                    and other.get_base_combat_strength() > 0
+                ):
+                    count += 1
+                    break
+        return count
 
     def get_ranged_strength(self, target=None, is_city=False):
         """Calculate ranged strength including modifiers."""
