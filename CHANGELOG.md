@@ -11,6 +11,75 @@ Version number deliberately not bumped: the next number is an open question
 (#83 — "v0.2.0" was said while the code is at 0.6.2). Everything below is a
 **rule change**, not a refactor.
 
+### Minimum city distance 3 -> 4, and the start-placement floor with it (#74)
+
+**Rule change, effect NOT yet measured** beyond the seed-schedule count below.
+Erik, 2026-09-04: the minimum distance between cities was wrong.
+
+Distance is counted in **steps between tiles**. Standing on a city centre you
+must move 4 tiles to get outside the radius and found another city, so the
+minimum distance is 4 — which leaves **3 tiles between city centres**. The old
+value of 3 came from counting border-to-border instead of centre-to-centre.
+
+`[game] min_city_distance` 3 -> 4 in `config.toml`. **No code changed**:
+`GameEnvironment.can_found_city_at` already compares
+`if distance < MIN_CITY_DISTANCE: return False`, i.e. founding is legal at
+distance >= the constant, so 4 expresses exactly the rule above. Every consumer
+reads the rule through that one method and follows automatically — the
+found-city path, the action masks (#51), and the #8 settle-site state channel.
+No consumer holds its own copy of the number.
+
+`[map.starts] d_min_floor` 3 -> 4 in the same patch (mirrored in
+`civulator/mapgen/starts.py`'s `DEFAULT_PARAMS`). It is the same quantity one
+layer up — the minimum spacing between *starting positions* — and every start
+becomes a capital, so a floor below the city rule could seat two capitals
+closer than the rule permits. It is a **floor**, not the spacing: `_compute_d_min`
+takes `max(d_min_floor, round(sqrt(tiles / (players * d_min_players_factor))))`,
+which on Duel computes 6 and on the Standard ceremony world 7. It binds only on
+crowded maps, and only when the relax-and-retry ladder walks all the way down
+to it — most maps do not move at all.
+
+**Measured effect — the episode-seed schedule.** Walking the #39 schedule
+(`seed_base=390000`, Duel earthlike, 2 players) for a full 1000-episode
+baseline run, the seeds start placement rejects went from **19 to 21** out of
+1021 consumed (~2.1%, unchanged in order of magnitude). The new set is a strict
+**superset** of the old — no seed became placeable — with two additions:
+`390477` and `390675`. Full old set: 390016, 390053, 390065, 390076, 390264,
+390277, 390294, 390385, 390408, 390489, 390672, 390683, 390689, 390759, 390770,
+390785, 390850, 390909, 390945. Because the cursor scheme shifts every later
+episode by one per skip, **episode k now maps to a different world from
+episode k of the pre-#74 baseline** from episode 477's neighbourhood onward:
+runs are not seed-for-seed comparable across this change.
+
+**Golden re-baseline.** `tests/test_mapgen_golden.py`'s `CEREMONY_SHA256`
+moved from `73a79864...ed5de4b` to `c1789b41...5b01d5f5`. **Terrain did not
+change.** A field-by-field diff of the ceremony `MapData` (Standard 48x24,
+seed 42, 6 players) between floor 3 and floor 4 shows `base_terrain`, `relief`,
+`feature`, `resource`, `rivers`, `fresh_water` **and `starts`** all
+byte-identical; the only field that moved is `params`, the provenance dict,
+which now records `d_min_floor: 4`. The floor is not binding on that world (its
+raw d_min is 7), so no re-inspection ceremony was needed. `test_rng.py`'s
+engine-level twin and `test_ceremony_world_excerpt` both still pass unchanged.
+`tests/fixtures/scenario_fixture.json` keeps `d_min_floor: 3` in its pinned
+manifest and still reproduces its world exactly — the manifest-pinning contract
+working as intended (loaders rebuild from the manifest, never from live config).
+
+**Comparability.** Trained weights still load (`check_version` gates on
+major.minor), but their policies were tuned to spacing 3 — the same situation
+as the v0.6.2 combat rebalance. A before/after re-evaluation is what would make
+this measurable; cities founded per 200 games is the instrumented metric this
+rule should move, and it has **not** been run for this patch. Replays
+re-simulate rather than replay stored state, so a legality change makes them
+diverge; recorded scenarios keep their terrain but may contain city layouts the
+new rule would forbid — neither has been validated here.
+
+New test: `tests/test_min_city_distance.py` (7 tests) asserts the boundary
+directly — illegal at `MIN_CITY_DISTANCE - 1`, legal at `MIN_CITY_DISTANCE`,
+the whole inner ring illegal in every direction, and the mask/encoder agreeing
+with `can_found_city_at` tile-for-tile. It imports the constant rather than
+hardcoding it (the precedent #8's test set), with one test pinning the literal
+4 so the number cannot move silently.
+
 ### Siege vs cities: the siege class is exempt from the flat penalty; the two support units get stats (#66)
 
 **Rule change, effect NOT yet measured.** Erik, 2026-09-04: *"Catapults are
