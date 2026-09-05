@@ -16,7 +16,13 @@ import hashlib
 
 from civulator.mapgen import generate
 
-CEREMONY_SHA256 = "73a79864106480f16ba70e7a701b48c3f154ef6a43279f9da233a3264ed5de4b"
+# Re-baselined 2026-09-05 (#74, d_min_floor 3 -> 4). The ONLY MapData field
+# that moved is `params`, the provenance dict, which now records the new
+# floor: base_terrain, relief, feature, resource, rivers, fresh_water AND
+# starts are all byte-identical to the v0.6.0 ceremony world (the floor is
+# not binding here -- this world's raw d_min is 7). No re-inspection was
+# needed because the generated world itself did not change.
+CEREMONY_SHA256 = "c1789b41443379c37399acd9c1c0b28f9cf16ff42c3790403b1da58a5b01d5f5"
 
 # [map.earthlike] as of v0.6.0, frozen (D25 geometry: split elevation).
 PINNED_PARAMS = {
