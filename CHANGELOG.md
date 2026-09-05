@@ -5,6 +5,87 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
+## v0.6.2 — Civ 6 Ancient-era combat alignment (2026-09-04)
+
+**Rule change, effect NOT yet measured.** The unit counter web existed in code
+but did not function. Two independent causes, both fixed here:
+
+**1. Class bonuses applied only when attacking.** `get_combat_strength` gated
+every class advantage behind `is_attacking`, so a Spearman standing still and
+being charged by a Horseman got no anti-cavalry bonus — the one thing the unit
+exists to do. Only the defender was shortchanged: `Unit.attack` computes the
+attacker's strength once and reuses it as the attacker's defence during the
+counterattack, so an *attacking* Spearman kept its +10 through the exchange.
+Civ 6 applies these bonuses in both directions, and so do we now. Closes #63.
+
+**2. Four constants disagreed with Civ 6**, one of them decisively: our
+Horseman was 36 where Civ 6's is 35, one point *above* the boosted Spearman's
+35, so the anti-cavalry counter failed by a single point of strength.
+
+| unit | field | was | now |
+|---|---|---|---|
+| Spearman | production | 50 | **65** |
+| Horseman | combat strength | 36 | **35** |
+| Catapult | combat strength | 25 | **23** |
+| Catapult | ranged strength | 45 | **35** |
+
+Deliberately unchanged: the **Archer** stays at 60 production rather than Civ
+6's 50 — the sources conflict (50 in the Analyst table, 60 on the wiki) and
+there is no signal yet worth rebalancing on. Warrior, Swordsman and every
+movement/range value already matched Civ 6.
+
+**What the change is supposed to produce.** In Civ 6 the counter relationships
+resolve to *even* fights decided by production cost, because all melee units
+get +5 vs anti-cavalry, which cancels the Spearman's 25-vs-20 strength edge.
+Derived from the tables and the damage formula (both units at 100 HP, flat
+terrain, no fortification, mean roll — **derivation, not measurement**):
+
+| exchange | before | after |
+|---|---|---|
+| Horseman → Spearman | 1.62 (cavalry wins) | **1.00**, Spearman 1.23x cheaper |
+| Spearman → Horseman | 0.92 (counter fails) | **1.00** |
+| Warrior → Spearman | 1.00, 1.25x on cost | **1.00**, Warrior **1.62x** cheaper |
+| Spearman → Warrior | 1.22 | **1.00** |
+
+Ratio is damage dealt / damage taken in one attack. The rock-paper-scissors
+web is therefore expressed in **cost, not strength**, which means it is only
+exploitable through build decisions — see #73.
+
+**Measured effect: pending.** No training run has happened under these rules.
+The prior epoch's build mix is what motivated the change (`duel_53ch_net128x6_1000ep`
+vs the frozen baseline, 200 games,
+`stats/eval_duel_53ch_net128x6_1000ep_vs_duel_25ch_1000ep_1788499820.json`:
+**Spearman 1290 of 2674 builds, 48%**, against Warrior 343 and Horseman 320).
+Whether the rebalance moves that mix is the open question, and #65 (matchup
+harness) plus a fresh run are what would answer it. Nothing here should be
+reported as an improvement until then.
+
+**Not comparable across the change**: existing trained weights were trained
+against the old costs and strengths, so their build policies are tuned to a
+game that no longer exists. Version stays on 0.6.x deliberately — `check_version`
+gates on major.minor, so v0.6 weights and scenarios still *load*, which is what
+makes a before/after re-evaluation possible at all. Comparability of results is
+a separate matter from loadability, and this change breaks the former only.
+
+**Deferred, filed**: the constants are still Python literals rather than
+`config.toml` (#64, which should have landed first and would have made this a
+one-file diff).
+
+**One accepted regression, quantified.** Copying Civ 6's Catapult ranged
+strength (45 → 35) while keeping our ad-hoc flat `-17` vs cities drops the
+Catapult to **18 against a city defence of 20** — it now bombards cities from
+a strength *deficit*, where before it had 28 against 20. Razing a 200 HP city
+goes from ~4.8 shots to ~7.2 (derived, mean roll). Civ 6 has no such flat
+penalty: it models walls and exempts the siege class from the reduction other
+units suffer, so the `-17` was evidently tuned against our old 45. Taking
+cities was already the scarce event in this epoch (the previous run captured
+13 cities and founded 92), so this makes the scarce thing scarcer. Accepted
+deliberately rather than patched around — replacing the `-17` with a real wall
+model is #66, and `tests/test_combat_class_bonus.py` pins the deficit so #66
+has to change it on purpose.
+
+---
+
 ## v0.6.1 — Masks may not offer no-op actions (2026-09-04)
 
 **Rule change, measured.** An action the engine refuses (`invalid_action`)

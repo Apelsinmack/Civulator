@@ -75,15 +75,15 @@ class Unit:
         "Archer": 15,
         "Swordsman": 35,
         "Spearman": 25,
-        "Horseman": 36,
+        "Horseman": 35,
         "Settler": 0,
         "Worker": 0,
-        "Catapult": 25,
+        "Catapult": 23,
     }
 
     BASE_RANGED_STRENGTH = {
         "Archer": 25,
-        "Catapult": 45,
+        "Catapult": 35,
         "Warrior": 0,
         "Swordsman": 0,
         "Spearman": 0,
@@ -107,7 +107,7 @@ class Unit:
         "Warrior": 40,
         "Archer": 60,
         "Swordsman": 90,
-        "Spearman": 50,
+        "Spearman": 65,
         "Horseman": 80,
         "Settler": 120,
         "Worker": 50,
@@ -238,12 +238,15 @@ class Unit:
             fort_bonus = 3 if self.fortification == 1 else 6
             strength += fort_bonus
 
-        # Unit class advantages
-        if target and is_attacking:
+        # Unit class advantages — applied whether this unit attacks or defends
+        # (issue #63). Gating them behind is_attacking meant a Spearman standing
+        # still and being charged got no anti-cavalry bonus, which is the one
+        # thing the unit exists to do. Civ 6 applies these in both directions.
+        if target:
             if self.unit_type == "Spearman" and target.unit_type == "Horseman":
                 strength += 10  # Anti-cavalry
             if self.unit_type in ["Warrior", "Swordsman"] and target.unit_type == "Spearman":
-                strength += 5
+                strength += 5  # Melee vs anti-cavalry
 
         return max(0, strength)
 
