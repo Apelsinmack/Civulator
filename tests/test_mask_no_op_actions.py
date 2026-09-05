@@ -112,7 +112,7 @@ def _step_on_copy(env, select_index, move_index):
 
 def _settler_next_to_city():
     """Player 0 owns a city at (4, 4); its Settler stands adjacent at (4, 5),
-    well inside `min_city_distance` (3), so it cannot found there."""
+    well inside `min_city_distance` (4 since #74), so it cannot found there."""
     env = make_flat_env()
     _clear_board(env)
     env.found_city(env.players[0], (4, 4), "Capital")

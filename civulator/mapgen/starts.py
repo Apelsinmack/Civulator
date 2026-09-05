@@ -64,7 +64,10 @@ DEFAULT_PARAMS = {
     "coastal_weight": 4.0,
     "min_passable_ring1": 3,
     "d_min_players_factor": 3.5,
-    "d_min_floor": 3,
+    # Tracks [game] min_city_distance (#74): every start becomes a capital,
+    # so this floor must never permit capitals closer than the found-city
+    # rule allows. Only binds on crowded maps -- see _compute_d_min.
+    "d_min_floor": 4,
     # Normalization thresholds -- see the P5 report / config.toml comment
     # for the Civ6-to-our-yield-scale derivation.
     "food_total_min": 6.0,
@@ -603,14 +606,18 @@ def _compute_d_min(num_players, rows, cols, p):
     """design doc §6.3 (verbatim): d_min = round(sqrt(tiles / (players *
     d_min_players_factor))), floored at `p["d_min_floor"]`. The floor
     applies to the STARTING value too, not just the bottom of the
-    relax-and-retry ladder in `place_starts` -- "relax... down to floor 3"
-    only makes sense as a description if 3 is also the lowest value the
-    un-relaxed formula could ever hand back. (The design doc's own §6 size
-    table reproduces exactly with NO floor applied at all -- every listed
-    preset's raw value is already >= 5 -- so this floor only ever bites
-    outside that table, e.g. a deliberately tiny/crowded test world; see
-    the P5 report for the floor-value discrepancy against this patch's own
-    task brief, which named 5 instead of 3.)
+    relax-and-retry ladder in `place_starts` -- "relax... down to the
+    floor" only makes sense as a description if the floor is also the
+    lowest value the un-relaxed formula could ever hand back. (The design
+    doc's own §6 size table reproduces exactly with NO floor applied at
+    all -- every listed preset's raw value is already >= 5 -- so this
+    floor only ever bites outside that table, e.g. a deliberately
+    tiny/crowded test world; see the P5 report for the floor-value
+    discrepancy against that patch's own task brief, which named 5.)
+
+    The floor was raised 3 -> 4 in #74 to track [game] min_city_distance:
+    starts become capitals, so a lower floor could seat two capitals
+    closer than `can_found_city_at` would ever allow a city to be founded.
     """
     tiles = rows * cols
     raw = round(math.sqrt(tiles / (num_players * p["d_min_players_factor"])))

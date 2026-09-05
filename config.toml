@@ -163,7 +163,10 @@ min_passable_ring1 = 3      # REJECT candidates with fewer passable ring-1 tiles
 
 # --- Placement (§6.3) ---
 d_min_players_factor = 3.5  # d_min = round(sqrt(tiles / (players * this)))
-d_min_floor = 3             # floor for BOTH the raw formula and the relax-and-retry ladder
+d_min_floor = 4             # floor for BOTH the raw formula and the relax-and-retry ladder.
+                            # Tracks [game] min_city_distance (#74): every start becomes a
+                            # capital, so the floor must never allow capitals closer than
+                            # the found-city rule permits. Mirrored in mapgen/starts.py.
 
 # --- Normalization thresholds (§6.4) -- scaled from Civ 6's own (food<7/
 # best<3, prod<5/best<2, both "over 6 tiles" i.e. the ring-1 neighborhood)
@@ -473,7 +476,11 @@ on = [
 num_players = 8
 max_turns = 1000
 starting_warriors = 3
-min_city_distance = 3    # Minimum hex distance between cities
+min_city_distance = 4    # Minimum hex distance (steps) between city CENTRES.
+                         # can_found_city_at rejects distance < this, so founding is
+                         # legal from `this` steps out: 4 leaves 3 tiles between
+                         # centres. Counted centre-to-centre, not border-to-border
+                         # (#74). Read only via environment.MIN_CITY_DISTANCE.
 city_score_weight = 10   # Turn-cap tiebreak: score = cities * this + units (#55)
 
 # =====================================================================
