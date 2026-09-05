@@ -410,7 +410,12 @@ python/version3\ multiple\ agents/weights/
 # Training artifacts
 weights/
 !weights/trained/
-stats/
+# stats/ is NOT ignored: it is the scientific record (CLAUDE.md, "Scientific
+# record: stats/, weights/trained/ -- never delete previous results"). It was
+# ignored until 2026-09-05, which meant every new artifact had to be remembered
+# into the repo with `git add -f`; #65's harness silently failed to commit its
+# own artifact that way while a merge message cited it. Scratch runs are kept
+# out by `runs/` below, not by ignoring the record.
 
 # scripts/run_baseline.py --tag <non-default>: isolated smoke/scratch run
 # output (weights/, weights/trained/, stats/ mirrored per tag), never the
