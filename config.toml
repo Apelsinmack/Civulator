@@ -476,6 +476,97 @@ starting_warriors = 3
 min_city_distance = 3    # Minimum hex distance between cities
 city_score_weight = 10   # Turn-cap tiebreak: score = cities * this + units (#55)
 
+# =====================================================================
+# Unit stat tables and combat formula constants (issue #64) — moved out of
+# civulator/game/unit.py so a future balance change is a config edit,
+# measurable against a baseline that differs by nothing else. The only
+# interpreter of these tables is civulator/unit_model.py (never read
+# [units.*] / [combat] from CFG directly — see CLAUDE.md's canonical-systems
+# table). tests/test_unit_config_identity.py pins today's numbers as
+# hardcoded literals so this move itself changes nothing.
+#
+# NUM_UNIT_SLOTS/UNIT_SLOT and MOVEMENT_DOMAIN stay in civulator/game/unit.py
+# (not here) — see the comments on those tables for why.
+# =====================================================================
+[units.Warrior]
+max_movement = 2
+combat_strength = 20
+ranged_strength = 0
+range = 1
+production_cost = 40
+
+[units.Archer]
+max_movement = 2
+combat_strength = 15
+ranged_strength = 25
+range = 2
+production_cost = 60
+
+[units.Swordsman]
+max_movement = 2
+combat_strength = 35
+ranged_strength = 0
+range = 1
+production_cost = 90
+
+[units.Spearman]
+max_movement = 2
+combat_strength = 25
+ranged_strength = 0
+range = 1
+production_cost = 65
+
+[units.Horseman]
+max_movement = 4
+combat_strength = 35
+ranged_strength = 0
+range = 1
+production_cost = 80
+
+[units.Settler]
+max_movement = 2
+combat_strength = 0
+ranged_strength = 0
+range = 0
+production_cost = 120
+
+[units.Worker]
+max_movement = 2
+combat_strength = 0
+ranged_strength = 0
+range = 0
+production_cost = 50
+
+[units.Catapult]
+max_movement = 2
+combat_strength = 23
+ranged_strength = 35
+range = 2
+production_cost = 120
+
+# --- Combat formula constants (Civ6-inspired modifier stacking, #60/#63) ---
+[combat]
+anti_cavalry_bonus = 10          # Spearman vs Horseman, both directions (#63)
+melee_vs_spearman_bonus = 5      # Warrior/Swordsman vs Spearman, both directions (#63)
+ranged_city_penalty = 17         # flat ranged-strength penalty vs cities (subtracted)
+archer_vs_horseman_penalty = 5   # Archers less effective vs cavalry (subtracted)
+fortification_bonus = [3, 6]     # indexed by fortification level - 1 (level is 1 or 2)
+# Health penalty: coefficient * (100 - hp) / 100. One value shared by melee
+# (get_combat_strength) and ranged (get_ranged_strength) — do not fork it.
+hp_penalty_coefficient = -10
+# Damage(HP) = damage_base * e^(damage_exponent_coefficient * StrengthDifference)
+#              * random(damage_roll_min, damage_roll_max)
+damage_base = 30
+damage_exponent_coefficient = 0.04
+damage_roll_min = 0.8
+damage_roll_max = 1.2
+heal_fortified = 20              # HP healed per turn when fortified
+heal_normal = 10                 # HP healed per turn otherwise
+
+[city]
+health = 200
+defense_strength = 20
+
 [training]
 episodes = 64
 batch_size = 32

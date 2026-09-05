@@ -1,6 +1,6 @@
 # Civulator - Project CLAUDE.md
 
-> **Last updated**: 2026-08-26 — #42 mask vectorization + #40 terrain-aware encoder (52ch) with encoder registry. Encoder spec: `docs/terrain_encoder_design.md`.
+> **Last updated**: 2026-09-05 — #64 combat/unit constants moved to `config.toml` (`civulator/unit_model.py`), bit-identical. Prior: 2026-08-26 — #42 mask vectorization + #40 terrain-aware encoder (52ch) with encoder registry. Encoder spec: `docs/terrain_encoder_design.md`.
 
 ## What Is This?
 
@@ -39,8 +39,9 @@ One line per system built for reuse. If what you need is here, use it; if it alm
 | Size presets | `[map.sizes.*]` via `resolve_size_and_players` (`game/environment.py`) | The only source of map dimensions and player counts; explicit rows/cols remain for tests and tool boards |
 | Terrain epoch | `Map.terrain_epoch` + `map_uid`; bumped by `Tile.set_layers` and river mutations | Every terrain-derived cache (LoS, fresh water, cost grids, encoder layers) keys on it — never cache terrain products without it |
 | Engine RNG | `PortableRNG` (`civulator/rng.py`, PCG32) | The only randomness in episode simulation (damage rolls, shuffles); world synthesis takes exactly one master-seed draw from it at reset |
-| Gameplay config | `config.toml` via `CFG` (`civulator/config.py`) | Single source for terrain, LoS, map gen, game and training params |
-| Unit system | `Unit` + data tables + `UNIT_SLOT` (`game/unit.py`); 4 stacking slots | Adding a unit type touches: the 6 tables incl. `MOVEMENT_DOMAIN` + `UNIT_SLOT` (unit.py), `_create_unit` (city.py), `CLASS_INDEX` (state_encoders.py) — all three files, every time |
+| Gameplay config | `config.toml` via `CFG` (`civulator/config.py`); `[units.*]` + `[combat]` (issue #64) | Single source for terrain, LoS, map gen, game, unit/combat and training params |
+| Unit system | `Unit` (`game/unit.py`); 5 stat tables in `config.toml` `[units.*]` (issue #64); `UNIT_SLOT` + `MOVEMENT_DOMAIN` still in `unit.py`; 4 stacking slots | Adding a unit type touches: a new `[units.<Name>]` table (config.toml) + `UNIT_SLOT` + `MOVEMENT_DOMAIN` (unit.py), `_create_unit` (city.py), `CLASS_INDEX` (state_encoders.py) — every one of these, every time |
+| Unit/combat config interpreter | `civulator/unit_model.py` — the only interpreter of `[units.*]` / `[combat]` / city health+defense in `config.toml` (issue #64) | Nothing reads `[units.*]`/`[combat]` from `CFG` directly; `game/unit.py` and `game/city.py` import from this module; no new hardcoded combat number anywhere else. Bit-identity gate: `tests/test_unit_config_identity.py` |
 | Combat | `Unit.attack` + `calculate_damage` (Civ6 formula) + `GameEnvironment._execute_attack` | All damage flows through this path |
 | City economy | `City.process_turn` / `assign_tiles` (`game/city.py`) | Food → growth → production logic lives here only |
 | Win/score determination | `determine_winner` + `player_score` (`training/trainer.py`); weight in `[game] city_score_weight` | The only verdict and the only score formula — trainer, evaluate and the viewer HUD all call these, so a displayed score can never disagree with the verdict beside it (#55). Elimination wins outright; the cap falls back to the score tiebreak, dead players ranked -1 |

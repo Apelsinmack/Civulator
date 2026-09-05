@@ -1,6 +1,7 @@
 """City class with production, population, and buildings."""
 
 from ..terrain_model import can_enter
+from ..unit_model import CITY_DEFENSE_STRENGTH, CITY_HEALTH
 from .unit import (
     Unit, WarriorUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
     HorsemanUnit, CatapultUnit, SettlerUnit, WorkerUnit, movement_domain,
@@ -32,9 +33,9 @@ class City:
         self.player = player
         self.coordinates = coordinates
         self.name = name
-        self.health = 200
+        self.health = CITY_HEALTH
         self.is_city = True
-        self.defense_strength = 20
+        self.defense_strength = CITY_DEFENSE_STRENGTH
         self.buildings = []
         self.population = 1
         self.food_surplus = 0  # Accumulated surplus toward growth

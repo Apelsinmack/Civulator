@@ -7,6 +7,25 @@ import numpy as np
 
 from ..config import CFG
 from ..terrain_model import can_enter
+from ..unit_model import (
+    ANTI_CAVALRY_BONUS,
+    ARCHER_VS_HORSEMAN_PENALTY,
+    BASE_COMBAT_STRENGTH as _BASE_COMBAT_STRENGTH,
+    BASE_RANGED_STRENGTH as _BASE_RANGED_STRENGTH,
+    DAMAGE_BASE,
+    DAMAGE_EXPONENT_COEFFICIENT,
+    DAMAGE_ROLL_MAX,
+    DAMAGE_ROLL_MIN,
+    FORTIFICATION_BONUS,
+    HEAL_FORTIFIED,
+    HEAL_NORMAL,
+    HP_PENALTY_COEFFICIENT,
+    MAX_MOVEMENT as _MAX_MOVEMENT,
+    MELEE_VS_SPEARMAN_BONUS,
+    PRODUCTION_COST as _PRODUCTION_COST,
+    RANGED_CITY_PENALTY,
+    RANGE_VALUES as _RANGE_VALUES,
+)
 
 # Rivers cost this much extra to cross, per edge (design doc D23) — the single
 # source, replacing the two hardcoded +1s this file used to carry. A* does not
@@ -18,6 +37,12 @@ NUM_UNIT_SLOTS = 4  # Military, Civilian, Siege Support, Great Person
 # Which slot each unit type occupies
 # Each slot can hold at most one unit per tile.
 # Units in different slots can stack freely on the same tile.
+#
+# NUM_UNIT_SLOTS and UNIT_SLOT stay here, NOT in config.toml (issue #64):
+# this is action-space architecture, not a tunable gameplay number —
+# NUM_UNIT_SLOTS is welded into the neural network output shape
+# (agents/networks.py:100, :281), so changing either invalidates every
+# trained .pth.
 UNIT_SLOT = {
     "Warrior": 0,      # military
     "Archer": 0,
@@ -35,6 +60,10 @@ UNIT_SLOT = {
 # Movement domain per unit type (design doc §3.3) — the sixth unit data table.
 # Everything is land in 0.6; naval units and embarkation are the seam this
 # leaves open (a new domain value + a capability check inside can_enter).
+#
+# Stays here, NOT in config.toml (issue #64): it is about to stop being a
+# static table once tech/embarkation exists (issue #76), so freezing today's
+# shape into config would commit to the wrong shape.
 MOVEMENT_DOMAIN = {
     "Warrior": "land",
     "Archer": "land",
@@ -58,61 +87,16 @@ class Unit:
     """Base class for all units in the game."""
 
     # --- Static data tables ---
+    # Values live in config.toml [units.*] (issue #64), interpreted once at
+    # import by civulator/unit_model.py; aliased here so existing call sites
+    # (Unit.MAX_MOVEMENT etc., across agents/build_agent.py, tests, ...) keep
+    # working unchanged.
 
-    MAX_MOVEMENT = {
-        "Warrior": 2,
-        "Archer": 2,
-        "Swordsman": 2,
-        "Spearman": 2,
-        "Horseman": 4,
-        "Settler": 2,
-        "Worker": 2,
-        "Catapult": 2,
-    }
-
-    BASE_COMBAT_STRENGTH = {
-        "Warrior": 20,
-        "Archer": 15,
-        "Swordsman": 35,
-        "Spearman": 25,
-        "Horseman": 35,
-        "Settler": 0,
-        "Worker": 0,
-        "Catapult": 23,
-    }
-
-    BASE_RANGED_STRENGTH = {
-        "Archer": 25,
-        "Catapult": 35,
-        "Warrior": 0,
-        "Swordsman": 0,
-        "Spearman": 0,
-        "Horseman": 0,
-        "Settler": 0,
-        "Worker": 0,
-    }
-
-    RANGE_VALUES = {
-        "Archer": 2,
-        "Catapult": 2,
-        "Warrior": 1,
-        "Swordsman": 1,
-        "Spearman": 1,
-        "Horseman": 1,
-        "Settler": 0,
-        "Worker": 0,
-    }
-
-    PRODUCTION_COST = {
-        "Warrior": 40,
-        "Archer": 60,
-        "Swordsman": 90,
-        "Spearman": 65,
-        "Horseman": 80,
-        "Settler": 120,
-        "Worker": 50,
-        "Catapult": 120,
-    }
+    MAX_MOVEMENT = _MAX_MOVEMENT
+    BASE_COMBAT_STRENGTH = _BASE_COMBAT_STRENGTH
+    BASE_RANGED_STRENGTH = _BASE_RANGED_STRENGTH
+    RANGE_VALUES = _RANGE_VALUES
+    PRODUCTION_COST = _PRODUCTION_COST
 
     def __init__(self, player, coordinates, unit_type):
         self.player = player
@@ -199,14 +183,14 @@ class Unit:
     def heal(self):
         """Heal at start of turn. Fortified units heal more.
 
-        +10 HP base, +20 HP if fortified. Capped at 100.
+        +HEAL_NORMAL HP base, +HEAL_FORTIFIED HP if fortified. Capped at 100.
         """
         if self.health >= 100:
             return
         if self.fortification > 0:
-            self.health = min(100, self.health + 20)
+            self.health = min(100, self.health + HEAL_FORTIFIED)
         else:
-            self.health = min(100, self.health + 10)
+            self.health = min(100, self.health + HEAL_NORMAL)
 
     def get_combat_strength(self, is_attacking=False, target=None):
         """
@@ -220,8 +204,9 @@ class Unit:
         """
         strength = self.get_base_combat_strength()
 
-        # Health penalty: -10 * (100 - HP) / 100
-        hp_penalty = -10 * (100 - self.health) / 100
+        # Health penalty: HP_PENALTY_COEFFICIENT * (100 - HP) / 100 — the same
+        # coefficient used in get_ranged_strength below (config.toml [combat]).
+        hp_penalty = HP_PENALTY_COEFFICIENT * (100 - self.health) / 100
         strength += hp_penalty
 
         # Terrain defense (only when defending) — the CURRENT tile's composed
@@ -235,7 +220,7 @@ class Unit:
 
         # Fortification bonus (only when defending)
         if not is_attacking and self.fortification > 0:
-            fort_bonus = 3 if self.fortification == 1 else 6
+            fort_bonus = FORTIFICATION_BONUS[self.fortification - 1]
             strength += fort_bonus
 
         # Unit class advantages — applied whether this unit attacks or defends
@@ -244,9 +229,9 @@ class Unit:
         # thing the unit exists to do. Civ 6 applies these in both directions.
         if target:
             if self.unit_type == "Spearman" and target.unit_type == "Horseman":
-                strength += 10  # Anti-cavalry
+                strength += ANTI_CAVALRY_BONUS
             if self.unit_type in ["Warrior", "Swordsman"] and target.unit_type == "Spearman":
-                strength += 5  # Melee vs anti-cavalry
+                strength += MELEE_VS_SPEARMAN_BONUS
 
         return max(0, strength)
 
@@ -257,15 +242,15 @@ class Unit:
 
         strength = self.get_base_ranged_strength()
 
-        # Health penalty
-        hp_penalty = -10 * (100 - self.health) / 100
+        # Health penalty (same coefficient as get_combat_strength above)
+        hp_penalty = HP_PENALTY_COEFFICIENT * (100 - self.health) / 100
         strength += hp_penalty
 
         if is_city:
-            strength -= 17  # Penalty against cities
+            strength -= RANGED_CITY_PENALTY  # Penalty against cities
 
         if target and target.unit_type == "Horseman" and self.unit_type == "Archer":
-            strength -= 5  # Archers less effective vs cavalry
+            strength -= ARCHER_VS_HORSEMAN_PENALTY  # Archers less effective vs cavalry
 
         return max(0, strength)
 
@@ -381,8 +366,8 @@ class Unit:
         outcomes are reproducible; falls back to the global random module.
         """
         strength_diff = attacker_strength - defender_strength
-        base_damage = 30 * math.exp(0.04 * strength_diff)
-        random_factor = (rng if rng is not None else random).uniform(0.8, 1.2)
+        base_damage = DAMAGE_BASE * math.exp(DAMAGE_EXPONENT_COEFFICIENT * strength_diff)
+        random_factor = (rng if rng is not None else random).uniform(DAMAGE_ROLL_MIN, DAMAGE_ROLL_MAX)
         damage = base_damage * random_factor
         return max(1, min(100, damage))
 
