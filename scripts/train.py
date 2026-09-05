@@ -39,7 +39,7 @@ def set_random_seeds(seed=42):
 
 def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
          batch_size=32, max_turns=250, debug=True, encoder="basic",
-         fully_conv=False, seed_base=None):
+         fully_conv=False, seed_base=None, learning_starts=None):
     """Main training function.
 
     Args:
@@ -53,6 +53,11 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
         seed_base: Optional int — enables train_agents's episode-indexed
             seed schedule (issue #39). None (default, and config.toml's
             own default) reproduces the original unseeded behavior.
+        learning_starts: Optional int — passed straight through to
+            train_agents's `learning_starts` parameter (issue #80). None
+            (default, and config.toml's own default) reproduces the
+            original `> batch_size` gate exactly (resolves to
+            batch_size + 1 inside train_agents).
     """
     set_random_seeds()
 
@@ -148,6 +153,7 @@ def main(resume_training=False, checkpoint_episode=None, num_episodes=64,
     win_counts, win_history = train_agents(
         env, agents, num_episodes=num_episodes, batch_size=batch_size, debug=debug,
         build_agents=build_agents, seed_base=seed_base,
+        learning_starts=learning_starts,
     )
 
     print("\nTraining complete!")
@@ -203,6 +209,11 @@ if __name__ == "__main__":
                         help="Enable the episode-indexed seed schedule (issue #39), "
                              "starting at this seed. Omit (config default: absent) "
                              "for the original unseeded behavior.")
+    parser.add_argument("--learning-starts", type=int,
+                        default=_tcfg.get("learning_starts"),
+                        help="Replay-buffer size before the first DQN optimization "
+                             "step fires (issue #80). Omit (config default: absent) "
+                             "to reproduce the original `> batch_size` gate exactly.")
     args = parser.parse_args()
 
     main(
@@ -215,4 +226,5 @@ if __name__ == "__main__":
         encoder=args.encoder,
         fully_conv=args.fully_conv,
         seed_base=args.seed_base,
+        learning_starts=args.learning_starts,
     )
