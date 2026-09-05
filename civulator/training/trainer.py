@@ -117,7 +117,7 @@ def _seeded_reset(env, seed_cursor, episode, seed_base, skip_log=None):
 def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
                   save_checkpoints=True, build_agents=None, seed_base=None,
                   episode_callback=None, skipped_seeds=None,
-                  truncated_episodes=None):
+                  truncated_episodes=None, learning_starts=None):
     """Train multiple agents with proper state tracking and win counting.
 
     Args:
@@ -141,6 +141,21 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
             like every other run parameter here (num_episodes,
             batch_size, ...), callers resolve their own value (CLI flag,
             `[training] seed_base`, or a literal) and pass it in.
+        learning_starts: Optional int. The buffer size a DQN agent's
+            replay memory must reach before its first optimization step
+            fires (issue #80). Defaults to None, which resolves to
+            `batch_size + 1` — exactly reproducing the previous, hardcoded
+            gate (`len(memory) > batch_size`) transition-for-transition,
+            so a caller that does not pass this argument gets
+            bit-identical training to before this parameter existed.
+            Raising it delays the first gradient step until more
+            experience has accumulated (the classic DQN "learning starts"
+            knob), which is left as a later, deliberately measured
+            experiment. There is no config.toml fallback read inside this
+            function — like every other run parameter here (num_episodes,
+            batch_size, seed_base, ...), callers resolve their own value
+            (CLI flag, `[training] learning_starts`, or a literal) and
+            pass it in.
         skipped_seeds: Optional list, filled in place with every schedule
             seed the seeded-reset walk skipped (see _seeded_reset's
             skip_log) — callers persist it into the run record.
@@ -163,6 +178,13 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
     Returns:
         tuple: (win_counts dict, win_history list)
     """
+    # Resolve once, up front (issue #80): None => batch_size + 1, which makes
+    # the `>=` gate below fire at exactly the same transition count as the
+    # old hardcoded `> batch_size` gate did — bit-identical by default.
+    resolved_learning_starts = (
+        batch_size + 1 if learning_starts is None else learning_starts
+    )
+
     win_counts = {i: 0 for i in range(len(agents))}
     win_history = []
     use_build = build_agents is not None
@@ -242,7 +264,13 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
                         else:
                             city.produce_unit(option)
 
-                # Optimize build agent
+                # Optimize build agent. Deliberately NOT gated by
+                # resolved_learning_starts (issue #80): BuildAgent.optimize
+                # guards internally with `len(self.memory) < batch_size`, so
+                # it fires one transition earlier (at 32) than the DQN gate
+                # above (at 33). Preserving that pre-existing mismatch is
+                # required for this patch's bit-identity guarantee; aligning
+                # the two thresholds is left as future #80 work.
                 build_agent.optimize(batch_size)
 
                 last_player_index = current_player_index
@@ -322,7 +350,7 @@ def train_agents(env, agents, num_episodes=64, batch_size=32, debug=False,
                 next_state = next_player_agent.build_state_tensor(env)
 
             # Optimize
-            if len(current_agent.memory) > batch_size:
+            if len(current_agent.memory) >= resolved_learning_starts:
                 current_agent.optimize(batch_size)
 
         # Resolve remaining pending transitions with done=True and each

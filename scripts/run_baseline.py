@@ -289,6 +289,13 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
     batch_size = _tcfg.get("batch_size", 32)
     learning_rate = _tcfg.get("learning_rate", 0.001)
     gamma = _tcfg.get("gamma", 0.9)
+    # learning_starts (issue #80): absent (None) means train_agents resolves
+    # it to batch_size + 1 internally -- reproduce that here only so the run
+    # summary below can record the actual effective integer, not None.
+    learning_starts = _tcfg.get("learning_starts", None)
+    effective_learning_starts = (
+        batch_size + 1 if learning_starts is None else learning_starts
+    )
 
     # Channel count drives both the output filename and (inside
     # build_training_objects) the network depth -- get_encoder() is the one
@@ -311,7 +318,9 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
           f"run summary and the weights manifest)")
     print(f"map: size={SIZE_PRESET} ({m}x{n}) players={num_players} map_type={MAP_TYPE}")
     print(f"encoder={encoder} ({d}ch) fully_conv={FULLY_CONV} conv_channels={conv_channels}")
-    print(f"episodes={episodes} max_turns={max_turns} batch_size={batch_size}")
+    print(f"episodes={episodes} max_turns={max_turns} batch_size={batch_size} "
+          f"learning_starts={effective_learning_starts}"
+          f"{' (default: batch_size+1, issue #80)' if learning_starts is None else ''}")
     print(f"learning_rate={learning_rate} gamma={gamma}")
     print(f"seed_base={SEED_BASE}  (episode-indexed seed schedule, issue #39 -- "
           f"see train_agents/_seeded_reset docstrings for the exact scheme)")
@@ -357,6 +366,7 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
         win_counts, win_history = train_agents(
             env, agents, num_episodes=episodes, batch_size=batch_size, debug=False,
             build_agents=build_agents, seed_base=SEED_BASE,
+            learning_starts=learning_starts,
             episode_callback=make_progress_callback(
                 checkpoint_every=checkpoint_every,
                 checkpoint_saver=checkpoint_saver,
@@ -391,6 +401,10 @@ def main(episodes, tag, outdir, encoder=DEFAULT_ENCODER, variant=None,
             "conv_channels": list(conv_channels),
             "max_turns": max_turns,
             "batch_size": batch_size,
+            # Effective resolved integer (issue #80), not the possibly-None
+            # config value -- unambiguous about what actually ran even when
+            # learning_starts was absent from config.toml (batch_size + 1).
+            "learning_starts": effective_learning_starts,
             "learning_rate": learning_rate,
             "gamma": gamma,
             "resumed_from": resume,

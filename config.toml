@@ -592,6 +592,16 @@ fog_of_war = false       # true: enhanced encoder applies visibility (27ch — h
 # #39 baseline pins its own seed_base=390000 in code, deliberately not
 # sourced from this mutable file.
 # seed_base = 12345
+# learning_starts: replay-buffer size a DQN agent's memory must reach before
+# its first optimization step fires (issue #80, civulator/training/
+# trainer.py train_agents's `learning_starts` param docstring for the exact
+# resolution rule). Absent (the default, as here) = today's behaviour: the
+# first update happens once the buffer exceeds batch_size, unchanged from
+# before this key existed. Raising it delays the first gradient step until
+# more experience has accumulated (the classic DQN "learning starts" knob) —
+# a later, deliberately measured experiment variable, not a change made by
+# adding this key.
+# learning_starts = 1000
 
 # Reward table v2 (issue #46, 2026-09-01): anti-turtling package. Old values
 # in comments; the #39/#40 runs trained on those (their manifests pin them).
