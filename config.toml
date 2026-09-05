@@ -553,6 +553,36 @@ combat_strength = 23
 ranged_strength = 35
 range = 2
 production_cost = 120
+# siege_class (issue #66): exempt from [combat] ranged_city_penalty. Breaking
+# fortifications is the siege class's entire identity in Civ 6, and the flat
+# penalty was being applied to the one class Civ 6 exempts. Optional key,
+# absent = false; the only interpreter is civulator/unit_model.py.
+siege_class = true
+
+# --- Siege support (issue #66) ----------------------------------------------
+# Stats only. Both units have occupied UNIT_SLOT 2 since the stacking design
+# landed, with no numbers anywhere else — names with a slot and nothing else.
+# Civ 6 support units carry combat strength 0 (they are escorted, not fought
+# with) and are the reason the siege support slot exists.
+#
+# Their Civ 6 mechanic — an adjacency that changes how ANOTHER unit's attack
+# resolves against a city's walls — is deliberately NOT implemented; see the
+# CHANGELOG. They are therefore in game/unit.py's DEFERRED_BUILD_UNITS and not
+# in BUILD_OPTIONS: offering an agent a unit that does nothing would be a build
+# option that cannot pay off.
+[units.BatteringRam]
+max_movement = 2
+combat_strength = 0
+ranged_strength = 0
+range = 0
+production_cost = 65
+
+[units.SiegeTower]
+max_movement = 2
+combat_strength = 0
+ranged_strength = 0
+range = 0
+production_cost = 100
 
 # --- Combat formula constants (Civ6-inspired modifier stacking, #60/#63) ---
 [combat]

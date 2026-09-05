@@ -48,6 +48,13 @@ BASE_RANGED_STRENGTH = {name: table["ranged_strength"] for name, table in _UNITS
 RANGE_VALUES = {name: table["range"] for name, table in _UNITS_CFG.items()}
 PRODUCTION_COST = {name: table["production_cost"] for name, table in _UNITS_CFG.items()}
 
+# Unit types in the siege class (issue #66). Optional `siege_class` key in a
+# `[units.*]` table; absent means false. The siege class is exempt from
+# RANGED_CITY_PENALTY below — breaking fortifications is what the class is for.
+SIEGE_CLASS = frozenset(
+    name for name, table in _UNITS_CFG.items() if table.get("siege_class", False)
+)
+
 # --- Combat formula / modifier constants (get_combat_strength, get_ranged_strength,
 # calculate_damage, heal — game/unit.py) ---
 

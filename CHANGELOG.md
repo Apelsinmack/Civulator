@@ -11,6 +11,84 @@ Version number deliberately not bumped: the next number is an open question
 (#83 — "v0.2.0" was said while the code is at 0.6.2). Everything below is a
 **rule change**, not a refactor.
 
+### Siege vs cities: the siege class is exempt from the flat penalty; the two support units get stats (#66)
+
+**Rule change, effect NOT yet measured.** Erik, 2026-09-04: *"Catapults are
+good against city walls etc."* They were not — the code penalised them.
+
+`get_ranged_strength` subtracted a flat 17 from **every** ranged unit attacking
+a city, the siege unit included. That penalty is a stand-in for a wall model we
+have not built, and Civ 6 does the opposite of what it did: ordinary ranged
+units do half damage to walls and **the siege class does full damage** — that
+is the class's entire identity
+([City combat (Civ6)](https://civilization.fandom.com/wiki/City_combat_(Civ6))).
+The `-17` was evidently tuned against our old Catapult ranged strength of 45,
+and v0.6.2's correction to Civ 6's 35 left it bombarding from a deficit.
+
+**The siege class is now exempt from the penalty.** Membership is declared per
+unit type — `siege_class = true` in `config.toml` `[units.Catapult]` — so a
+second siege unit is a config line, not a name added to an `if`. Non-siege
+ranged units still pay the 17.
+
+**Derived effect** (shots to raze a 200 HP city, mean roll — derivation, not
+measurement; city defence 20, or 50 with #7's Walls):
+
+| attacker | vs bare city | vs walled city |
+|---|---|---|
+| Catapult, before | 27.7 dmg / 7.2 shots | 8.3 dmg / 24.0 shots |
+| Catapult, **now** | **54.7 dmg / 3.7 shots** | **16.5 dmg / 12.1 shots** |
+| Archer (unchanged) | 18.6 dmg / 10.8 shots | 5.6 dmg / 35.8 shots |
+
+The Catapult goes from 1.5x the Archer's damage against a bare city to 2.9x,
+and walls still blunt it — the exemption is an advantage, not immunity.
+
+**BatteringRam and SiegeTower have stats.** Both had occupied `UNIT_SLOT` 2
+since the stacking design landed and appeared in no other table: names with a
+slot and nothing else. They now have complete entries in all six unit tables,
+a `SiegeSupportUnit` class, a `_create_unit` entry, and a `CLASS_INDEX` of -1.
+
+| unit | strength | movement | production | Civ 6 era / tech |
+|---|---|---|---|---|
+| Battering Ram | 0 | 2 | 65 | Ancient, Masonry |
+| Siege Tower | 0 | 2 | 100 | **Classical**, Construction |
+
+Source: the in-game Civilopedia (standard rules), via
+[civilopedia.net](https://www.civilopedia.net/en-US/standard-rules/units/unit_battering_ram).
+Combat strength 0 is the Civ 6 Analyst's value for both. Note the Siege Tower
+is *Classical*, not Ancient, so its stats are Civ 6 correct but not
+Ancient-era; the Civ 6 Analyst's production column is on a different, smaller
+scale than this repo's costs and was not used (same conflict as the Slinger
+entry above).
+
+They are in `DEFERRED_BUILD_UNITS`, **not** `BUILD_OPTIONS`.
+
+**What was deliberately NOT implemented, and why.** The issue itself scopes
+this into two rungs and recommends the first only:
+
+1. **The wall model** — city walls as their own HP pool with a per-attacker-
+   class damage multiplier (melee ~15% to walls and none to the city behind,
+   ranged half, siege full, later wall tiers negating support units) —
+   replacing the flat penalty outright. Not implemented. It needs design
+   decisions the issue does not settle: how many wall HP, whether walls repair,
+   what happens to `City.health` while walls stand, and how a wall pool is
+   encoded for an agent. The exemption above is the honest approximation until
+   then, and it is strictly closer to Civ 6 than what it replaces.
+2. **The support units' adjacency mechanic** — a Battering Ram making adjacent
+   melee units do full damage to walls, a Siege Tower letting them ignore walls
+   — plus the encoder channels and mask work to make it usable. Not
+   implemented; the issue calls it "its own rung afterwards", and a Battering
+   Ram is meaningless until walls mean something. `test_siege_vs_city.py`
+   asserts that a Ram beside a city changes nothing today, so the mechanic
+   arriving has to change that test on purpose.
+
+**Also unaddressed**: the issue asks for city HP / defence strength to move to
+`config.toml` in the same pass. That already happened in #64 (`[city] health`,
+`[city] defense_strength`).
+
+**And the caveat from #7 applies here too**: no engine order targets a city, so
+none of this is reachable in self-play yet. It is reachable — and tested — in
+the combat path that the scenario/recording tool uses.
+
 ### Flanking bonus: +2 per friendly unit adjacent to the defender (#59)
 
 **Rule change, effect NOT yet measured.** The motivation is measured: the

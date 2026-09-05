@@ -136,6 +136,10 @@ class EnhancedStateEncoder(StateEncoder):
         "Warrior": 0, "Swordsman": 0, "Spearman": 1,
         "Slinger": 2, "Archer": 2, "Horseman": 3, "Catapult": 4,
         "Settler": -1, "Worker": -1,
+        # Siege support (#66): combat strength 0, no attack of their own, and
+        # no class channel — a new index would change the channel count and
+        # invalidate every trained .pth for units that cannot yet be built.
+        "BatteringRam": -1, "SiegeTower": -1,
     }
 
     MAX_MELEE_STR = 50.0

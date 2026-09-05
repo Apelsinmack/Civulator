@@ -26,6 +26,7 @@ from ..unit_model import (
     PRODUCTION_COST as _PRODUCTION_COST,
     RANGED_CITY_PENALTY,
     RANGE_VALUES as _RANGE_VALUES,
+    SIEGE_CLASS,
 )
 
 # Rivers cost this much extra to cross, per edge (design doc D23) — the single
@@ -93,6 +94,14 @@ DEFERRED_BUILD_UNITS = {
     # Worker: tile improvements exist (WorkerUnit.build_improvement) but no
     # agent has an improvement action, so producing one could not pay off.
     "Worker",
+    # BatteringRam / SiegeTower: stats exist (issue #66) but their Civ 6
+    # mechanic — an adjacency that changes how ANOTHER unit's attack resolves
+    # against a city's walls — does not, and cannot until there is a wall model
+    # to break. Offering them today would be a build option that cannot pay
+    # off. They come out of here in the same patch that gives them the
+    # adjacency rule.
+    "BatteringRam",
+    "SiegeTower",
 }
 
 
@@ -181,6 +190,14 @@ class Unit:
 
     def get_production_cost(self):
         return self.PRODUCTION_COST.get(self.unit_type, 40)
+
+    def is_siege_class(self):
+        """Whether this unit belongs to the siege class (issue #66).
+
+        Declared per unit type by `siege_class` in config.toml `[units.*]`, so
+        a second siege unit is a config line rather than a name in an `if`.
+        """
+        return self.unit_type in SIEGE_CLASS
 
     def reset_movement(self):
         """Reset movement points at the start of a new turn.
@@ -317,8 +334,14 @@ class Unit:
         hp_penalty = HP_PENALTY_COEFFICIENT * (100 - self.health) / 100
         strength += hp_penalty
 
-        if is_city:
-            strength -= RANGED_CITY_PENALTY  # Penalty against cities
+        # Penalty against cities — but not for the siege class (issue #66).
+        # The flat penalty stands in for a wall model we have not built, and
+        # was being applied to the one class Civ 6 exempts from exactly this
+        # reduction: a Catapult exists to break fortifications, and until #66's
+        # wall model lands the honest approximation is that it does so at full
+        # strength while other ranged units do not.
+        if is_city and not self.is_siege_class():
+            strength -= RANGED_CITY_PENALTY
 
         # getattr, not target.unit_type: the target may be a City (see the
         # note in get_combat_strength).
@@ -574,6 +597,38 @@ class CatapultUnit(RangedUnit):
 
     def __init__(self, player, coordinates):
         super().__init__(player, coordinates, "Catapult")
+
+
+class SiegeSupportUnit(Unit):
+    """A support unit that occupies UNIT_SLOT 2 and fights with nobody.
+
+    Civ 6's Battering Ram and Siege Tower change how an ADJACENT friendly
+    melee unit's attack resolves against a city's walls; they have no attack of
+    their own and combat strength 0. Issue #66 gives them their stats; the
+    adjacency mechanic is deliberately still missing, because a Battering Ram
+    is meaningless until walls mean something (#7 makes walls buildable, but a
+    wall model with per-class damage is a separate rung). They are in
+    DEFERRED_BUILD_UNITS until that lands.
+
+    This class exists so the mechanic has one place to arrive and so
+    `_create_unit` does not silently fall back to the bare `Unit`.
+    """
+
+
+class BatteringRamUnit(SiegeSupportUnit):
+    """Ancient-era siege support (Civ 6: Masonry). Full damage to Ancient Walls
+    for adjacent attacking melee units — mechanic not implemented."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "BatteringRam")
+
+
+class SiegeTowerUnit(SiegeSupportUnit):
+    """Classical-era siege support (Civ 6: Construction). Adjacent melee units
+    ignore walls and hit the city directly — mechanic not implemented."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "SiegeTower")
 
 
 class SettlerUnit(Unit):

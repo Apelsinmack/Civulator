@@ -9,7 +9,8 @@ from ..unit_model import (
 )
 from .unit import (
     Unit, WarriorUnit, SlingerUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
-    HorsemanUnit, CatapultUnit, SettlerUnit, WorkerUnit, movement_domain,
+    HorsemanUnit, CatapultUnit, BatteringRamUnit, SiegeTowerUnit,
+    SettlerUnit, WorkerUnit, movement_domain,
 )
 
 
@@ -250,6 +251,8 @@ def _create_unit(unit_type, player, coordinates):
         "Spearman": SpearmanUnit,
         "Horseman": HorsemanUnit,
         "Catapult": CatapultUnit,
+        "BatteringRam": BatteringRamUnit,
+        "SiegeTower": SiegeTowerUnit,
         "Settler": SettlerUnit,
         "Worker": WorkerUnit,
     }
