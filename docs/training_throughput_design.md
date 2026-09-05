@@ -191,6 +191,70 @@ The same reordering also lowers risk: a lower replay ratio *reduces* exposure to
 the plasticity-loss / primacy-bias failure mode that afflicts high-RR agents
 (§4B), so the cheap change is also the conservative one.
 
+#### How to reason about *r*: replays per transition
+
+The useful quantity is not "how delayed is the lesson" — replay sampling is
+uniform over the whole buffer, so nothing is queued or delayed — but **how many
+times the network actually learns from each experience before it is evicted.**
+
+A transition survives `capacity` = 10,000 subsequent pushes (`ReplayMemory` is a
+FIFO ring). During that residence there are `10000·r` updates, each drawing 32 of
+10,000. Expected times sampled:
+
+```
+replays per transition = capacity·r · (batch_size/capacity) = batch_size · r = 32r
+```
+
+Capacity cancels. So the whole question collapses to one number:
+
+| update every | *r* | replays per transition | verdict |
+|---|---:|---:|---|
+| 1 action (**today**) | 1.00 | **32** | far above normal practice |
+| 4 actions (classic DQN default) | 0.25 | 8 | the textbook zone |
+| **5 actions** | 0.20 | **6.4** | healthy |
+| 10 actions | 0.10 | 3.2 | lean but defensible |
+| ~1 full game (~300 actions) | 0.003 | **0.1** | ~90% of transitions never sampled at all |
+
+This is what makes "every 5" and "every 10" both reasonable and "once per game"
+not: below `r ≈ 1/32` most collected experience is evicted unused.
+
+The counterweight, which the table alone does not show: **at fixed wall-clock,
+lowering *r* buys data and spends updates.** With `D = W/(L·r + A)` transitions
+collected and `U = D·r` updates, r = 0.25 yields **2.44× the games but 0.61× the
+gradient updates** of today's night. That is not a delay, it is a different
+training regime — plausibly better (more diverse data, less overfitting to a
+10k buffer, per the Parallel Q-Learning result in §4B) and plausibly worse
+(fewer updates). It is exactly what the §9 ladder measures.
+
+#### Two schedule questions, and what the literature says
+
+- **Should *r* be higher early?** The intuition is natural but probably
+  backwards. Early data comes from a near-random policy — with
+  `epsilon_decay_episodes = 800`, most of a 1000-episode run is substantially
+  exploratory — and over-training on early experience is precisely the
+  **primacy bias** ([Nikishin et al., ICML 2022, arXiv:2205.07802]): agents
+  overfit early interactions and then discount later evidence, remedied by
+  periodically resetting part of the network. A *rising* schedule (low *r*
+  early, higher late) is better motivated than a falling one.
+- **Warm-starting from trained weights?** Attractive for wall-clock, but
+  warm-started networks reach comparable training loss while **generalizing
+  worse** than freshly initialized ones ([Ash & Adams, NeurIPS 2020,
+  arXiv:1910.08475]), and the settings that close that gap tend to erase the
+  time saving. It would also break comparability with the frozen #39 baseline.
+  Acceptable as engineering for a follow-on run; not inside a controlled
+  experiment.
+
+#### Incidental finding: learning starts at 33 transitions
+
+`trainer.py:325` gates optimization on `len(memory) > batch_size`, i.e. **32**.
+The first updates therefore sample 32 transitions out of a buffer holding
+33 — the same handful of moments from the opening of the first game, replayed
+almost every step until the buffer fills. That is a maximal-correlation,
+maximal-primacy-bias regime, and classic DQN avoids it with a *learning-starts*
+threshold of 50k transitions. Worth its own small patch (a `learning_starts`
+config key); noted here because it is the same line of code this design
+touches, and it is not a throughput issue.
+
 **Caveat — "one gradient step per Civ turn" is not yet a number we can state.**
 Erik's suggested unit ("at minimum one Civ turn") is the natural granularity, but
 `stats/*.json` records neither steps nor turns per episode, so actions-per-turn
