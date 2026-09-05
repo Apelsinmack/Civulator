@@ -21,7 +21,8 @@ Config schema (config.toml):
     ...
 
 This module is the only interpreter of `[units.*]` / `[combat]` / `[city]`
-health+defense: civulator/game/unit.py and civulator/game/city.py import
+health+defense / `[buildings.*]`: civulator/game/unit.py and
+civulator/game/city.py import
 from it and must not read those CFG tables directly, and no new hardcoded
 combat number should appear anywhere else (CLAUDE.md canonical-systems
 table). `NUM_UNIT_SLOTS`/`UNIT_SLOT` and `MOVEMENT_DOMAIN` are deliberately
@@ -67,3 +68,20 @@ HEAL_NORMAL = _COMBAT_CFG["heal_normal"]
 
 CITY_HEALTH = _CITY_CFG["health"]
 CITY_DEFENSE_STRENGTH = _CITY_CFG["defense_strength"]
+
+# --- Buildings (issue #7) ---
+#
+# `City.BUILDING_COSTS` is an alias of BUILDING_COSTS below and
+# `City.get_combat_strength` sums BUILDING_DEFENSE_BONUS over the buildings a
+# city owns, so a building's price and its defensive effect are one entry in
+# config.toml rather than a cost dict in city.py and a chain of `if building ==
+# ...` literals a few lines under it.
+
+_BUILDINGS_CFG = CFG.get("buildings", {})
+
+BUILDING_COSTS = {name: table["production_cost"] for name, table in _BUILDINGS_CFG.items()}
+BUILDING_DEFENSE_BONUS = {
+    name: table["defense_bonus"]
+    for name, table in _BUILDINGS_CFG.items()
+    if table.get("defense_bonus")
+}

@@ -1,7 +1,12 @@
 """City class with production, population, and buildings."""
 
 from ..terrain_model import can_enter
-from ..unit_model import CITY_DEFENSE_STRENGTH, CITY_HEALTH
+from ..unit_model import (
+    BUILDING_COSTS as _BUILDING_COSTS,
+    BUILDING_DEFENSE_BONUS,
+    CITY_DEFENSE_STRENGTH,
+    CITY_HEALTH,
+)
 from .unit import (
     Unit, WarriorUnit, SlingerUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
     HorsemanUnit, CatapultUnit, SettlerUnit, WorkerUnit, movement_domain,
@@ -21,13 +26,11 @@ class City:
     - Starvation: if food output < consumption, lose accumulated surplus
     """
 
-    BUILDING_COSTS = {
-        "Granary": 60,
-        "Monument": 50,
-        "Walls": 100,
-        "Workshop": 120,
-        "Factory": 240,
-    }
+    # Values live in config.toml [buildings.*], interpreted once at import by
+    # civulator/unit_model.py (the same discipline #64 applied to the unit
+    # tables); aliased here so existing call sites (City.BUILDING_COSTS across
+    # trainer.py, evaluate.py, watch.py, build_agent.py) keep working.
+    BUILDING_COSTS = _BUILDING_COSTS
 
     def __init__(self, player, coordinates, name):
         self.player = player
@@ -44,13 +47,17 @@ class City:
         self.worked_tiles = []  # List of (row, col) assigned to citizens
 
     def get_combat_strength(self, is_attacking=False, target=None):
-        """Return the defensive combat strength of the city."""
+        """Return the defensive combat strength of the city.
+
+        Base defence plus every standing building's `defense_bonus` from
+        config.toml `[buildings.*]` (issue #7). This is the number
+        `Unit.attack` reads as the defender's strength when the target is a
+        city, so a building's defensive effect is applied by the one combat
+        path and not re-derived anywhere.
+        """
         strength = self.defense_strength
         for building in self.buildings:
-            if building == "Walls":
-                strength += 30
-            elif building == "Castle":
-                strength += 20
+            strength += BUILDING_DEFENSE_BONUS.get(building, 0)
         return strength
 
     def produce_unit(self, unit_type):

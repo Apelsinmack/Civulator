@@ -244,10 +244,17 @@ class Unit:
         # (issue #63). Gating them behind is_attacking meant a Spearman standing
         # still and being charged got no anti-cavalry bonus, which is the one
         # thing the unit exists to do. Civ 6 applies these in both directions.
-        if target:
-            if self.unit_type == "Spearman" and target.unit_type == "Horseman":
+        #
+        # `target` may be a City, which has no unit_type — class bonuses are
+        # unit-vs-unit, so a city simply matches none of them. Read through
+        # getattr rather than assuming: before #7 made Walls buildable no
+        # engine order ever aimed at a city, and this line raised
+        # AttributeError the moment one did.
+        target_type = getattr(target, "unit_type", None)
+        if target_type is not None:
+            if self.unit_type == "Spearman" and target_type == "Horseman":
                 strength += ANTI_CAVALRY_BONUS
-            if self.unit_type in ["Warrior", "Swordsman"] and target.unit_type == "Spearman":
+            if self.unit_type in ["Warrior", "Swordsman"] and target_type == "Spearman":
                 strength += MELEE_VS_SPEARMAN_BONUS
 
         return max(0, strength)
@@ -266,7 +273,9 @@ class Unit:
         if is_city:
             strength -= RANGED_CITY_PENALTY  # Penalty against cities
 
-        if target and target.unit_type == "Horseman" and self.unit_type == "Archer":
+        # getattr, not target.unit_type: the target may be a City (see the
+        # note in get_combat_strength).
+        if getattr(target, "unit_type", None) == "Horseman" and self.unit_type == "Archer":
             strength -= ARCHER_VS_HORSEMAN_PENALTY  # Archers less effective vs cavalry
 
         return max(0, strength)

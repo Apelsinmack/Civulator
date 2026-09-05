@@ -11,6 +11,63 @@ Version number deliberately not bumped: the next number is an open question
 (#83 — "v0.2.0" was said while the code is at 0.6.2). Everything below is a
 **rule change**, not a refactor.
 
+### Walls: +30 city defence, buildable, and applied in combat (#7)
+
+**Rule change, effect NOT yet measured — and see the caveat below, which is the
+most important sentence in this entry.**
+
+Walls were half-present: a cost in `City.BUILDING_COSTS` and a `+30` literal
+inside `City.get_combat_strength`, with no way for any agent to build them.
+Wired end to end:
+
+- cost and defence bonus moved to `config.toml` `[buildings.*]`, interpreted by
+  `civulator/unit_model.py` — the same discipline #64 applied to the unit
+  tables. `City.BUILDING_COSTS` is now an alias, not a second copy.
+- `City.get_combat_strength` sums each standing building's configured
+  `defense_bonus` instead of a chain of `if building == ...` literals.
+- `Walls` added to `BUILD_OPTIONS`; the mask offers it only while the city does
+  not already have it (producing a building it owns could not change its
+  state — CLAUDE.md's mask invariant, #51).
+
+**Derived effect** (mean roll, 200 HP city, defence 20 → 50 — derivation, not
+measurement):
+
+| attacker | attacks to raze, no walls | with walls |
+|---|---|---|
+| Warrior (melee 20) | 6.7 | **22.1** |
+| Archer (ranged 25 − 17) | 10.8 | **35.8** |
+| Catapult (ranged 35 − 17) | 7.2 | **24.0** |
+
+And the melee attacker's side of it: a city counterattacks with the same
+strength it defends at, so a Warrior that hits a bare city takes 30 damage and
+one that hits a walled city takes **99.6** — it dies on its first attack.
+Walls do not merely slow a melee assault; at these numbers they end it. That
+is a consequence of the existing combat path (a defender always counterattacks
+melee), not a new rule, and it is a strong argument for #66's wall model, where
+the siege class is the answer rather than an arithmetic wall nobody can climb.
+
+**Caveat — Walls currently buy nothing in self-play.** No engine order targets
+a city. `GameEnvironment.step` routes an order to `_execute_attack` only when
+`_get_enemy_unit_at` finds a *unit*; a city changes hands by a unit **moving
+onto its tile**, and `City.health` is never reduced by anything in the live
+game. So the +30 is real, tested, and applied by the one combat path — and
+today that path is reached only by the scenario/recording tool and by direct
+calls. Until a city-attack order exists, **Walls is a strictly wasted build
+option in a training run**, and any measured effect of this change will be
+negative for that reason alone. This is a gap worth its own issue; it is
+recorded here rather than papered over, and it is the reason no effect is
+claimed.
+
+**A latent crash, fixed.** `get_combat_strength` and `get_ranged_strength` read
+`target.unit_type` to apply class bonuses. A `City` has no `unit_type`, so
+*every* attack on a city raised `AttributeError`. Nothing noticed, because
+nothing ever attacked a city. Both sites now read through `getattr`; a city
+matches no unit-class bonus, which is the correct answer.
+
+**Removed as dead code**: `elif building == "Castle": strength += 20`. Castle
+has no cost, no build option, and no path into a city's `buildings` list —
+it was not a rule, it was an unreachable literal.
+
 ### Slinger added, Swordsman made buildable (#67)
 
 **Rule change, effect NOT yet measured.** Two holes in the build system, one

@@ -577,6 +577,31 @@ heal_normal = 10                 # HP healed per turn otherwise
 health = 200
 defense_strength = 20
 
+# --- Buildings (issue #7) ---------------------------------------------------
+# One table per building: `production_cost` is what a city pays for it, and
+# `defense_bonus` (optional, default 0) is added to the city's defensive combat
+# strength for as long as it stands. Read only by civulator/unit_model.py;
+# City.BUILDING_COSTS and City.get_combat_strength are aliases of what it
+# interprets, never a second copy of these numbers.
+[buildings.Granary]
+production_cost = 60
+
+[buildings.Monument]
+production_cost = 50
+
+# Walls: +30 defence, Civ 6's Ancient Walls (see CHANGELOG). The one building
+# that changes combat, and the reason the [buildings.*] table has a
+# defense_bonus column at all.
+[buildings.Walls]
+production_cost = 100
+defense_bonus = 30
+
+[buildings.Workshop]
+production_cost = 120
+
+[buildings.Factory]
+production_cost = 240
+
 [training]
 episodes = 64
 batch_size = 32

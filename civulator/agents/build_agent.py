@@ -27,7 +27,7 @@ from ..game.city import City
 # invalidates previously saved build-agent weights.
 BUILD_OPTIONS = [
     "Warrior", "Spearman", "Archer", "Horseman", "Catapult",
-    "Settler", "Granary", "Slinger", "Swordsman",
+    "Settler", "Granary", "Slinger", "Swordsman", "Walls",
 ]
 NUM_BUILD_OPTIONS = len(BUILD_OPTIONS)
 
