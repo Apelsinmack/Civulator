@@ -78,6 +78,14 @@ FLANKING_BONUS = _COMBAT_CFG["flanking_bonus"]
 CITY_HEALTH = _CITY_CFG["health"]
 CITY_DEFENSE_STRENGTH = _CITY_CFG["defense_strength"]
 
+# City ranged attack and repair (issue #84). CITY_RANGED_BUILDING names the
+# [buildings.*] entry that unlocks the bombard -- Civ 6 gates it on Walls, and
+# a garrison alone does not unlock it.
+CITY_RANGED_BUILDING = _CITY_CFG["ranged_building"]
+CITY_RANGED_STRENGTH = _CITY_CFG["ranged_strength"]
+CITY_RANGED_RANGE = _CITY_CFG["ranged_range"]
+CITY_HEAL_PER_TURN = _CITY_CFG["heal_per_turn"]
+
 # --- Buildings (issue #7) ---
 #
 # `City.BUILDING_COSTS` is an alias of BUILDING_COSTS below and

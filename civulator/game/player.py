@@ -32,6 +32,12 @@ class Player:
         for city in self.cities:
             city.process_turn(self.game_env)
 
+        # A city with Walls shoots once at the start of its owner's turn
+        # (issue #84). Automatic rather than an order, because the action
+        # space selects units -- see GameEnvironment.city_ranged_attack.
+        for city in list(self.cities):
+            self.game_env.city_ranged_attack(city)
+
         # Try to place queued units
         queued_copy = self.queued_units.copy()
         self.queued_units = []

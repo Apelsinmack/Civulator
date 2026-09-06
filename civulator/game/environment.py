@@ -11,7 +11,7 @@ from ..rng import PortableRNG
 from ..terrain_model import can_enter, matches
 from .player import Player
 from .city import City
-from .unit import WarriorUnit, movement_domain
+from .unit import WarriorUnit, calculate_damage, movement_domain
 from ..config import CFG
 
 logger = logging.getLogger(__name__)
@@ -612,6 +612,66 @@ class GameEnvironment:
             self.delete_unit(attacker)
 
         return reward
+
+    # --- City ranged attack (issue #84) ---
+
+    def city_ranged_attack(self, city):
+        """Fire `city`'s ranged strike at the best target in reach.
+
+        Returns the unit that was shot, or None.
+
+        Automatic, once at the start of its owner's turn (`Player.start_turn`)
+        rather than an order the agent gives. Civ 6 makes it a player order,
+        but the action space here selects a UNIT and names a tile; giving a
+        city an order would change that action space, which is exactly the
+        kind of change #82/#84 keep separate. Automatic firing is the only
+        way this rule is reachable at all -- an unreachable rule is what
+        issue #84 is about (CHANGELOG names the divergence).
+
+        Damage goes through the canonical `calculate_damage` and takes no
+        counterattack, like any ranged attack. Range and line of sight use
+        the canonical hex distance and `Map.check_line_of_sight`.
+        """
+        if not city.can_make_ranged_attack():
+            return None
+
+        target = self._bombard_target(city)
+        if target is None:
+            return None
+
+        owner_idx = city.player.player_index
+        damage = calculate_damage(
+            city.get_ranged_strength(),
+            target.get_combat_strength(False, city),
+            rng=getattr(self, "rng", None),
+        )
+        target.health -= damage
+        self.episode_stats[owner_idx]["damage_dealt"] += damage
+
+        if target.health <= 0:
+            self.episode_stats[owner_idx]["kills"] += 1
+            self.episode_stats[target.player.player_index]["losses"] += 1
+            self.delete_unit(target)
+
+        return target
+
+    def _bombard_target(self, city):
+        """The enemy unit a city shoots at: the weakest one in range and in
+        sight, ties broken by coordinates so the choice is reproducible."""
+        best = None
+        best_key = None
+        for player in self.players:
+            if player is city.player:
+                continue
+            for unit in player.units:
+                if self.map.distance_function(city.coordinates, unit.coordinates) > city.get_range():
+                    continue
+                if not self.check_line_of_sight(city.coordinates, unit.coordinates):
+                    continue
+                key = (unit.health, unit.coordinates[0], unit.coordinates[1], unit.slot)
+                if best_key is None or key < best_key:
+                    best, best_key = unit, key
+        return best
 
     def _check_game_end(self):
         """Check if the game should end (all units spent, player eliminated, turn limit)."""
