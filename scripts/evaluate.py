@@ -53,8 +53,19 @@ pending):
   for a game cut off mid-play — so any reading of the run must subtract them
   first. Summaries written before #51 have neither field; treat a missing
   `truncated` as false and consult the run log's `Step limit exceeded` lines.
-
-Design decisions NOT nailed down by the task spec (documented here since
+- Rules epochs (issue #78 amendment, ratified by Erik 2026-09-06): a win rate
+  is comparable ONLY within a rules epoch. Freezing a reference opponent's
+  weights does not freeze the game it plays — every evaluation runs under
+  CURRENT rules, so once the rules move, win-rate-vs-reference conflates
+  policy quality with rule-familiarity. Therefore: a gameplay-rules change
+  that opens a new game version (per CHANGELOG) opens a new epoch; each epoch
+  gets its own reference opponent (recorded in `weights/trained/manifest.md`,
+  which carries the epoch markers); results are NEVER compared across an
+  epoch boundary. This is the same convention manifest.md already applies to
+  the v0.5→v0.6 terrain remodel. Additionally, every evaluation report states
+  the behavioural metrics already in the summary JSON (cities founded, kills,
+  game length) alongside win rate — they are far less sensitive to the
+  opponent's rule-familiarity than a head-to-head win rate is.
 this is the "as-code" record of protocol v1):
 
 - BuildAgent exploration: `train_agents` hardcodes epsilon=0.3 for build
