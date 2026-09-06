@@ -5,7 +5,11 @@ from ..unit_model import (
     BUILDING_COSTS as _BUILDING_COSTS,
     BUILDING_DEFENSE_BONUS,
     CITY_DEFENSE_STRENGTH,
+    CITY_HEAL_PER_TURN,
     CITY_HEALTH,
+    CITY_RANGED_BUILDING,
+    CITY_RANGED_RANGE,
+    CITY_RANGED_STRENGTH,
 )
 from .unit import (
     Unit, WarriorUnit, SlingerUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
@@ -60,6 +64,33 @@ class City:
         for building in self.buildings:
             strength += BUILDING_DEFENSE_BONUS.get(building, 0)
         return strength
+
+    def can_make_ranged_attack(self):
+        """Whether this city may bombard (issue #84).
+
+        Civ 6 gates the city ranged strike on Walls -- "once a city has walls,
+        it can make ranged attacks"; a garrison alone is not enough. The
+        building that unlocks it is `[city] ranged_building` in config.toml,
+        so a second fortification is a config line rather than a name in an
+        `if`. A city reduced to 0 health has stopped fighting and does not
+        shoot.
+        """
+        return self.health > 0 and CITY_RANGED_BUILDING in self.buildings
+
+    def get_ranged_strength(self):
+        """The city's ranged strength (issue #84), `[city] ranged_strength`.
+
+        A flat number, unlike a unit's: Civ 6 derives it from the strongest
+        ranged unit the civilization has built, which needs a tech tree we do
+        not have (#41/#76), and it carries no health penalty -- a battered
+        city shoots as hard as a fresh one. Both simplifications are named in
+        the CHANGELOG.
+        """
+        return CITY_RANGED_STRENGTH
+
+    def get_range(self):
+        """Range of the city's ranged strike (`[city] ranged_range`)."""
+        return CITY_RANGED_RANGE
 
     def produce_unit(self, unit_type):
         """Start producing a unit."""
@@ -142,8 +173,16 @@ class City:
     def process_turn(self, game_env):
         """Process a game turn for this city.
 
-        Order: collect food → consume → growth/starvation → collect production → build.
+        Order: repair → collect food → consume → growth/starvation → collect
+        production → build.
         """
+        # --- Repair phase (issue #84) ---
+        # Civ 6: a city heals 20 HP per turn unless it is under siege. A
+        # besieged city does not repair, which is what makes surrounding one
+        # worth the units it costs.
+        if self.health < CITY_HEALTH and not game_env.is_city_under_siege(self):
+            self.health = min(CITY_HEALTH, self.health + CITY_HEAL_PER_TURN)
+
         # --- Food phase ---
         food_produced = self.calculate_food(game_env)
         food_consumed = 2 * self.population

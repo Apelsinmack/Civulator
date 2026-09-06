@@ -622,10 +622,40 @@ heal_normal = 10                 # HP healed per turn otherwise
 # combat tables (#64, CLAUDE.md canonical-systems table). A number in [game]
 # would need a direct CFG read inside game/unit.py to reach the combat path.
 flanking_bonus = 2
+# Zone of control (issue #84). ZoC exists here ONLY to decide whether a city
+# is under siege -- its movement effect (entering an enemy ZoC ends movement)
+# is deliberately NOT implemented; see the CHANGELOG. A tile is under a
+# player's ZoC when it is adjacent to one of that player's land military
+# units and no river runs along the shared edge.
+#
+# Civ 6 projects ZoC from melee, anti-cavalry and mounted units but not from
+# ranged ones, which is the default here. The flag exists because "by
+# default" is the wording of the rule, not a fact about the engine.
+zone_of_control_from_ranged = false
 
 [city]
 health = 200
 defense_strength = 20
+
+# --- City ranged attack (issue #84) ---
+# Civ 6, City combat: "once a city has walls, it can make ranged attacks
+# against enemy units using a City Ranged Strength stat". A garrison alone is
+# not enough, which is what gives Walls a second, offensive reason to exist.
+# The building named here is the one that unlocks the bombard; it must be a
+# key of [buildings.*].
+ranged_building = "Walls"
+# Civ 6 derives City Ranged Strength from the strongest ranged unit the
+# civilization has built. There is no tech tree here (#41/#76), so the value
+# is the Ancient-era stand-in for that: [units.Archer] ranged_strength.
+ranged_strength = 25
+# Civ 6: the city's ranged strike has Range 2 and, unlike Civ 5, is subject
+# to line-of-sight rules. Both are honoured -- the bombard uses the canonical
+# hex distance and Map.check_line_of_sight (see the CHANGELOG for the source).
+ranged_range = 2
+
+# --- Repair (issue #84) ---
+# Civ 6: a city heals 20 HP per turn unless it is under siege.
+heal_per_turn = 20
 
 # --- Buildings (issue #7) ---------------------------------------------------
 # One table per building: `production_cost` is what a city pays for it, and

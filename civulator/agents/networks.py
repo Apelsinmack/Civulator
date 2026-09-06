@@ -477,6 +477,12 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
         ahead. It is not offered. Affordability does NOT gate an *attack*:
         attacking is free, it only requires having movement points at all,
         and it always lands at least 1 HP of damage.
+      * **enemy cities** (issue #84) — a city tile is an attack while the
+        city's health is above 0 and a capture move once it is 0, and never
+        both. The capture move is offered only to a unit that can hold the
+        city (`Unit.can_capture_city`) and can pay the step, because
+        `Unit.move` refuses every other case; a mask that kept offering the
+        old walk-in would recreate #51 exactly.
 
     Shared with `get_valid_select_mask`, which uses it to keep a Settler that
     has no valid order at all out of the selection mask — that caller passes
@@ -508,7 +514,8 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
         dest = (new_row, new_col)
 
         # Terrain first: the unit's movement domain must admit the tile
-        if not unit.can_enter(game_env.map.get_tile(dest)):
+        dest_tile = game_env.map.get_tile(dest)
+        if not unit.can_enter(dest_tile):
             continue
 
         # An enemy on the tile makes this an attack, not a move: no slot or
@@ -522,6 +529,27 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
                 return valid_move_mask
             continue
 
+        # An undefended enemy city (issue #84). Above 0 health the order is a
+        # bombard — always a state change, so offered like any other attack.
+        # At 0 health it is the capture move, and then only for a unit that
+        # can hold the city and can pay for the step: `Unit.move` refuses
+        # every other case, which would make the order a no-op (#51).
+        enemy_city = dest_tile.city if dest_tile is not None else None
+        if enemy_city is not None and enemy_city.player != current_player:
+            if enemy_city.health > 0:
+                valid_move_mask[new_row, new_col] = 1
+                if stop_at_first:
+                    return valid_move_mask
+            elif (
+                unit.can_capture_city()
+                and not game_env.is_slot_occupied(dest, unit.slot, current_player)
+                and unit.movement_points >= unit.step_cost((row, col), dest, game_env)
+            ):
+                valid_move_mask[new_row, new_col] = 1
+                if stop_at_first:
+                    return valid_move_mask
+            continue
+
         # Plain move: our slot must be free and the step must be payable.
         if game_env.is_slot_occupied(dest, unit.slot, current_player):
             continue
@@ -533,7 +561,11 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
 
     # Ranged units: enemy-occupied tiles within range AND line of sight
     # are valid targets (rules-LoS — if the unit can shoot it, it can see
-    # it, so this leaks nothing under fog of war)
+    # it, so this leaks nothing under fog of war). Enemy CITIES are targets
+    # on the same terms (issue #84) — without this a siege unit could only
+    # bombard from an adjacent tile, which is most of the point of range.
+    # A city already at 0 health is not a target: another hit could not
+    # lower it, so offering it would be a no-op (#51).
     if unit.get_base_ranged_strength() > 0:
         attack_range = unit.get_range()
         for player in game_env.players:
@@ -546,6 +578,15 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
                     and game_env.check_line_of_sight((row, col), (er, ec))
                 ):
                     valid_move_mask[er, ec] = 1
+            for city in player.cities:
+                if city.health <= 0:
+                    continue
+                cr, cc = city.coordinates
+                if (
+                    game_env.map.distance_function((row, col), (cr, cc)) <= attack_range
+                    and game_env.check_line_of_sight((row, col), (cr, cc))
+                ):
+                    valid_move_mask[cr, cc] = 1
                     if stop_at_first:
                         return valid_move_mask
 

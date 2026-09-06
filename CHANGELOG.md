@@ -11,6 +11,165 @@ Version number deliberately not bumped: the next number is an open question
 (#83 — "v0.2.0" was said while the code is at 0.6.2). Everything below is a
 **rule change**, not a refactor.
 
+### City combat: cities can be attacked, besieged and taken (#84)
+
+**Rule change, effect NOT yet measured.** No training or evaluation run has
+been made against these rules; everything below is a statement about the
+engine, verified by tests, not about play.
+
+Issue #84: no order in the action space could attack a city.
+`GameEnvironment._step_inner` recognised only an enemy *unit* on the ordered
+tile, so an order aimed at an undefended enemy city fell through to
+*movement* and the city changed hands by occupation. `City.health` could
+never be reduced in a live game, which left Walls (#7) and the siege class
+(#66) correct, tested and unreachable — 100 production for an effect no agent
+could observe.
+
+**The rules, all sourced from Civ 6.**
+
+1. **An order aimed at an enemy city attacks it.** It routes to
+   `_execute_attack` — the one path all damage flows through — with the City
+   as defender. A city holding a defender still resolves against the defender
+   first; that branch is untouched.
+2. **Ranged bombard takes no counterattack; melee does.** This is what makes
+   a siege unit the safe way to reduce a city, and it falls out of the
+   existing ranged/melee split rather than being added.
+3. **Capture requires `city.health == 0`,** and a melee-capable land unit
+   moving in (`Unit.can_capture_city`: land domain, combat strength above 0,
+   not ranged). A ranged unit reduces a city and never owns it; a civilian or
+   siege support unit cannot take one either. Below 0 the city does not die —
+   its health floors at 0 and it waits to be occupied. Killing the garrison
+   of a full-health city no longer hands it over.
+4. **A city can only make a ranged attack if it has Walls.** Civ 6, City
+   combat: *"once a city has walls, it can make ranged attacks against enemy
+   units using a City Ranged Strength stat"* — a garrison alone is not
+   enough. Source: <https://civilization.fandom.com/wiki/City_combat_(Civ6)>,
+   and the Civilopedia entry for City Combat
+   (<https://www.civilopedia.net/en-US/gathering-storm/concepts/combat_9/>)
+   carries the same sentence.
+5. **The city ranged strike has Range 2, subject to line of sight.** This is
+   the number Erik asked to be researched and cited. Source: the same Civ 6
+   wiki City combat page — *"the city's ranged strike has a Range of 2, but
+   unlike in Civilization V, it is subject to line-of-sight rules"*. Both
+   halves are implemented: canonical hex distance, and
+   `Map.check_line_of_sight`. The Civilopedia page confirms the Walls
+   requirement but does not state the range; the wiki is the source for the
+   2. Direct fetches of the Fandom pages returned HTTP 402 during this work —
+   the quotes above come through search-result extracts of those pages, not
+   from a page render.
+6. **Cities repair 20 HP per turn unless under siege.** Civ 6 / Civilopedia:
+   a garrison heals 20 HP per turn unless under siege.
+7. **Siege (blockade).** Civilopedia, City Combat, verbatim: *"The City
+   Center and other defensible districts like the Encampment are considered
+   under siege if all 6 tiles around them are occupied by enemy units, under
+   enemy Zone of Control, or are impassable due to mountains or Natural
+   Wonders. In these circumstances, the district will not recover lost
+   health."*
+
+**Zone of control is new, and deliberately partial.** It did not exist in
+this engine. It is added only in the narrow form siege needs: a tile is under
+a player's ZoC when it is adjacent to one of that player's land military
+units, and **ZoC does not cross a river** (the same shared-edge test
+`Unit.step_cost` uses for the crossing surcharge). Ranged units do not
+project it (`[combat] zone_of_control_from_ranged = false`, Civ 6's rule).
+
+> **ZoC has NO movement effect here.** In Civ, entering an enemy zone of
+> control ends a unit's movement. That rule is a separate and much larger
+> change and is **not implemented**. Nothing in this engine should be written
+> as though full ZoC exists.
+
+Consequence, pinned by tests: three well-spread units blockade a city and
+three bunched on one side do not, because a unit on the ring covers three of
+the six tiles (its own by occupation, its two ring neighbours by ZoC). Two
+units exactly opposite each other also cover all six — surprising, but a real
+property of the model rather than a bug.
+
+**Numbers, all in `config.toml`.**
+
+| Key | Value | Where it comes from |
+|---|---|---|
+| `[city] ranged_building` | `"Walls"` | Civ 6 gates the city strike on Walls |
+| `[city] ranged_strength` | 25 | Civ 6 derives City Ranged Strength from the strongest ranged unit built; with no tech tree (#41/#76) the Ancient-era stand-in is `[units.Archer] ranged_strength` |
+| `[city] ranged_range` | 2 | Civ 6, cited above |
+| `[city] heal_per_turn` | 20 | Civ 6, cited above |
+| `[combat] zone_of_control_from_ranged` | `false` | Civ 6 projects ZoC from melee, anti-cavalry and mounted units, not ranged |
+
+**Divergences from Civ 6, stated rather than hidden.**
+
+- **Walls are +30 defence, not +3 combat strength.** Civ 6's Ancient Walls
+  add 3 combat strength (and their own HP pool); issue #7 specified +30
+  defence here and this patch does **not** change it. On this engine's
+  strength scale — Warrior 20, city base 20 — +30 is a much larger effect
+  than Civ 6's +3. Flagged, unchanged, and left as a balance decision.
+- **No wall HP pool.** Civ 6 models walls as a separate health bar with
+  per-class damage multipliers; #66 deferred that and it stays deferred.
+  Walls contribute defensive strength only, which is also why the Battering
+  Ram and Siege Tower remain in `DEFERRED_BUILD_UNITS` — there is still no
+  wall to break.
+- **The city's ranged strike is automatic**, fired once at the start of its
+  owner's turn at the weakest enemy unit in range and sight (ties broken by
+  coordinates, so it is reproducible). Civ 6 makes it a player order. The
+  action space here selects a *unit* and names a tile; giving a city an order
+  would change that action space, which is the kind of change #82 and #84
+  keep separate. Automatic firing is the only way the rule is reachable at
+  all, and an unreachable rule is what this issue is about.
+- **City ranged strength is flat**: no health penalty (a unit's ranged
+  strength drops as it is damaged; a city's does not here) and not derived
+  from what the player has built.
+- **"Impassable" for siege means no *land* unit could stand there** —
+  mountains and, since there are no naval units, water. A coastal city is
+  therefore besiegeable from land alone, where Civ 6 needs ships.
+- **At least one ring tile must actually be held or controlled by an enemy**
+  for a city to count as besieged. The Civ wording alone would leave a city
+  ringed by mountains permanently besieged by nobody and never healing.
+- **The garrison's own healing is unchanged.** Civ 6 stops the garrisoned
+  unit healing under siege too; only the city's repair is gated here.
+
+**No encoder change (#82).** Cities are still encoded as coordinates only —
+no health, no walls. Adding a city-HP channel changes the channel count for
+every encoder and is a separate decision. This is survivable because the
+**action mask leaks the needed signal**: "move onto the city" becomes legal
+exactly when its health reaches 0. Said plainly: **an agent cannot see how
+damaged a city is until it is at 0.** It can see that the tile is a legal
+attack, and then, once the city falls, that the same tile is a legal capture.
+Any finer judgement — is this city nearly down, is it worth one more
+Catapult — is invisible to it under the current encoders.
+
+**The mask.** Once capture requires 0 HP, moving onto a city above 0 is an
+order the engine refuses, and a refused order consumes nothing and changes
+nothing — issue #51's livelock, which truncated 85 training episodes and 50
+of 200 eval games. So the city tile now carries exactly one meaning at a
+time: an attack while health is above 0, a capture move once it is 0, never
+both, and the capture only for a unit that can hold the city and pay the
+step. Enemy cities are also ranged targets within range and line of sight
+(without which the siege class would be adjacent-only), and a city already at
+0 is not a ranged target at all. `civulator/tools/recording.py` highlights
+human clicks with the same two functions, so the tool and the agent cannot
+drift apart.
+
+**Comparability.** This is a rule change in the same bundle as
+#67/#7/#59/#66/#74 and invalidates policy comparisons across it in the same
+way: trained weights still load (`check_version` gates on major.minor), but a
+policy trained when cities fell to a walk-in has never met a city that
+fights. Recorded scenarios keep their terrain; recorded *orders* against
+cities now mean something different and have not been re-validated.
+
+New tests: `tests/test_city_combat.py` (17), `tests/test_city_capture.py`
+(14), `tests/test_city_ranged_attack.py` (13), `tests/test_city_siege.py`
+(28), `tests/test_mask_city_orders.py` (6). Suite 588 -> 666 passed, 1
+skipped.
+
+Three existing tests changed deliberately, each named in its commit:
+`test_episode_stats.py::test_found_and_capture_city_counters` (walked into a
+full-health city to reach the capture counter; now reduces it first),
+`test_mask_no_op_actions.py::_observables` (did not include city health, so a
+legal bombard read as a no-op) and
+`test_mask_vectorization.py::_reference_get_valid_moves_mask` (the pre-#42
+reference copy, which has to track deliberate rule changes made after it).
+`test_city_combat.py::make_env` keeps an idle unit on the board so a
+single-attack test does not roll the turn over into the defender's repair and
+return fire.
+
 ### Minimum city distance 3 -> 4, and the start-placement floor with it (#74)
 
 **Rule change, effect NOT yet measured** beyond the seed-schedule count below.

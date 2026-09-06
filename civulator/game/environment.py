@@ -11,7 +11,7 @@ from ..rng import PortableRNG
 from ..terrain_model import can_enter, matches
 from .player import Player
 from .city import City
-from .unit import WarriorUnit, movement_domain
+from .unit import WarriorUnit, calculate_damage, movement_domain
 from ..config import CFG
 
 logger = logging.getLogger(__name__)
@@ -474,6 +474,18 @@ class GameEnvironment:
             self._check_game_end()
             return self, reward, self.done
 
+        # An order aimed at an enemy city is an attack on the city (issue
+        # #84). A city with a garrison still resolves against the garrison —
+        # the branch above already returned in that case. At 0 health the
+        # city is no longer a target but an objective: the order falls
+        # through to movement, and moving in captures it.
+        enemy_city = self._get_enemy_city_at(order_pos)
+        if enemy_city is not None and enemy_city.health > 0:
+            reward = self._execute_attack(selected_unit, enemy_city)
+            self.update_exploration(self.current_player.player_index)
+            self._check_game_end()
+            return self, reward, self.done
+
         # Otherwise → movement
         moved, final_pos = selected_unit.move(order_pos, self)
 
@@ -483,15 +495,37 @@ class GameEnvironment:
         # Check if we captured a city
         tile = self.map.get_tile(final_pos)
         if tile and tile.city and tile.city.player != self.current_player:
-            tile.city.set_owner(self.current_player)
-            reward += REWARDS["capture_city"]
-            self.episode_stats[self.current_player.player_index]["cities_captured"] += 1
+            reward += self._capture_city(selected_unit, tile.city)
 
         # Movement changes what the player can see
         self.update_exploration(self.current_player.player_index)
 
         self._check_game_end()
         return self, reward, self.done
+
+    def _get_enemy_city_at(self, coordinates):
+        """The enemy city standing on `coordinates`, or None (issue #84)."""
+        tile = self.map.get_tile(coordinates)
+        if tile is None or tile.city is None:
+            return None
+        return tile.city if tile.city.player != self.current_player else None
+
+    def _capture_city(self, unit, city):
+        """Take `city` for `unit`'s player if the rules allow. Returns reward.
+
+        The single capture gate (issue #84). Capture requires the city to be
+        at 0 health and the occupying unit to be able to hold it
+        (`Unit.can_capture_city`) — a ranged unit reduces a city but never
+        owns it. `Unit.move` already refuses to enter a tile that fails
+        either test, so this is the second lock on the same door rather than
+        the only one; both exist because the melee move-in inside
+        `_execute_attack` bypasses `Unit.move` entirely.
+        """
+        if city.health > 0 or not unit.can_capture_city():
+            return 0
+        city.set_owner(unit.player)
+        self.episode_stats[unit.player.player_index]["cities_captured"] += 1
+        return REWARDS["capture_city"]
 
     def _get_enemy_unit_at(self, coordinates):
         """Get an enemy unit at the given position, or None."""
@@ -504,9 +538,16 @@ class GameEnvironment:
     def _execute_attack(self, attacker, defender):
         """Execute combat between attacker and defender. Returns reward.
 
-        Ranged units (Archer, Catapult) can attack at range — their own
-        attack() method validates distance and line of sight.
-        Melee units must be adjacent.
+        `defender` is a Unit or a City (issue #84) — the one path all damage
+        flows through, cities included. Ranged units (Slinger, Archer,
+        Catapult) attack at range; their own attack() validates distance and
+        line of sight. Melee units must be adjacent.
+
+        A city is never killed here: `Unit.attack` floors its health at 0 and
+        returns target_killed False, so the kill/capture-civilian/move-in
+        block below is unit-only by construction. Reducing a city to 0 does
+        not take it — a melee land unit must then move in (see
+        `_capture_city`).
         """
         reward = 0
         is_ranged = attacker.get_base_ranged_strength() > 0
@@ -549,15 +590,20 @@ class GameEnvironment:
                 self.episode_stats[atk_idx]["civilians_captured"] += 1
             else:
                 self.delete_unit(defender)
-            # Only melee attackers move into the vacated tile
-            if not is_ranged and not attacker_killed:
+            # Only melee attackers move into the vacated tile — and not into
+            # a city that is still standing (issue #84). Killing the garrison
+            # of a healthy city leaves the attacker where it is; the city
+            # itself must be beaten down first.
+            if (
+                not is_ranged
+                and not attacker_killed
+                and not attacker.enemy_city_blocks(defender.coordinates, self)
+            ):
                 self.move_unit(attacker, defender.coordinates)
                 # Check city capture
                 tile = self.map.get_tile(attacker.coordinates)
                 if tile and tile.city and tile.city.player != self.current_player:
-                    tile.city.set_owner(self.current_player)
-                    reward += REWARDS["capture_city"]
-                    self.episode_stats[atk_idx]["cities_captured"] += 1
+                    reward += self._capture_city(attacker, tile.city)
 
         if attacker_killed:
             reward += REWARDS["unit_lost"]
@@ -566,6 +612,127 @@ class GameEnvironment:
             self.delete_unit(attacker)
 
         return reward
+
+    # --- Zone of control and siege (issue #84) ---
+
+    def tile_under_zone_of_control(self, coordinates, player):
+        """Whether `player` exerts zone of control over `coordinates`.
+
+        A tile is under a player's ZoC when it is adjacent to one of that
+        player's ZoC-projecting units (`Unit.projects_zone_of_control`) and
+        no river runs along the shared edge -- ZoC does not cross a river,
+        the same edge test `Unit.step_cost` uses for the crossing surcharge.
+
+        Adjacency comes from `Map.get_adjacent_coords`, i.e. the canonical
+        hex kernels, wrap included; no neighbour arithmetic is written here.
+
+        This is the ONLY thing ZoC does in this engine. It has no movement
+        effect (in Civ, entering an enemy ZoC ends movement) -- that rule is
+        deliberately out of scope and is named as missing in the CHANGELOG.
+        """
+        for adj in self.map.get_adjacent_coords(coordinates):
+            for unit in self.get_units_at(adj):
+                if unit.player is not player:
+                    continue
+                if not unit.projects_zone_of_control():
+                    continue
+                if self.is_river_between(adj, coordinates):
+                    continue
+                return True
+        return False
+
+    def is_city_under_siege(self, city):
+        """Whether `city` is besieged, and so does not repair (issue #84).
+
+        Civ 6: the city centre is under siege when all 6 tiles around it are
+        occupied by enemy units, under enemy zone of control, or impassable.
+        "Impassable" here means no land unit could stand there -- mountains
+        and, since there are no naval units, water. That makes a coastal city
+        besiegeable from land alone, which diverges from Civ 6 (where a
+        blockade needs ships) and is named in the CHANGELOG.
+
+        One guard the wording alone does not give: at least one ring tile
+        must actually be held or controlled by an enemy. Without it a city
+        ringed by mountains would be permanently besieged by nobody and would
+        never heal.
+        """
+        ring = self.map.get_adjacent_coords(city.coordinates)
+        if not ring:
+            return False
+
+        enemies = [p for p in self.players if p is not city.player]
+        contested = False
+        for pos in ring:
+            if not can_enter("land", self.map.get_tile(pos)):
+                continue  # nobody has to hold a tile nobody can stand on
+            if any(u.player is not city.player for u in self.get_units_at(pos)):
+                contested = True
+                continue
+            if any(self.tile_under_zone_of_control(pos, p) for p in enemies):
+                contested = True
+                continue
+            return False
+        return contested
+
+    # --- City ranged attack (issue #84) ---
+
+    def city_ranged_attack(self, city):
+        """Fire `city`'s ranged strike at the best target in reach.
+
+        Returns the unit that was shot, or None.
+
+        Automatic, once at the start of its owner's turn (`Player.start_turn`)
+        rather than an order the agent gives. Civ 6 makes it a player order,
+        but the action space here selects a UNIT and names a tile; giving a
+        city an order would change that action space, which is exactly the
+        kind of change #82/#84 keep separate. Automatic firing is the only
+        way this rule is reachable at all -- an unreachable rule is what
+        issue #84 is about (CHANGELOG names the divergence).
+
+        Damage goes through the canonical `calculate_damage` and takes no
+        counterattack, like any ranged attack. Range and line of sight use
+        the canonical hex distance and `Map.check_line_of_sight`.
+        """
+        if not city.can_make_ranged_attack():
+            return None
+
+        target = self._bombard_target(city)
+        if target is None:
+            return None
+
+        owner_idx = city.player.player_index
+        damage = calculate_damage(
+            city.get_ranged_strength(),
+            target.get_combat_strength(False, city),
+            rng=getattr(self, "rng", None),
+        )
+        target.health -= damage
+        self.episode_stats[owner_idx]["damage_dealt"] += damage
+
+        if target.health <= 0:
+            self.episode_stats[owner_idx]["kills"] += 1
+            self.episode_stats[target.player.player_index]["losses"] += 1
+            self.delete_unit(target)
+
+        return target
+
+    def _bombard_target(self, city):
+        """The enemy unit a city shoots at: the weakest one in range and in
+        sight, ties broken by coordinates so the choice is reproducible."""
+        best = None
+        best_key = None
+        for player in self.players:
+            if player is city.player:
+                continue
+            for unit in player.units:
+                if self.map.distance_function(city.coordinates, unit.coordinates) > city.get_range():
+                    continue
+                if not self.check_line_of_sight(city.coordinates, unit.coordinates):
+                    continue
+                key = (unit.health, unit.coordinates[0], unit.coordinates[1], unit.slot)
+                if best_key is None or key < best_key:
+                    best, best_key = unit, key
+        return best
 
     def _check_game_end(self):
         """Check if the game should end (all units spent, player eliminated, turn limit)."""

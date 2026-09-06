@@ -27,6 +27,7 @@ from ..unit_model import (
     RANGED_CITY_PENALTY,
     RANGE_VALUES as _RANGE_VALUES,
     SIEGE_CLASS,
+    ZOC_FROM_RANGED,
 )
 
 # Rivers cost this much extra to cross, per edge (design doc D23) — the single
@@ -110,6 +111,27 @@ def movement_domain(unit_type):
     return MOVEMENT_DOMAIN.get(unit_type, "land")
 
 
+def calculate_damage(attacker_strength, defender_strength, rng=None):
+    """
+    Calculate damage using the Civ6 formula.
+
+    Damage(HP) = 30 * e^(0.04 * StrengthDifference) * random(80%, 120%)
+
+    The roll draws from rng (the game's seeded RNG) when given, so combat
+    outcomes are reproducible; falls back to the global random module.
+
+    Module level, not a Unit method, because a city's ranged attack (issue
+    #84) resolves through the same formula and a City is not a Unit. This is
+    the one damage formula in the engine (CLAUDE.md canonical Combat row);
+    `Unit.calculate_damage` delegates here.
+    """
+    strength_diff = attacker_strength - defender_strength
+    base_damage = DAMAGE_BASE * math.exp(DAMAGE_EXPONENT_COEFFICIENT * strength_diff)
+    random_factor = (rng if rng is not None else random).uniform(DAMAGE_ROLL_MIN, DAMAGE_ROLL_MAX)
+    damage = base_damage * random_factor
+    return max(1, min(100, damage))
+
+
 class Unit:
     """Base class for all units in the game."""
 
@@ -190,6 +212,60 @@ class Unit:
 
     def get_production_cost(self):
         return self.PRODUCTION_COST.get(self.unit_type, 40)
+
+    def can_capture_city(self):
+        """Whether this unit may occupy an enemy city and take it (issue #84).
+
+        Civ 6's rule: only a melee-capable land unit captures. A ranged unit
+        bombards a city to 0 HP but cannot hold the ground; a civilian or a
+        siege support unit (combat strength 0) cannot take it either. The
+        three clauses are exactly that — land domain, it fights, and it
+        fights in melee.
+
+        Read by `Unit.move` (which refuses to enter an enemy city tile this
+        returns False for), by `GameEnvironment._capture_city`, and by the
+        action mask, so no mask-legal order can be a capture the engine then
+        refuses (#51).
+        """
+        return (
+            self.get_movement_domain() == "land"
+            and self.get_base_combat_strength() > 0
+            and self.get_base_ranged_strength() == 0
+        )
+
+    def enemy_city_blocks(self, coordinates, game_env):
+        """Whether an enemy city on `coordinates` refuses this unit entry.
+
+        The engine precondition behind the capture gate (issue #84): a city
+        may be entered only once its health is 0, and only by a unit that can
+        capture it. Everything else is barred, so a ranged unit can never end
+        up standing in an enemy city it is not allowed to own.
+        """
+        tile = game_env.map.get_tile(coordinates)
+        city = getattr(tile, "city", None)
+        if city is None or city.player is self.player:
+            return False
+        return city.health > 0 or not self.can_capture_city()
+
+    def projects_zone_of_control(self):
+        """Whether this unit exerts zone of control (issue #84).
+
+        A land military unit does: land domain and combat strength above 0,
+        which excludes Settlers, Workers and the siege support units. Ranged
+        units do not, unless `[combat] zone_of_control_from_ranged` says
+        otherwise -- Civ 6 projects ZoC from melee, anti-cavalry and mounted
+        units only.
+
+        ZoC exists in this engine for exactly one purpose: deciding whether a
+        city is under siege (`GameEnvironment.is_city_under_siege`). Its
+        movement effect -- entering an enemy ZoC ends a unit's movement -- is
+        NOT implemented, and nothing should assume it is.
+        """
+        return (
+            self.get_movement_domain() == "land"
+            and self.get_base_combat_strength() > 0
+            and (ZOC_FROM_RANGED or self.get_base_ranged_strength() == 0)
+        )
 
     def is_siege_class(self):
         """Whether this unit belongs to the siege class (issue #66).
@@ -369,6 +445,11 @@ class Unit:
         if not self.can_enter(dest_tile):
             return False, self.coordinates
 
+        # A standing enemy city bars the way, and a unit that cannot capture
+        # never enters one at all (issue #84).
+        if self.enemy_city_blocks(dest, game_env):
+            return False, self.coordinates
+
         # Check if destination is adjacent (distance 1) — bypass pathfinder
         adj_coords = game_env.map.get_adjacent_coords(self.coordinates)
         if dest in adj_coords:
@@ -413,6 +494,10 @@ class Unit:
             next_tile = game_env.map.get_tile(next_pos_tuple)
             if not self.can_enter(next_tile):
                 break
+            # Same enemy-city gate as the adjacent fast path (#84) — a walk
+            # must not slip a unit into a city an order could not.
+            if self.enemy_city_blocks(next_pos_tuple, game_env):
+                break
             movement_cost = self.step_cost(current_pos_tuple, next_pos_tuple, game_env)
 
             if remaining_mp < movement_cost:
@@ -453,19 +538,14 @@ class Unit:
         return False
 
     def calculate_damage(self, attacker_strength, defender_strength, rng=None):
-        """
-        Calculate damage using the Civ6 formula.
+        """The Civ6 damage formula — see module-level `calculate_damage`.
 
-        Damage(HP) = 30 * e^(0.04 * StrengthDifference) * random(80%, 120%)
-
-        The roll draws from rng (the game's seeded RNG) when given, so combat
-        outcomes are reproducible; falls back to the global random module.
+        Kept as a method because every existing caller reaches it through a
+        unit; it holds no per-unit state and simply delegates, so a city's
+        bombard (issue #84) can use the same formula without pretending to
+        be a Unit.
         """
-        strength_diff = attacker_strength - defender_strength
-        base_damage = DAMAGE_BASE * math.exp(DAMAGE_EXPONENT_COEFFICIENT * strength_diff)
-        random_factor = (rng if rng is not None else random).uniform(DAMAGE_ROLL_MIN, DAMAGE_ROLL_MAX)
-        damage = base_damage * random_factor
-        return max(1, min(100, damage))
+        return calculate_damage(attacker_strength, defender_strength, rng=rng)
 
     def attack(self, target, game_env, is_ranged=False):
         """
@@ -495,7 +575,17 @@ class Unit:
         rng = getattr(game_env, "rng", None)
         damage_dealt = self.calculate_damage(attacker_strength, defender_strength, rng=rng)
         target.health -= damage_dealt
-        target_killed = target.health <= 0
+
+        # A city is never destroyed (issue #84): its health floors at 0 and it
+        # waits to be occupied, so `target_killed` — which means "remove this
+        # from the board" to every caller — is always False for a city. The
+        # signal that a city has fallen is `city.health == 0`, which is what
+        # the capture gate and the action mask both read.
+        if getattr(target, "is_city", False):
+            target.health = max(0, target.health)
+            target_killed = False
+        else:
+            target_killed = target.health <= 0
 
         # Counterattack for melee
         attacker_killed = False
