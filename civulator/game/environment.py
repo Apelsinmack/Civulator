@@ -495,9 +495,7 @@ class GameEnvironment:
         # Check if we captured a city
         tile = self.map.get_tile(final_pos)
         if tile and tile.city and tile.city.player != self.current_player:
-            tile.city.set_owner(self.current_player)
-            reward += REWARDS["capture_city"]
-            self.episode_stats[self.current_player.player_index]["cities_captured"] += 1
+            reward += self._capture_city(selected_unit, tile.city)
 
         # Movement changes what the player can see
         self.update_exploration(self.current_player.player_index)
@@ -511,6 +509,23 @@ class GameEnvironment:
         if tile is None or tile.city is None:
             return None
         return tile.city if tile.city.player != self.current_player else None
+
+    def _capture_city(self, unit, city):
+        """Take `city` for `unit`'s player if the rules allow. Returns reward.
+
+        The single capture gate (issue #84). Capture requires the city to be
+        at 0 health and the occupying unit to be able to hold it
+        (`Unit.can_capture_city`) — a ranged unit reduces a city but never
+        owns it. `Unit.move` already refuses to enter a tile that fails
+        either test, so this is the second lock on the same door rather than
+        the only one; both exist because the melee move-in inside
+        `_execute_attack` bypasses `Unit.move` entirely.
+        """
+        if city.health > 0 or not unit.can_capture_city():
+            return 0
+        city.set_owner(unit.player)
+        self.episode_stats[unit.player.player_index]["cities_captured"] += 1
+        return REWARDS["capture_city"]
 
     def _get_enemy_unit_at(self, coordinates):
         """Get an enemy unit at the given position, or None."""
@@ -575,15 +590,20 @@ class GameEnvironment:
                 self.episode_stats[atk_idx]["civilians_captured"] += 1
             else:
                 self.delete_unit(defender)
-            # Only melee attackers move into the vacated tile
-            if not is_ranged and not attacker_killed:
+            # Only melee attackers move into the vacated tile — and not into
+            # a city that is still standing (issue #84). Killing the garrison
+            # of a healthy city leaves the attacker where it is; the city
+            # itself must be beaten down first.
+            if (
+                not is_ranged
+                and not attacker_killed
+                and not attacker.enemy_city_blocks(defender.coordinates, self)
+            ):
                 self.move_unit(attacker, defender.coordinates)
                 # Check city capture
                 tile = self.map.get_tile(attacker.coordinates)
                 if tile and tile.city and tile.city.player != self.current_player:
-                    tile.city.set_owner(self.current_player)
-                    reward += REWARDS["capture_city"]
-                    self.episode_stats[atk_idx]["cities_captured"] += 1
+                    reward += self._capture_city(attacker, tile.city)
 
         if attacker_killed:
             reward += REWARDS["unit_lost"]

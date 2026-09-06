@@ -212,6 +212,40 @@ class Unit:
     def get_production_cost(self):
         return self.PRODUCTION_COST.get(self.unit_type, 40)
 
+    def can_capture_city(self):
+        """Whether this unit may occupy an enemy city and take it (issue #84).
+
+        Civ 6's rule: only a melee-capable land unit captures. A ranged unit
+        bombards a city to 0 HP but cannot hold the ground; a civilian or a
+        siege support unit (combat strength 0) cannot take it either. The
+        three clauses are exactly that — land domain, it fights, and it
+        fights in melee.
+
+        Read by `Unit.move` (which refuses to enter an enemy city tile this
+        returns False for), by `GameEnvironment._capture_city`, and by the
+        action mask, so no mask-legal order can be a capture the engine then
+        refuses (#51).
+        """
+        return (
+            self.get_movement_domain() == "land"
+            and self.get_base_combat_strength() > 0
+            and self.get_base_ranged_strength() == 0
+        )
+
+    def enemy_city_blocks(self, coordinates, game_env):
+        """Whether an enemy city on `coordinates` refuses this unit entry.
+
+        The engine precondition behind the capture gate (issue #84): a city
+        may be entered only once its health is 0, and only by a unit that can
+        capture it. Everything else is barred, so a ranged unit can never end
+        up standing in an enemy city it is not allowed to own.
+        """
+        tile = game_env.map.get_tile(coordinates)
+        city = getattr(tile, "city", None)
+        if city is None or city.player is self.player:
+            return False
+        return city.health > 0 or not self.can_capture_city()
+
     def is_siege_class(self):
         """Whether this unit belongs to the siege class (issue #66).
 
@@ -390,6 +424,11 @@ class Unit:
         if not self.can_enter(dest_tile):
             return False, self.coordinates
 
+        # A standing enemy city bars the way, and a unit that cannot capture
+        # never enters one at all (issue #84).
+        if self.enemy_city_blocks(dest, game_env):
+            return False, self.coordinates
+
         # Check if destination is adjacent (distance 1) — bypass pathfinder
         adj_coords = game_env.map.get_adjacent_coords(self.coordinates)
         if dest in adj_coords:
@@ -433,6 +472,10 @@ class Unit:
 
             next_tile = game_env.map.get_tile(next_pos_tuple)
             if not self.can_enter(next_tile):
+                break
+            # Same enemy-city gate as the adjacent fast path (#84) — a walk
+            # must not slip a unit into a city an order could not.
+            if self.enemy_city_blocks(next_pos_tuple, game_env):
                 break
             movement_cost = self.step_cost(current_pos_tuple, next_pos_tuple, game_env)
 

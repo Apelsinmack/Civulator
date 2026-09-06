@@ -117,7 +117,13 @@ def _reference_get_valid_select_mask(state, game_env):
 
 
 def _reference_get_valid_moves_mask(state, selected_pos, game_env):
-    """Verbatim copy of the original get_valid_moves_mask (pre-#42)."""
+    """Copy of the original get_valid_moves_mask (pre-#42).
+
+    Verbatim except for the enemy-city block below, added when #84 gave the
+    masks a city rule. The reference exists to prove the #42 vectorization
+    changed no behaviour, so it has to track deliberate rule changes made
+    after it; what it must never do is silently absorb an accidental one.
+    """
     _, n, m = state.shape
     device = state.device
 
@@ -145,7 +151,8 @@ def _reference_get_valid_moves_mask(state, selected_pos, game_env):
         if new_row < 0 or new_row >= n:
             continue
 
-        if not selected_unit.can_enter(game_env.map.get_tile((new_row, new_col))):
+        dest_tile = game_env.map.get_tile((new_row, new_col))
+        if not selected_unit.can_enter(dest_tile):
             continue
 
         enemy_there = any(
@@ -155,9 +162,26 @@ def _reference_get_valid_moves_mask(state, selected_pos, game_env):
         friendly_in_slot = game_env.is_slot_occupied(
             (new_row, new_col), selected_unit.slot, game_env.current_player
         )
+        enemy_city = dest_tile.city if dest_tile is not None else None
+        if enemy_city is not None and enemy_city.player == game_env.current_player:
+            enemy_city = None
         if enemy_there:
             # Attack: free of both the slot rule and the movement cost.
             valid_move_mask[new_row, new_col] = 1
+        elif enemy_city is not None:
+            # #84: a standing enemy city is a bombard; a dead one is a
+            # capture move, and only for a unit that can hold it and pay
+            # the step.
+            if enemy_city.health > 0:
+                valid_move_mask[new_row, new_col] = 1
+            elif (
+                selected_unit.can_capture_city()
+                and not friendly_in_slot
+                and selected_unit.movement_points >= selected_unit.step_cost(
+                    (row, col), (new_row, new_col), game_env
+                )
+            ):
+                valid_move_mask[new_row, new_col] = 1
         elif not friendly_in_slot:
             # #51: a move the unit cannot pay for silently fails -> not offered.
             step = selected_unit.step_cost(
