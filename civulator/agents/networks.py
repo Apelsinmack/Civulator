@@ -561,7 +561,11 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
 
     # Ranged units: enemy-occupied tiles within range AND line of sight
     # are valid targets (rules-LoS — if the unit can shoot it, it can see
-    # it, so this leaks nothing under fog of war)
+    # it, so this leaks nothing under fog of war). Enemy CITIES are targets
+    # on the same terms (issue #84) — without this a siege unit could only
+    # bombard from an adjacent tile, which is most of the point of range.
+    # A city already at 0 health is not a target: another hit could not
+    # lower it, so offering it would be a no-op (#51).
     if unit.get_base_ranged_strength() > 0:
         attack_range = unit.get_range()
         for player in game_env.players:
@@ -574,6 +578,15 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
                     and game_env.check_line_of_sight((row, col), (er, ec))
                 ):
                     valid_move_mask[er, ec] = 1
+            for city in player.cities:
+                if city.health <= 0:
+                    continue
+                cr, cc = city.coordinates
+                if (
+                    game_env.map.distance_function((row, col), (cr, cc)) <= attack_range
+                    and game_env.check_line_of_sight((row, col), (cr, cc))
+                ):
+                    valid_move_mask[cr, cc] = 1
                     if stop_at_first:
                         return valid_move_mask
 

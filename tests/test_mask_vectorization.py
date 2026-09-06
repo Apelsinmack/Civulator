@@ -202,6 +202,17 @@ def _reference_get_valid_moves_mask(state, selected_pos, game_env):
                     and game_env.check_line_of_sight((row, col), (er, ec))
                 ):
                     valid_move_mask[er, ec] = 1
+            # #84: enemy cities are ranged targets on the same terms, unless
+            # already at 0 health (another hit could not lower them).
+            for city in player.cities:
+                if city.health <= 0:
+                    continue
+                cr, cc = city.coordinates
+                if (
+                    game_env.map.distance_function((row, col), (cr, cc)) <= attack_range
+                    and game_env.check_line_of_sight((row, col), (cr, cc))
+                ):
+                    valid_move_mask[cr, cc] = 1
 
     # #51: own tile is fortify for everyone (always succeeds with movement
     # points left) but found-city for a Settler, which can be refused.
