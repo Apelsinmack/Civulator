@@ -474,6 +474,18 @@ class GameEnvironment:
             self._check_game_end()
             return self, reward, self.done
 
+        # An order aimed at an enemy city is an attack on the city (issue
+        # #84). A city with a garrison still resolves against the garrison —
+        # the branch above already returned in that case. At 0 health the
+        # city is no longer a target but an objective: the order falls
+        # through to movement, and moving in captures it.
+        enemy_city = self._get_enemy_city_at(order_pos)
+        if enemy_city is not None and enemy_city.health > 0:
+            reward = self._execute_attack(selected_unit, enemy_city)
+            self.update_exploration(self.current_player.player_index)
+            self._check_game_end()
+            return self, reward, self.done
+
         # Otherwise → movement
         moved, final_pos = selected_unit.move(order_pos, self)
 
@@ -493,6 +505,13 @@ class GameEnvironment:
         self._check_game_end()
         return self, reward, self.done
 
+    def _get_enemy_city_at(self, coordinates):
+        """The enemy city standing on `coordinates`, or None (issue #84)."""
+        tile = self.map.get_tile(coordinates)
+        if tile is None or tile.city is None:
+            return None
+        return tile.city if tile.city.player != self.current_player else None
+
     def _get_enemy_unit_at(self, coordinates):
         """Get an enemy unit at the given position, or None."""
         units = self.get_units_at(coordinates)
@@ -504,9 +523,16 @@ class GameEnvironment:
     def _execute_attack(self, attacker, defender):
         """Execute combat between attacker and defender. Returns reward.
 
-        Ranged units (Archer, Catapult) can attack at range — their own
-        attack() method validates distance and line of sight.
-        Melee units must be adjacent.
+        `defender` is a Unit or a City (issue #84) — the one path all damage
+        flows through, cities included. Ranged units (Slinger, Archer,
+        Catapult) attack at range; their own attack() validates distance and
+        line of sight. Melee units must be adjacent.
+
+        A city is never killed here: `Unit.attack` floors its health at 0 and
+        returns target_killed False, so the kill/capture-civilian/move-in
+        block below is unit-only by construction. Reducing a city to 0 does
+        not take it — a melee land unit must then move in (see
+        `_capture_city`).
         """
         reward = 0
         is_ranged = attacker.get_base_ranged_strength() > 0

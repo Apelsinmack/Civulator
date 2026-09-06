@@ -85,8 +85,12 @@ def _observables(env):
         )
         for p in env.players for u in p.units
     ))
+    # City health is part of the observable state since #84: bombarding a
+    # city changes nothing else, so a mask offering that attack would look
+    # like a no-op without it.
     cities = tuple(sorted(
-        (p.player_index, int(c.coordinates[0]), int(c.coordinates[1]))
+        (p.player_index, int(c.coordinates[0]), int(c.coordinates[1]),
+         round(float(c.health), 6))
         for p in env.players for c in p.cities
     ))
     return (env.turn_counter, env.current_player.player_index, bool(env.done),

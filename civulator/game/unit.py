@@ -110,6 +110,27 @@ def movement_domain(unit_type):
     return MOVEMENT_DOMAIN.get(unit_type, "land")
 
 
+def calculate_damage(attacker_strength, defender_strength, rng=None):
+    """
+    Calculate damage using the Civ6 formula.
+
+    Damage(HP) = 30 * e^(0.04 * StrengthDifference) * random(80%, 120%)
+
+    The roll draws from rng (the game's seeded RNG) when given, so combat
+    outcomes are reproducible; falls back to the global random module.
+
+    Module level, not a Unit method, because a city's ranged attack (issue
+    #84) resolves through the same formula and a City is not a Unit. This is
+    the one damage formula in the engine (CLAUDE.md canonical Combat row);
+    `Unit.calculate_damage` delegates here.
+    """
+    strength_diff = attacker_strength - defender_strength
+    base_damage = DAMAGE_BASE * math.exp(DAMAGE_EXPONENT_COEFFICIENT * strength_diff)
+    random_factor = (rng if rng is not None else random).uniform(DAMAGE_ROLL_MIN, DAMAGE_ROLL_MAX)
+    damage = base_damage * random_factor
+    return max(1, min(100, damage))
+
+
 class Unit:
     """Base class for all units in the game."""
 
@@ -453,19 +474,14 @@ class Unit:
         return False
 
     def calculate_damage(self, attacker_strength, defender_strength, rng=None):
-        """
-        Calculate damage using the Civ6 formula.
+        """The Civ6 damage formula — see module-level `calculate_damage`.
 
-        Damage(HP) = 30 * e^(0.04 * StrengthDifference) * random(80%, 120%)
-
-        The roll draws from rng (the game's seeded RNG) when given, so combat
-        outcomes are reproducible; falls back to the global random module.
+        Kept as a method because every existing caller reaches it through a
+        unit; it holds no per-unit state and simply delegates, so a city's
+        bombard (issue #84) can use the same formula without pretending to
+        be a Unit.
         """
-        strength_diff = attacker_strength - defender_strength
-        base_damage = DAMAGE_BASE * math.exp(DAMAGE_EXPONENT_COEFFICIENT * strength_diff)
-        random_factor = (rng if rng is not None else random).uniform(DAMAGE_ROLL_MIN, DAMAGE_ROLL_MAX)
-        damage = base_damage * random_factor
-        return max(1, min(100, damage))
+        return calculate_damage(attacker_strength, defender_strength, rng=rng)
 
     def attack(self, target, game_env, is_ranged=False):
         """
@@ -495,7 +511,17 @@ class Unit:
         rng = getattr(game_env, "rng", None)
         damage_dealt = self.calculate_damage(attacker_strength, defender_strength, rng=rng)
         target.health -= damage_dealt
-        target_killed = target.health <= 0
+
+        # A city is never destroyed (issue #84): its health floors at 0 and it
+        # waits to be occupied, so `target_killed` — which means "remove this
+        # from the board" to every caller — is always False for a city. The
+        # signal that a city has fallen is `city.health == 0`, which is what
+        # the capture gate and the action mask both read.
+        if getattr(target, "is_city", False):
+            target.health = max(0, target.health)
+            target_killed = False
+        else:
+            target_killed = target.health <= 0
 
         # Counterattack for melee
         attacker_killed = False

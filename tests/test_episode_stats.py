@@ -50,9 +50,14 @@ def test_found_and_capture_city_counters():
     step(env, (4, 4, settler.slot), (4, 4))  # order onto own tile = found
     assert env.episode_stats[0]["cities_founded"] == 1
 
-    # Undefended enemy city adjacent to a warrior: move in = capture.
-    assert env.found_city(env.players[1], (0, 10), "Enemy City") is not None
+    # Undefended enemy city adjacent to a warrior. Since #84 a standing city
+    # must be beaten down before it can be occupied, so the counter is reached
+    # by reducing it to 0 and then moving in — not by walking into a
+    # full-health city, which is now an attack.
+    city = env.found_city(env.players[1], (0, 10), "Enemy City")
+    assert city is not None
     raider = place(env, WarriorUnit, 0, (0, 9))
+    city.health = 0
     step(env, (0, 9, raider.slot), (0, 10))
     assert env.episode_stats[0]["cities_captured"] == 1
 
