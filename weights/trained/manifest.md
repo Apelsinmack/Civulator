@@ -62,6 +62,15 @@ results") — they are prior-epoch results, not superseded ones.
 `"pre-manifest/0.5 epoch"` for a bare state_dict with no manifest at all) so
 this boundary is visible at load time, not just here.
 
+**This marker is now a general convention (issue #78, ratified 2026-09-06):
+every gameplay-rules change that opens a new game version opens a new epoch
+in this file.** A reference opponent is frozen in weights but not in rules —
+evaluations always run under current rules — so win rates are comparable only
+within an epoch, each epoch names its own reference opponent, and evaluation
+reports state behavioural metrics (cities founded, kills, game length)
+alongside win rate. The next boundary is the 0.7.0 season (#83), which
+replaces the 25ch reference below with `duel_53ch_net128x6_1000ep`.
+
 ## Weights — v0.6.0 epoch
 
 ### duel_25ch_1000ep.pth  ⭐ THE #39 BASELINE — the reference opponent
@@ -76,7 +85,7 @@ this boundary is visible at load time, not just here.
 - **Date**: 2026-08-23 (launched 16:12, finished 23:23 — 7h10m26s, 25.83 s/episode)
 - **Final win distribution**: P0=500, P1=486, draws=14 — statistically even, as a symmetric reference should be
 - **Build popularity**: agent A — Catapult 16.3%, Archer 15.4%, Settler 14.7%, Horseman 14.6%, Warrior 14.5%, Granary 12.7%, Spearman 11.9%; agent B — Settler 17.3%, Horseman 15.8%, Catapult 15.6%, Warrior 15.2%, Archer 14.8%, Spearman 12.6%, Granary 8.9%
-- **Role**: frozen reference opponent (#6 pool member #1); win-rate-vs-this is the standard evaluation metric; all followers train the same M=1000 with episodes-to-50%-vs-baseline as the secondary metric
+- **Role**: frozen reference opponent (#6 pool member #1); win-rate-vs-this is the standard evaluation metric **within the v0.6 epoch only** (#78); all followers train the same M=1000 with episodes-to-50%-vs-baseline as the secondary metric. This scale closes at the 0.7.0 boundary — #83 hands the role to `duel_53ch_net128x6_1000ep`
 - **Stats**: `stats/baseline_baseline_1000ep_1787520197.json` + `win_history`/`win_rate_plot`/`build_orders_1787520197.*`
 
 ### duel_52ch_1000ep.pth — the #40 terrain-aware follower

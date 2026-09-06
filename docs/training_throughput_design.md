@@ -240,7 +240,8 @@ training regime — plausibly better (more diverse data, less overfitting to a
   warm-started networks reach comparable training loss while **generalizing
   worse** than freshly initialized ones ([Ash & Adams, NeurIPS 2020,
   arXiv:1910.08475]), and the settings that close that gap tend to erase the
-  time saving. It would also break comparability with the frozen #39 baseline.
+  time saving. It would also break within-epoch comparability against the
+  epoch's reference opponent (#78/#83).
   Acceptable as engineering for a follow-on run; not inside a controlled
   experiment.
 
@@ -378,7 +379,7 @@ happen.
 | P3 | Remove per-optimize H2D staging (pinned buffer / device-side replay) | **yes** | modest |
 | P4 | CUDA graphs on `optimize()` | **yes** (same numerics) | the big neutral win |
 | P5 | **`replay_ratio` in config + the modulo at `trainer.py:325`; `steps`/`turns`/`optimize_count` into the run record** | **no — experiment** | up to 4.7× at N=1 (§4B) |
-| P6 | Replay-ratio ladder at fixed wall-clock vs the frozen #39 baseline | — | picks *r*; the scientific record |
+| P6 | Replay-ratio ladder at fixed wall-clock vs the current epoch's reference opponent (#83) | — | picks *r*; the scientific record |
 | P7 | `VectorGameEnvironment` + windowing inference batcher; `n_envs` in config | **no — experiment** | ≈1.8× *on top of* P6's *r*, conditional on gate 1 |
 
 P5/P6 come **before** P7 deliberately: at today's replay ratio the vector env is
@@ -399,7 +400,13 @@ and being unable to attribute the result. Concretely:
 
 - **Hold wall-clock fixed, not episode count.** The claim under test is "more
   learning per hour", so the comparison is *5.07 h of old* vs *5.07 h of new*,
-  both evaluated against the frozen baseline with `scripts/evaluate.py`.
+  both evaluated with `scripts/evaluate.py` against the reference opponent of
+  the rules epoch the runs train under. *(Correction 2026-09-06: this section
+  originally said "the frozen #39 baseline". That reference is superseded —
+  #83 replaces it with `duel_53ch_net128x6_1000ep` for the 0.7.0 season, and
+  #78's resolution makes comparability within-epoch-only as a protocol rule.
+  Behavioural metrics — cities founded, kills, game length — are reported
+  alongside win rate, per the same resolution.)*
 - **Vary replay ratio alone first**, at N = 1, over {1.0, 0.5, 0.25, 0.125}. This
   separates "the replay ratio changed" from "there are more games", which is the
   confound §4B names. It is cheap and it is the control.
