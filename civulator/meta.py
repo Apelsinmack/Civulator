@@ -18,6 +18,7 @@ import torch
 
 from . import __version__
 from .config import CFG
+from .game import map as _game_map
 
 logger = logging.getLogger(__name__)
 
@@ -156,13 +157,22 @@ def build_manifest(mapgen_params=None):
             without ever reading live config.toml.
 
     Returns:
-        dict with keys: game_version, git_commit, config, date, and —
-        only when `mapgen_params` is given — mapgen_params.
+        dict with keys: game_version, git_commit, git_dirty,
+        civulator_core_commit, config, date, and — only when `mapgen_params`
+        is given — mapgen_params.
     """
     manifest = {
         "game_version": __version__,
         "git_commit": _git_commit(),
         "git_dirty": _git_dirty(),
+        # Which commit the loaded civulator_core.pyd was BUILT from — not
+        # necessarily this checkout's git_commit above (issue #47: a stale
+        # pyd after a git catch-up is otherwise undetectable except by
+        # symptom, relevant for #44-style cross-machine forensics). Read
+        # through civulator.game.map's module-level state, the one site that
+        # loads civulator_core — never a second `import civulator_core` here.
+        # None when the C++ core is absent or predates build_info().
+        "civulator_core_commit": _game_map.civulator_core_commit,
         "config": copy.deepcopy(CFG),
         "date": datetime.now(timezone.utc).isoformat(),
     }

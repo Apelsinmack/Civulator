@@ -14,10 +14,14 @@ def test_manifest_has_all_keys_and_matches_current_state():
     # identify the code that produced an artifact, because a run can be
     # launched from a working tree with uncommitted edits (2026-09-04 — a
     # 13-hour run trained under combat constants that were in no commit).
+    # It gained `civulator_core_commit` in issue #47: which commit the loaded
+    # civulator_core.pyd was BUILT from, distinct from git_commit above (a
+    # stale pyd after a git catch-up otherwise shows up only as a symptom).
     # Loaders only ever read `game_version`, so an added key is backward
     # compatible; this pin exists to make schema changes deliberate.
     assert set(build_manifest().keys()) == {
-        "game_version", "git_commit", "git_dirty", "config", "date",
+        "game_version", "git_commit", "git_dirty", "civulator_core_commit",
+        "config", "date",
     }
     manifest = build_manifest()
     assert manifest["game_version"] == civulator.__version__
