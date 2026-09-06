@@ -90,6 +90,7 @@ from civulator.agents.networks import (
 )
 from civulator.agents.replay_memory import ReplayMemory
 from civulator.rng import PortableRNG
+from civulator.torch_env import resolve_device
 from civulator.training import train_agents
 
 _tcfg = CFG.get("training", {})
@@ -539,17 +540,23 @@ def report_gpu_info():
     print("\n=== GPU / device ===")
     print(f"torch version: {torch.__version__}")
     cuda_ok = torch.cuda.is_available()
+    device_count = torch.cuda.device_count() if cuda_ok else 0
     print(f"torch.cuda.is_available(): {cuda_ok}")
-    if cuda_ok:
+    print(f"torch.cuda.device_count(): {device_count}")
+    if cuda_ok and device_count > 0:
         print(f"device: {torch.cuda.get_device_name(0)}")
+    resolved = resolve_device()
     print(
         "DQNAgent/BuildAgent device resolution (civulator/agents/dqn_agent.py, "
-        "build_agent.py) reads: torch.device(\"cuda\" if torch.cuda.is_available() "
-        "else \"cpu\") -- unconditional, no CLI/config flag needed. The network AND "
-        "its target-network deepcopy are both .to(self.device) at construction, so "
-        f"the default training path runs on {'GPU' if cuda_ok else 'CPU'} automatically."
+        "build_agent.py) reads civulator.torch_env.resolve_device() -- cuda only "
+        "when is_available() AND device_count() > 0 (issue #81; a masked GPU, "
+        "e.g. CUDA_VISIBLE_DEVICES=\"\", is_available() can be True with zero "
+        "devices), else cpu. Unconditional, no CLI/config flag needed. The "
+        "network AND its target-network deepcopy are both .to(self.device) at "
+        f"construction, so the default training path resolves to {resolved} "
+        "automatically."
     )
-    return cuda_ok
+    return resolved.type == "cuda"
 
 
 # ---------------------------------------------------------------------------

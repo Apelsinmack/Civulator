@@ -106,6 +106,7 @@ from civulator.game import GameEnvironment, resolve_size_and_players
 from civulator.game.city import City
 from civulator.game.unit import NUM_UNIT_SLOTS
 from civulator.meta import load_weights
+from civulator.torch_env import resolve_device
 from civulator.training.trainer import _seeded_reset, determine_winner
 
 # --- Pinned world/architecture config (protocol v1) -------------------------
@@ -331,7 +332,7 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
             f"size preset {size_preset!r} resolves to {num_players} players"
         )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = resolve_device()
 
     a_agents, a_builds, a_manifest, a_channels = _load_side(
         a_weights, a_encoder, n, m, num_players, device)
