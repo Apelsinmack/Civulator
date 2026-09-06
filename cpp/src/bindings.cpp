@@ -7,6 +7,16 @@
 
 namespace py = pybind11;
 
+// Build provenance (issue #47) -- CMake defines these at configure time
+// (cpp/CMakeLists.txt); the #ifndef fallbacks only matter for a hand-invoked
+// compile outside that CMake step.
+#ifndef CIVULATOR_GIT_COMMIT
+#define CIVULATOR_GIT_COMMIT "unknown"
+#endif
+#ifndef CIVULATOR_BUILD_DATE
+#define CIVULATOR_BUILD_DATE "unknown"
+#endif
+
 PYBIND11_MODULE(civulator_core, m) {
     m.doc() = "Civulator C++ core — hex grid utilities and A* pathfinding";
 
@@ -83,4 +93,26 @@ PYBIND11_MODULE(civulator_core, m) {
     py::arg("occupied") = py::none(),
     py::arg("river_flags") = py::none(),
     py::arg("crossing_cost") = 0.0f);
+
+    // --- Build provenance (issue #47) ---
+    m.def("build_info", []() {
+        py::dict info;
+        info["commit"] = std::string(CIVULATOR_GIT_COMMIT);
+#ifdef CIVULATOR_GIT_DIRTY_KNOWN
+        info["dirty"] = py::bool_(CIVULATOR_GIT_DIRTY != 0);
+#else
+        info["dirty"] = py::none();
+#endif
+        info["build_date"] = std::string(CIVULATOR_BUILD_DATE);
+        return info;
+    },
+    "Build provenance captured at CMake configure time (issue #47).\n\n"
+    "Returns:\n"
+    "    dict with keys: commit (str, 'unknown' if git was unavailable at "
+    "configure time), dirty (bool, or None if the dirty flag could not be "
+    "determined), build_date (str, UTC).\n\n"
+    "Captured at CONFIGURE time only -- an incremental build without "
+    "re-running cmake can leave this stale. civulator.game.map's import "
+    "site compares this against the running checkout's HEAD and warns on "
+    "mismatch; it never blocks import.");
 }

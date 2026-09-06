@@ -7,6 +7,7 @@ Distance = max(|dq|, |dr|, |dq + dr|) with cylindrical wrapping on q-axis (colum
 
 import itertools
 import os
+import subprocess
 import sys
 
 import numpy as np
@@ -25,6 +26,50 @@ try:
     HAS_CPP_CORE = True
 except ImportError:
     HAS_CPP_CORE = False
+
+def _read_civulator_core_commit(module):
+    """`module.build_info()["commit"]`, or None if `module` predates
+    build_info() (old pyd -- tolerated via hasattr, never an ImportError).
+
+    Pulled out of the import-site block below so tests can exercise the
+    tolerance path directly with a stand-in object, without reloading the
+    real civulator_core extension module (issue #47).
+    """
+    if hasattr(module, "build_info"):
+        return module.build_info().get("commit")
+    return None
+
+
+# Build provenance (issue #47): the ONE site that loads civulator_core, so
+# this is also the ONE site that reads its build_info() -- meta.build_manifest
+# reads civulator_core_commit back off this module's state rather than
+# opening a second `import civulator_core` (design intent: one load site).
+# None when the C++ core isn't present, or is present but predates
+# build_info() (old pyd -- tolerated via hasattr, never an ImportError).
+civulator_core_commit = None
+if HAS_CPP_CORE:
+    civulator_core_commit = _read_civulator_core_commit(civulator_core)
+if civulator_core_commit:
+    # Mismatch is expected whenever a commit lands that doesn't touch cpp/
+    # (nobody reconfigures/rebuilds for that) -- a warning, never an error,
+    # and never a reason to skip the C++ path. One tolerant `git rev-parse
+    # HEAD`; if git isn't reachable (no git on PATH, not a checkout at all)
+    # the comparison is silently skipped rather than raising.
+    try:
+        _repo_head = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except Exception:
+        _repo_head = None
+    if _repo_head and civulator_core_commit != _repo_head:
+        print(
+            f"[map] WARNING: civulator_core.pyd was built from commit "
+            f"{civulator_core_commit[:12]} but this checkout's HEAD is "
+            f"{_repo_head[:12]} -- if the difference touches cpp/, "
+            f"reconfigure and rebuild (stale-pyd check, issue #47)."
+        )
 
 # A* adapter encoding: the C++ hex_astar wire format treats cost >= 99 as
 # blocked (design doc §3.3). Only the cost-grid builder writes it, and only the
