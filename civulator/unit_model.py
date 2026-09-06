@@ -72,6 +72,8 @@ HEAL_FORTIFIED = _COMBAT_CFG["heal_fortified"]
 HEAL_NORMAL = _COMBAT_CFG["heal_normal"]
 # Per flanking unit adjacent to the defender (issue #59); 0 disables the rule.
 FLANKING_BONUS = _COMBAT_CFG["flanking_bonus"]
+# Whether ranged units project zone of control (issue #84); Civ 6 says no.
+ZOC_FROM_RANGED = _COMBAT_CFG["zone_of_control_from_ranged"]
 
 # --- City combat numbers (game/city.py City.__init__) ---
 

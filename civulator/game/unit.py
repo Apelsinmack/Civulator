@@ -27,6 +27,7 @@ from ..unit_model import (
     RANGED_CITY_PENALTY,
     RANGE_VALUES as _RANGE_VALUES,
     SIEGE_CLASS,
+    ZOC_FROM_RANGED,
 )
 
 # Rivers cost this much extra to cross, per edge (design doc D23) — the single
@@ -245,6 +246,26 @@ class Unit:
         if city is None or city.player is self.player:
             return False
         return city.health > 0 or not self.can_capture_city()
+
+    def projects_zone_of_control(self):
+        """Whether this unit exerts zone of control (issue #84).
+
+        A land military unit does: land domain and combat strength above 0,
+        which excludes Settlers, Workers and the siege support units. Ranged
+        units do not, unless `[combat] zone_of_control_from_ranged` says
+        otherwise -- Civ 6 projects ZoC from melee, anti-cavalry and mounted
+        units only.
+
+        ZoC exists in this engine for exactly one purpose: deciding whether a
+        city is under siege (`GameEnvironment.is_city_under_siege`). Its
+        movement effect -- entering an enemy ZoC ends a unit's movement -- is
+        NOT implemented, and nothing should assume it is.
+        """
+        return (
+            self.get_movement_domain() == "land"
+            and self.get_base_combat_strength() > 0
+            and (ZOC_FROM_RANGED or self.get_base_ranged_strength() == 0)
+        )
 
     def is_siege_class(self):
         """Whether this unit belongs to the siege class (issue #66).

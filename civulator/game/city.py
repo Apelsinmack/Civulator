@@ -5,6 +5,7 @@ from ..unit_model import (
     BUILDING_COSTS as _BUILDING_COSTS,
     BUILDING_DEFENSE_BONUS,
     CITY_DEFENSE_STRENGTH,
+    CITY_HEAL_PER_TURN,
     CITY_HEALTH,
     CITY_RANGED_BUILDING,
     CITY_RANGED_RANGE,
@@ -172,8 +173,16 @@ class City:
     def process_turn(self, game_env):
         """Process a game turn for this city.
 
-        Order: collect food → consume → growth/starvation → collect production → build.
+        Order: repair → collect food → consume → growth/starvation → collect
+        production → build.
         """
+        # --- Repair phase (issue #84) ---
+        # Civ 6: a city heals 20 HP per turn unless it is under siege. A
+        # besieged city does not repair, which is what makes surrounding one
+        # worth the units it costs.
+        if self.health < CITY_HEALTH and not game_env.is_city_under_siege(self):
+            self.health = min(CITY_HEALTH, self.health + CITY_HEAL_PER_TURN)
+
         # --- Food phase ---
         food_produced = self.calculate_food(game_env)
         food_consumed = 2 * self.population

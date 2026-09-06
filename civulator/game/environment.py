@@ -613,6 +613,67 @@ class GameEnvironment:
 
         return reward
 
+    # --- Zone of control and siege (issue #84) ---
+
+    def tile_under_zone_of_control(self, coordinates, player):
+        """Whether `player` exerts zone of control over `coordinates`.
+
+        A tile is under a player's ZoC when it is adjacent to one of that
+        player's ZoC-projecting units (`Unit.projects_zone_of_control`) and
+        no river runs along the shared edge -- ZoC does not cross a river,
+        the same edge test `Unit.step_cost` uses for the crossing surcharge.
+
+        Adjacency comes from `Map.get_adjacent_coords`, i.e. the canonical
+        hex kernels, wrap included; no neighbour arithmetic is written here.
+
+        This is the ONLY thing ZoC does in this engine. It has no movement
+        effect (in Civ, entering an enemy ZoC ends movement) -- that rule is
+        deliberately out of scope and is named as missing in the CHANGELOG.
+        """
+        for adj in self.map.get_adjacent_coords(coordinates):
+            for unit in self.get_units_at(adj):
+                if unit.player is not player:
+                    continue
+                if not unit.projects_zone_of_control():
+                    continue
+                if self.is_river_between(adj, coordinates):
+                    continue
+                return True
+        return False
+
+    def is_city_under_siege(self, city):
+        """Whether `city` is besieged, and so does not repair (issue #84).
+
+        Civ 6: the city centre is under siege when all 6 tiles around it are
+        occupied by enemy units, under enemy zone of control, or impassable.
+        "Impassable" here means no land unit could stand there -- mountains
+        and, since there are no naval units, water. That makes a coastal city
+        besiegeable from land alone, which diverges from Civ 6 (where a
+        blockade needs ships) and is named in the CHANGELOG.
+
+        One guard the wording alone does not give: at least one ring tile
+        must actually be held or controlled by an enemy. Without it a city
+        ringed by mountains would be permanently besieged by nobody and would
+        never heal.
+        """
+        ring = self.map.get_adjacent_coords(city.coordinates)
+        if not ring:
+            return False
+
+        enemies = [p for p in self.players if p is not city.player]
+        contested = False
+        for pos in ring:
+            if not can_enter("land", self.map.get_tile(pos)):
+                continue  # nobody has to hold a tile nobody can stand on
+            if any(u.player is not city.player for u in self.get_units_at(pos)):
+                contested = True
+                continue
+            if any(self.tile_under_zone_of_control(pos, p) for p in enemies):
+                contested = True
+                continue
+            return False
+        return contested
+
     # --- City ranged attack (issue #84) ---
 
     def city_ranged_attack(self, city):

@@ -622,6 +622,16 @@ heal_normal = 10                 # HP healed per turn otherwise
 # combat tables (#64, CLAUDE.md canonical-systems table). A number in [game]
 # would need a direct CFG read inside game/unit.py to reach the combat path.
 flanking_bonus = 2
+# Zone of control (issue #84). ZoC exists here ONLY to decide whether a city
+# is under siege -- its movement effect (entering an enemy ZoC ends movement)
+# is deliberately NOT implemented; see the CHANGELOG. A tile is under a
+# player's ZoC when it is adjacent to one of that player's land military
+# units and no river runs along the shared edge.
+#
+# Civ 6 projects ZoC from melee, anti-cavalry and mounted units but not from
+# ranged ones, which is the default here. The flag exists because "by
+# default" is the wording of the rule, not a fact about the engine.
+zone_of_control_from_ranged = false
 
 [city]
 health = 200

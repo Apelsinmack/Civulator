@@ -22,10 +22,19 @@ from test_combat_range import make_flat_env, place
 
 
 def make_env():
-    """Flat board, player 0 to move, no cities except the ones a test places."""
+    """Flat board, player 0 to move, no cities except the ones a test places.
+
+    A spare, idle player-0 unit sits in the far corner so the turn does NOT
+    roll over the moment the acting unit spends its movement. That matters
+    since #84: a rollover runs the defender's start of turn, which repairs
+    the city 20 HP and fires its walls, and both would land in the middle of
+    a test measuring a single attack. Tests that want a turn to pass say so
+    explicitly.
+    """
     env = make_flat_env()
     env.current_player = env.players[0]
     env.current_player_index = 0
+    place(env, WarriorUnit, 0, (7, 0))
     return env
 
 
