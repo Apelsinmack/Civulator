@@ -10,6 +10,7 @@ from .networks import horizontal_wrap_padding
 from .replay_memory import ReplayMemory, Transition
 from ..game.unit import Unit
 from ..game.city import City
+from ..torch_env import resolve_device
 
 
 # Build options — index in this list = action index.
@@ -198,15 +199,19 @@ class BuildAgent:
     """
 
     def __init__(self, n, m, d_combat, memory_size=5000, gamma=0.95,
-                 learning_rate=0.001, num_options=NUM_BUILD_OPTIONS):
+                 learning_rate=0.001, num_options=NUM_BUILD_OPTIONS,
+                 device=None):
         """num_options: how many BUILD_OPTIONS entries this agent plays.
 
         Defaults to all of them. A checkpoint saved before a rule change added
         an option is loaded with ITS width (scripts/evaluate.py infers it from
         the saved fc layer), so an archived run keeps evaluating the policy it
         actually learned instead of failing to load — see options_for_width.
+
+        device: Optional torch.device to pin the network to. None (default)
+            resolves via civulator.torch_env.resolve_device().
         """
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = device if device is not None else resolve_device()
         self.n = n
         self.m = m
         self.d_combat = d_combat

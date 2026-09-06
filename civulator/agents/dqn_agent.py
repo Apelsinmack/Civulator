@@ -6,6 +6,7 @@ import random
 import torch
 
 from ..config import CFG
+from ..torch_env import resolve_device
 from .networks import (
     SelectAndMoveNetwork,
     SharedBackboneNetwork,
@@ -36,12 +37,15 @@ class DQNAgent:
         memory: ReplayMemory instance (can be shared or per-agent)
         gamma: Discount factor
         learning_rate: Adam learning rate
+        device: Optional torch.device to pin the network/tensors to. None
+            (default) resolves via `civulator.torch_env.resolve_device()`.
     """
 
     def __init__(self, n, m, d, memory, gamma=0.9, learning_rate=0.001,
                  conv_channels=(16, 32), fc_hidden=None, shared_backbone=False,
-                 encoder="basic", fully_conv=False, separate_backbone=False):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                 encoder="basic", fully_conv=False, separate_backbone=False,
+                 device=None):
+        self.device = device if device is not None else resolve_device()
         print(f"Using device: {self.device}")
         self.n = n
         self.m = m

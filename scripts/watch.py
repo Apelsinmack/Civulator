@@ -46,6 +46,7 @@ import torch
 
 from civulator.config import CFG
 from civulator.meta import load_weights
+from civulator.torch_env import resolve_device
 from civulator.game import GameEnvironment, resolve_size_and_players
 from civulator.agents import DQNAgent, BuildAgent, BasicStateEncoder, EnhancedStateEncoder
 from civulator.agents.replay_memory import ReplayMemory
@@ -145,7 +146,7 @@ def _setup_versus(args):
     (registry encoders, architecture inferred from the checkpoint)."""
     import evaluate  # scripts/evaluate.py — the canonical loader + protocol
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = resolve_device()
 
     if args.eval_json:
         with open(args.eval_json) as f:
