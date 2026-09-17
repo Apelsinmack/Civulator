@@ -1,0 +1,14 @@
+{
+  "include": [
+    "civulator",
+    "tests",
+    "scripts",
+    "map_generator_prototype.py"
+  ],
+  "exclude": ["**/__pycache__", "archive", "cpp", "art", "weights", "stats", "documents", "docs", "scenarios"],
+  "extraPaths": [".", "scripts"],
+  "stubPath": "stubs",
+  "typeCheckingMode": "standard",
+  "pythonVersion": "3.12",
+  "reportMissingModuleSource": "none"
+}
