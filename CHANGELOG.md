@@ -5,11 +5,74 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
-## Unreleased
+## v0.7.0 — Borders and culture; city combat and the other post-0.6.2 rule changes (2026-10-11)
 
-Version number deliberately not bumped: the next number is an open question
-(#83 — "v0.2.0" was said while the code is at 0.6.2). Everything below is a
-**rule change**, not a refactor.
+**New rules epoch (#78).** Borders (#87) are the first change that gives
+cities territory, and they land on top of the rule changes that had been
+collected here under "Unreleased" (city combat #84, minimum city distance #74,
+siege class #66, flanking #59, Walls #7, Slinger/Swordsman #67). Together they
+open the 0.7 epoch: results trained or evaluated under 0.6.x rules are not
+comparable to 0.7 results (epoch marker in `weights/trained/manifest.md`). The
+plain semver bump 0.6.2 → 0.7.0 follows the borders design
+(`docs/borders_culture_design.md` §7); #83's open question about the number
+("v0.2.0" was once said) remains unresolved. Everything below is a **rule
+change**, not a refactor.
+
+### Borders and culture (#87)
+
+**Rule change, effect NOT yet measured.** Spec:
+`docs/borders_culture_design.md` (v2). Lands in patches P1–P5; this entry
+grows with each. Civ 6 source: the Civilization Wiki,
+[Borders (Civ6)](https://civilization.fandom.com/wiki/Borders_(Civ6)).
+
+**P1 — culture yield.** Each city produces
+`culture = base + per_pop * population + sum of each source's culture` per
+turn (`[culture] base = 1.0`, `per_pop = 0.3`, a stand-in for the Civ 6 Palace
+and the community-reported Civ 6 per-citizen value). Sources declare a
+`culture` column in their own config table; today `[buildings.Monument]
+culture = 2` (Civ 6). Culture is stored as integer tenths and accrues in
+`City.process_turn` (after growth, before production) into the city's border
+pool and the player's civic pool (`Player.culture`, no consumer yet). The
+Monument is not yet in `BUILD_OPTIONS`, so building culture is dormant in real
+games (accepted gap, #73).
+
+**P2 — tile ownership.** Tiles are owned per city: one grid on `Map`
+(`owner_city`, city id or −1), written only by its mutation API
+(`claim` / `transfer` / `release` / `city_changed_player`), with its own
+`territory_epoch` (ownership never bumps `terrain_epoch`) and live owned-tile
+counters per player. Every city is created and removed through
+`GameEnvironment.create_city` / `remove_city`, including the Settler, reset,
+and the painted-scenario paths.
+
+- **Founding claim.** A new city owns its centre and every neutral ring-1 tile
+  (`[territory] founding_ring = 1`). For each ring-1 tile already owned by
+  another player it claims one replacement further out; Civ 6: *"tiles more
+  than one hex away from the City Center and closest to the tiles that would
+  have been claimed are immediately claimed instead."* Replacements are chosen
+  by the border-growth ranking (nearest ring first, then resource, adjacent to
+  a resource, food + production; remaining ties sorted by coordinates and
+  shuffled with the engine RNG). A ring-1 tile owned by another of the same
+  player's cities stays with that city (our call; the wiki does not say).
+  At reset capitals are `min_city_distance` apart, so founding draws no RNG
+  and seeded worlds are unchanged.
+- **Founding restriction.** A city cannot be founded on a tile owned by
+  another player; founding on your own territory is allowed and the tile
+  moves to the new city. `can_found_city_at(coords, player)` now takes the
+  founder; the action mask and the `settle` encoder's settle layer (now per
+  player) both read it, so the `settle` channel can differ between players.
+- **Capture.** A captured city keeps all its tiles; they change player with
+  it (Civ 6).
+- **Cities work only tiles they own** (still ring 1; the work radius grows to
+  `[territory] work_radius = 3` in P4). A city whose ring 1 is partly held by
+  an earlier city works fewer tiles.
+- **Tile swap** between two cities of the same player
+  (`GameEnvironment.swap_tile`): only tiles at least two steps from their
+  current owner's centre (Civ 6: *"a tile adjacent to the City Center of one
+  city cannot be swapped to another city"*) and within the target's work
+  radius. Engine API only; no agent action yet (#99).
+- **Not yet:** border growth from culture (P3), work radius 3 (P4), the
+  border overlay (P5). Agents do not see ownership except through the settle
+  layer (encoder follow-up).
 
 ### City combat: cities can be attacked, besieged and taken (#84)
 

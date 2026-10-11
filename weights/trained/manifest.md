@@ -224,3 +224,19 @@ replaces the 25ch reference below with `duel_53ch_net128x6_1000ep`.
   - 13 games ended before the cap (earliest turn 57); mean length 245.4
   - **Expansion, not conquest, is how it wins**: cities founded **92** vs the baseline's **0** (in the same 200 games, while the baseline produced 500 Settlers), cities captured 13 vs 0, enemy civilians captured 53 vs 0. It *loses* the unit exchange — 69 kills against 169 losses — and wins anyway, because a city is worth ten units in the turn-cap score
   - Builds: 2674 items (Spearman 1290) vs the baseline's 1284 (Settler 500)
+
+---
+
+## Epoch marker — 2026-10-11: v0.7.0 borders and culture (#87, CHANGELOG v0.7.0)
+
+Everything **above** this line was trained under **v0.6.x rules**. Game version
+0.7.0 opens a new rules epoch (#78 convention): it adds tile ownership and
+culture (#87) on top of the post-0.6.2 rule changes CHANGELOG had collected as
+"Unreleased" (city combat #84, min city distance #74, siege #66, flanking #59,
+Walls #7, Slinger/Swordsman #67). No win rate measured above this line is
+comparable to one measured below it. The 0.7 epoch's reference opponent is
+fixed by #83, not here.
+
+## Weights — v0.7.0 epoch
+
+(none yet)

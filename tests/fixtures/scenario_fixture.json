@@ -24,8 +24,10 @@
   ],
   "cities": [],
   "manifest": {
-    "game_version": "0.6.0",
-    "git_commit": "9e3fed9",
+    "game_version": "0.7.0",
+    "git_commit": "7e4fa79",
+    "git_dirty": false,
+    "civulator_core_commit": null,
     "config": {
       "map": {
         "rows": 24,
@@ -122,7 +124,7 @@
           "coastal_weight": 4.0,
           "min_passable_ring1": 3,
           "d_min_players_factor": 3.5,
-          "d_min_floor": 3,
+          "d_min_floor": 4,
           "food_total_min": 6.0,
           "food_best_min": 2.5714285714285716,
           "prod_total_min": 0.75,
@@ -712,7 +714,143 @@
         "num_players": 8,
         "max_turns": 1000,
         "starting_warriors": 3,
-        "min_city_distance": 3
+        "min_city_distance": 4,
+        "city_score_weight": 10
+      },
+      "units": {
+        "Warrior": {
+          "max_movement": 2,
+          "combat_strength": 20,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 40
+        },
+        "Slinger": {
+          "max_movement": 2,
+          "combat_strength": 5,
+          "ranged_strength": 15,
+          "range": 1,
+          "production_cost": 35
+        },
+        "Archer": {
+          "max_movement": 2,
+          "combat_strength": 15,
+          "ranged_strength": 25,
+          "range": 2,
+          "production_cost": 60
+        },
+        "Swordsman": {
+          "max_movement": 2,
+          "combat_strength": 35,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 90
+        },
+        "Spearman": {
+          "max_movement": 2,
+          "combat_strength": 25,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 65
+        },
+        "Horseman": {
+          "max_movement": 4,
+          "combat_strength": 35,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 80
+        },
+        "Settler": {
+          "max_movement": 2,
+          "combat_strength": 0,
+          "ranged_strength": 0,
+          "range": 0,
+          "production_cost": 120
+        },
+        "Worker": {
+          "max_movement": 2,
+          "combat_strength": 0,
+          "ranged_strength": 0,
+          "range": 0,
+          "production_cost": 50
+        },
+        "Catapult": {
+          "max_movement": 2,
+          "combat_strength": 23,
+          "ranged_strength": 35,
+          "range": 2,
+          "production_cost": 120,
+          "siege_class": true
+        },
+        "BatteringRam": {
+          "max_movement": 2,
+          "combat_strength": 0,
+          "ranged_strength": 0,
+          "range": 0,
+          "production_cost": 65
+        },
+        "SiegeTower": {
+          "max_movement": 2,
+          "combat_strength": 0,
+          "ranged_strength": 0,
+          "range": 0,
+          "production_cost": 100
+        }
+      },
+      "combat": {
+        "anti_cavalry_bonus": 10,
+        "melee_vs_spearman_bonus": 5,
+        "ranged_city_penalty": 17,
+        "archer_vs_horseman_penalty": 5,
+        "fortification_bonus": [
+          3,
+          6
+        ],
+        "hp_penalty_coefficient": -10,
+        "damage_base": 30,
+        "damage_exponent_coefficient": 0.04,
+        "damage_roll_min": 0.8,
+        "damage_roll_max": 1.2,
+        "heal_fortified": 20,
+        "heal_normal": 10,
+        "flanking_bonus": 2,
+        "zone_of_control_from_ranged": false
+      },
+      "city": {
+        "health": 200,
+        "defense_strength": 20,
+        "ranged_building": "Walls",
+        "ranged_strength": 25,
+        "ranged_range": 2,
+        "heal_per_turn": 20
+      },
+      "culture": {
+        "base": 1.0,
+        "per_pop": 0.3
+      },
+      "territory": {
+        "claim_radius": 5,
+        "work_radius": 3,
+        "founding_ring": 1
+      },
+      "buildings": {
+        "Granary": {
+          "production_cost": 60
+        },
+        "Monument": {
+          "production_cost": 50,
+          "culture": 2
+        },
+        "Walls": {
+          "production_cost": 100,
+          "defense_bonus": 30
+        },
+        "Workshop": {
+          "production_cost": 120
+        },
+        "Factory": {
+          "production_cost": 240
+        }
       },
       "training": {
         "episodes": 64,
@@ -722,7 +860,7 @@
         "gamma": 0.9,
         "epsilon_start": 1.0,
         "epsilon_end": 0.05,
-        "epsilon_decay_episodes": 5000,
+        "epsilon_decay_episodes": 800,
         "target_update_freq": 100,
         "encoder": "enhanced",
         "fully_conv": true,
@@ -732,14 +870,19 @@
           "fortify": 0,
           "damage_per_hp": 0.1,
           "kill": 10,
-          "unit_lost": -10,
+          "unit_lost": -5,
           "capture_civilian": 15,
-          "capture_city": 20,
-          "found_city": 15
+          "capture_city": 80,
+          "found_city": 40,
+          "win": 100,
+          "loss": -100,
+          "draw": 0,
+          "proximity_weight": 0.5,
+          "proximity_radius": 0
         }
       }
     },
-    "date": "2026-08-23T08:43:27.019917+00:00",
+    "date": "2026-10-11T14:56:34.649638+00:00",
     "mapgen_params": {
       "seed": 11986318432899689386,
       "rows": 10,
@@ -767,7 +910,7 @@
         "coastal_weight": 4.0,
         "min_passable_ring1": 3,
         "d_min_players_factor": 3.5,
-        "d_min_floor": 3,
+        "d_min_floor": 4,
         "food_total_min": 6.0,
         "food_best_min": 2.5714285714285716,
         "prod_total_min": 0.75,
