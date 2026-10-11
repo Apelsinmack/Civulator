@@ -65,9 +65,7 @@ def test_city_can_actually_produce_the_unit(unit_type, expected_cls):
     """E2E: the whole path an agent walks — pick the option, pay for it, and
     a unit of the right class is standing on the map afterwards."""
     env = make_flat_env()
-    city = City(env.players[0], (3, 3), "Test City")
-    env.players[0].cities.append(city)
-    env.add_city(city)
+    city = env.create_city(env.players[0], (3, 3), "Test City")
 
     city.produce_unit(unit_type)
     city.production = city.get_unit_cost(unit_type)
@@ -251,9 +249,7 @@ def test_encode_build_state_gives_every_option_its_own_channel():
     the city's stockpile empty, every option's turns-to-complete channel must
     be populated, and a costlier option must read higher than a cheaper one."""
     env = make_flat_env()
-    city = City(env.players[0], (3, 3), "Test City")
-    env.players[0].cities.append(city)
-    env.add_city(city)
+    city = env.create_city(env.players[0], (3, 3), "Test City")
     city.assign_tiles(env)
     city.current_production = None
 
@@ -309,9 +305,7 @@ def test_a_narrower_legacy_agent_loads_and_plays_its_own_option_list():
     assert legacy.network.conv1.in_channels == 25 + 7 + 2
 
     env = make_flat_env()
-    city = City(env.players[0], (3, 3), "Test City")
-    env.players[0].cities.append(city)
-    env.add_city(city)
+    city = env.create_city(env.players[0], (3, 3), "Test City")
     city.assign_tiles(env)
 
     encoder = EnhancedStateEncoder(fog_of_war=False)

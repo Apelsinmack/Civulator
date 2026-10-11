@@ -27,7 +27,6 @@ import torch
 
 from ..agents.networks import get_valid_moves_mask, get_valid_select_mask
 from ..agents.state_encoders import EnhancedStateEncoder
-from ..game.city import City
 from ..game.environment import GameEnvironment
 from ..game.unit import (
     NUM_UNIT_SLOTS,
@@ -213,9 +212,7 @@ def _clear_board(env):
         for unit in list(player.units):
             env.delete_unit(unit)
         for city in list(player.cities):
-            tile = env.map.get_tile(city.coordinates)
-            if tile is not None and tile.city is city:
-                tile.set_city(None)
+            env.remove_city(city)  # releases its tiles (borders design §2.1)
         player.cities = []
         player.units = []
 
@@ -239,19 +236,19 @@ def _place_unit(env, entry):
 def _place_city(env, entry):
     """Place one scenario city, bypassing the min-distance rule if needed.
 
-    `found_city` enforces the normal game placement rules (>= 3 tiles apart,
-    not on Mountain/Ocean). A painted scenario may violate them on purpose, so
-    fall back to the same primitives `SettlerUnit.found_city` uses.
+    `found_city` enforces the normal game placement rules (min_city_distance,
+    land, not owned by another player). A painted scenario may violate them on
+    purpose, so fall back to `create_city`, the one creation function, which
+    skips the placement check: the city takes its centre tile even if another
+    city owns it, and contested ring tiles stay with the city placed earlier
+    in the scenario file (borders design §2.1).
     """
     row, col = entry_coords(entry)
     player = env.players[int(entry.get("team", 1)) - 1]
 
     city = env.found_city(player, (row, col), f"{player.name}'s City")
     if city is None:
-        city = City(player, (row, col), f"{player.name}'s City")
-        player.cities.append(city)
-        env.add_city(city)
-        city.assign_tiles(env)
+        city = env.create_city(player, (row, col), f"{player.name}'s City")
 
     city.health = float(entry.get("hp", 200))
     if entry.get("walls") and "Walls" not in city.buildings:

@@ -184,6 +184,80 @@ class Map:
         # (mapgen_params["seed"] above is the post-success record of the
         # same value).
         self.last_master_seed = None
+        # Tile ownership (issue #87, borders design §2): city id per tile, -1
+        # neutral. Written ONLY by claim/transfer/release/city_changed_player
+        # below. territory_epoch is separate from terrain_epoch on purpose:
+        # ownership-derived caches key on (map_uid, territory_epoch), and
+        # border growth must never invalidate terrain caches.
+        self.owner_city = np.full((self.n, self.m), -1, dtype=np.int64)
+        self.territory_epoch = 0
+        # Live owned-tile count per player index, kept by the mutation API.
+        self._owned_tile_counts = {}
+
+    # --- Territory: the ownership grid's only writers (borders design §2) ---
+
+    def _owner_index(self, coordinates):
+        row, col = coordinates
+        if not 0 <= row < self.n:
+            raise ValueError(f"tile {coordinates} is off the map")
+        return row, col % self.m
+
+    def owner_id_at(self, coordinates):
+        """City id owning `coordinates`, or -1 if neutral."""
+        return int(self.owner_city[self._owner_index(coordinates)])
+
+    def owned_tile_count(self, player_index):
+        """Tiles currently owned by all of `player_index`'s cities."""
+        return self._owned_tile_counts.get(player_index, 0)
+
+    def tiles_of_city(self, city_id):
+        """Every (row, col) owned by `city_id`, sorted."""
+        rows, cols = np.nonzero(self.owner_city == city_id)
+        return sorted(zip(rows.tolist(), cols.tolist()))
+
+    def _count(self, player_index, delta):
+        self._owned_tile_counts[player_index] = self.owned_tile_count(player_index) + delta
+
+    def claim(self, coordinates, city):
+        """A neutral tile becomes `city`'s."""
+        idx = self._owner_index(coordinates)
+        if self.owner_city[idx] != -1:
+            raise ValueError(f"claim of {idx}: already owned by city {int(self.owner_city[idx])}")
+        self.owner_city[idx] = city.city_id
+        self._count(city.player.player_index, +1)
+        self.territory_epoch += 1
+
+    def transfer(self, coordinates, from_city, to_city):
+        """A tile owned by `from_city` becomes `to_city`'s."""
+        idx = self._owner_index(coordinates)
+        if self.owner_city[idx] != from_city.city_id or from_city is to_city:
+            raise ValueError(
+                f"transfer of {idx}: owned by {int(self.owner_city[idx])}, "
+                f"not by city {from_city.city_id}, or same city"
+            )
+        self.owner_city[idx] = to_city.city_id
+        self._count(from_city.player.player_index, -1)
+        self._count(to_city.player.player_index, +1)
+        self.territory_epoch += 1
+
+    def release(self, coordinates, city):
+        """A tile owned by `city` becomes neutral."""
+        idx = self._owner_index(coordinates)
+        if self.owner_city[idx] != city.city_id:
+            raise ValueError(f"release of {idx}: not owned by city {city.city_id}")
+        self.owner_city[idx] = -1
+        self._count(city.player.player_index, -1)
+        self.territory_epoch += 1
+
+    def city_changed_player(self, city, old_player_index):
+        """`city` changed hands (capture): its tiles go with it. The grid
+        stores city ids so it is unchanged, but the owning player is not —
+        counters move and territory_epoch is bumped."""
+        n_tiles = int(np.count_nonzero(self.owner_city == city.city_id))
+        if old_player_index is not None:
+            self._count(old_player_index, -n_tiles)
+        self._count(city.player.player_index, +n_tiles)
+        self.territory_epoch += 1
 
     def generate_map(self, map_type="basic", num_players=2, params=None):
         """Generate a map via `civulator.mapgen` (design doc §4.1, §11 P3).

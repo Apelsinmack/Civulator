@@ -192,9 +192,7 @@ def test_a_city_can_be_flanked(flanking_on):
     """Cities have coordinates, so units around one flank an attack on it —
     but a city itself never flanks, having no units of its own."""
     env = make_flat_env()
-    city = City(env.players[1], (3, 4), "Test City")
-    env.players[1].cities.append(city)
-    env.add_city(city)
+    city = env.create_city(env.players[1], (3, 4), "Test City")
 
     attacker = place(env, WarriorUnit, 0, (3, 3))
     place(env, WarriorUnit, 0, (3, 5))
