@@ -11,6 +11,7 @@ from ..rng import PortableRNG
 from ..terrain_model import can_enter, matches
 from .player import Player
 from .city import City
+from .territory import FOUNDING_RING, NEUTRAL, WORK_RADIUS, choose_claim_tile
 from .unit import WarriorUnit, calculate_damage, movement_domain
 from ..config import CFG
 
@@ -154,6 +155,7 @@ class GameEnvironment:
         # (evaluate.py / run_baseline.py both construct unseeded throwaway
         # worlds that per-episode seeded resets immediately replace).
         self.map = Map(self.n, self.m, rng=self.rng)
+        self._reset_city_registry()
         if seed is not None:
             self.map.generate_map(self.map_type, num_players=self.num_players, params=mapgen_params)
         else:
@@ -187,6 +189,14 @@ class GameEnvironment:
         self.current_player_index = 0
         self.current_player = self.players[self.current_player_index]
         self.episode_stats = self._fresh_episode_stats()
+
+    def _reset_city_registry(self):
+        """Fresh per-environment city ids (borders design §2): called with
+        every new Map, i.e. in the constructor and in every reset attempt,
+        unseeded retries included. Never process-global, so two same-seed
+        environments in one process produce identical ownership grids."""
+        self.city_by_id = {}
+        self._next_city_id = 0
 
     def _fresh_episode_stats(self):
         """Per-player episode counters (issue #48 statistics wish, Erik
@@ -286,6 +296,7 @@ class GameEnvironment:
         """
         # Regenerate map
         self.map = Map(self.n, self.m, rng=self.rng)
+        self._reset_city_registry()
         self.map.generate_map(self.map_type, num_players=self.num_players)
 
         # Reset or recreate players
@@ -876,39 +887,139 @@ class GameEnvironment:
 
     # --- City management ---
 
-    def can_found_city_at(self, coordinates):
-        """Settleable (§3): land domain, not impassable, free of a city, spaced out."""
+    def can_found_city_at(self, coordinates, player):
+        """Settleable (§3) for `player`: land domain, not impassable, free of
+        a city, spaced out, and not owned by another player (borders design
+        §2.2). Founding on a tile `player` already owns is allowed; the tile
+        moves to the new city."""
         tile = self.map.get_tile(coordinates)
         if not tile or tile.city:
             return False
         if tile.domain != "land" or tile.impassable:
             return False
 
+        owner_id = self.map.owner_id_at(tile.coordinates)
+        if owner_id != NEUTRAL and self.city_by_id[owner_id].player is not player:
+            return False
+
         # Minimum distance from other cities
-        for player in self.players:
-            for city in player.cities:
+        for other in self.players:
+            for city in other.cities:
                 distance = self.map.distance_function(coordinates, city.coordinates)
                 if distance < MIN_CITY_DISTANCE:
                     return False
         return True
 
     def found_city(self, player, coordinates, name="New City"):
-        """Found a new city at the specified coordinates."""
-        if not self.can_found_city_at(coordinates):
+        """Found a new city at the specified coordinates, if the rules allow."""
+        if not self.can_found_city_at(coordinates, player):
             return None
+        return self.create_city(player, coordinates, name)
 
-        city = City(player, coordinates, name)
+    def create_city(self, player, coordinates, name="New City"):
+        """The ONLY way a city comes into existence (borders design §2.1).
+
+        Assigns the per-environment id, sets the centre, makes the founding
+        claim, and runs `assign_tiles` for every city whose tiles changed. No
+        placement-rule check: `found_city` and `SettlerUnit.found_city` check
+        `can_found_city_at` first; the painted-scenario fallback
+        (`recording._place_city`) deliberately does not.
+        """
         tile = self.map.get_tile(coordinates)
+        if tile is None:
+            raise ValueError(f"create_city: {coordinates} is off the map")
+        if tile.city is not None:
+            raise ValueError(f"create_city: a city already stands on {tile.coordinates}")
+
+        city = City(player, tile.coordinates, name)
+        city.city_id = self._next_city_id
+        self._next_city_id += 1
+        self.city_by_id[city.city_id] = city
         tile.set_city(city)
         player.cities.append(city)
-        city.assign_tiles(self)
+
+        changed = {city.city_id} | self._founding_claim(city)
+        for city_id in sorted(changed):
+            self.city_by_id[city_id].assign_tiles(self)
         return city
 
-    def add_city(self, city):
-        """Add a city to the map (used by SettlerUnit.found_city)."""
+    def _founding_claim(self, city):
+        """Borders design §2.1. The centre (taken from whichever city owned
+        it), every neutral tile of rings 1..`[territory] founding_ring`, and
+        one §3.2 replacement per ring tile owned by another player, claimed
+        one at a time (shortfall accepted). Ring tiles owned by another of
+        the same player's cities stay with that city. Returns the ids of the
+        OTHER cities that lost a tile.
+
+        Draws RNG only through `choose_claim_tile`, i.e. only for
+        replacements with a tie; at reset capitals are min_city_distance
+        apart, so nothing is blocked and no RNG is drawn.
+        """
+        game_map = self.map
+        changed = set()
+        centre = city.coordinates
+        previous = game_map.owner_id_at(centre)
+        if previous == NEUTRAL:
+            game_map.claim(centre, city)
+        else:
+            game_map.transfer(centre, self.city_by_id[previous], city)
+            changed.add(previous)
+
+        blocked = 0
+        for ring in game_map.get_ring_coords(centre, FOUNDING_RING)[1:]:
+            for pos in ring:
+                owner_id = game_map.owner_id_at(pos)
+                if owner_id == NEUTRAL:
+                    game_map.claim(pos, city)
+                elif self.city_by_id[owner_id].player is not city.player:
+                    blocked += 1
+
+        for _ in range(blocked):
+            pos = choose_claim_tile(game_map, city, self.rng)
+            if pos is None:
+                break
+            game_map.claim(pos, city)
+        return changed
+
+    def remove_city(self, city):
+        """The ONLY way a city ceases to exist without being captured
+        (borders design §2.3): its tiles become neutral."""
+        for pos in self.map.tiles_of_city(city.city_id):
+            self.map.release(pos, city)
         tile = self.map.get_tile(city.coordinates)
-        if tile:
-            tile.set_city(city)
+        if tile is not None and tile.city is city:
+            tile.set_city(None)
+        if city in city.player.cities:
+            city.player.cities.remove(city)
+        self.city_by_id.pop(city.city_id, None)
+        city.worked_tiles = []
+
+    def swap_tile(self, coordinates, to_city):
+        """Move an owned tile between two cities of the same player (borders
+        design §5). Valid only if the tile is owned by another city of
+        `to_city`'s player, lies within `to_city`'s `[territory]
+        work_radius`, and is neither its current owner's centre nor adjacent
+        to it. Free and instant; both cities re-run `assign_tiles`.
+        Returns True if the swap happened.
+        """
+        tile = self.map.get_tile(coordinates)
+        if tile is None or self.city_by_id.get(to_city.city_id) is not to_city:
+            return False
+        coords = tile.coordinates
+        owner_id = self.map.owner_id_at(coords)
+        if owner_id == NEUTRAL or owner_id == to_city.city_id:
+            return False
+        from_city = self.city_by_id[owner_id]
+        if from_city.player is not to_city.player:
+            return False
+        if self.map.distance_function(coords, to_city.coordinates) > WORK_RADIUS:
+            return False
+        if coords == from_city.coordinates or coords in self.map.get_adjacent_coords(from_city.coordinates):
+            return False
+        self.map.transfer(coords, from_city, to_city)
+        from_city.assign_tiles(self)
+        to_city.assign_tiles(self)
+        return True
 
     # --- Improvements ---
 

@@ -39,7 +39,7 @@ def test_cannot_found_one_step_inside_the_rule():
     env = _env_with_a_city()
     inside = (CITY[0], CITY[1] + MIN_CITY_DISTANCE - 1)
     assert env.map.distance_function(CITY, inside) == MIN_CITY_DISTANCE - 1
-    assert env.can_found_city_at(inside) is False
+    assert env.can_found_city_at(inside, env.players[0]) is False
     assert env.found_city(env.players[0], inside, "TooClose") is None
 
 
@@ -48,7 +48,7 @@ def test_can_found_exactly_at_the_rule():
     env = _env_with_a_city()
     at = (CITY[0], CITY[1] + MIN_CITY_DISTANCE)
     assert env.map.distance_function(CITY, at) == MIN_CITY_DISTANCE
-    assert env.can_found_city_at(at) is True
+    assert env.can_found_city_at(at, env.players[0]) is True
     assert env.found_city(env.players[0], at, "FarEnough") is not None
 
 
@@ -59,7 +59,7 @@ def test_the_whole_ring_inside_the_rule_is_illegal_in_every_direction():
         for j in range(env.m):
             d = env.map.distance_function(CITY, (i, j))
             if d < MIN_CITY_DISTANCE:
-                assert env.can_found_city_at((i, j)) is False, ((i, j), d)
+                assert env.can_found_city_at((i, j), env.players[0]) is False, ((i, j), d)
 
 
 def test_legal_spacing_leaves_min_distance_minus_one_tiles_between_centres():
@@ -89,4 +89,4 @@ def test_action_mask_offers_no_settle_site_the_rule_forbids():
     layer = encoder.encode(env, 0).numpy()[53]
     for i in range(env.n):
         for j in range(env.m):
-            assert bool(layer[i, j]) == env.can_found_city_at((i, j)), (i, j)
+            assert bool(layer[i, j]) == env.can_found_city_at((i, j), env.players[0]), (i, j)

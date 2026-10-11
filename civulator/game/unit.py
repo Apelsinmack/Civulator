@@ -729,14 +729,10 @@ class SettlerUnit(Unit):
 
     def found_city(self, game_env, name="New City"):
         """Found a new city at the unit's current location."""
-        if not game_env.can_found_city_at(self.coordinates):
+        if not game_env.can_found_city_at(self.coordinates, self.player):
             return None
 
-        from .city import City
-
-        city = City(self.player, self.coordinates, name)
-        self.player.cities.append(city)
-        game_env.add_city(city)
+        city = game_env.create_city(self.player, self.coordinates, name)
         self.player.remove_unit(self)
 
         return city

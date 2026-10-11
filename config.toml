@@ -665,6 +665,14 @@ heal_per_turn = 20
 base = 1.0          # per city per turn (stand-in for the Civ 6 Palace)
 per_pop = 0.3       # per citizen (community-reported Civ 6 game-file value)
 
+# --- Territory (issue #87, docs/borders_culture_design.md §2, §4, §5) --------
+# Tiles are owned per city (Map.owner_city). Read only by
+# civulator/game/territory.py.
+[territory]
+claim_radius = 5    # Civ 6: culture claims tiles up to 5 hexes from the centre
+work_radius = 3     # Civ 6: cities work and buy tiles up to 3 hexes out (swap_tile reads it; assign_tiles widens to it in P4)
+founding_ring = 1   # tiles claimed at founding
+
 # --- Buildings (issue #7) ---------------------------------------------------
 # One table per building: `production_cost` is what a city pays for it, and
 # `defense_bonus` (optional, default 0) is added to the city's defensive combat

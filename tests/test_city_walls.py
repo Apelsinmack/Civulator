@@ -29,9 +29,7 @@ class FixedRoll:
 
 def make_city(env, coords=(3, 3), walls=False, player_index=0):
     player = env.players[player_index]
-    city = City(player, coords, "Test City")
-    player.cities.append(city)
-    env.add_city(city)
+    city = env.create_city(player, coords, "Test City")
     if walls:
         city.buildings.append("Walls")
     return city

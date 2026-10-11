@@ -42,6 +42,9 @@ class City:
         self.player = player
         self.coordinates = coordinates
         self.name = name
+        # Per-environment id, assigned only by GameEnvironment.create_city
+        # (borders design §2); the key into Map.owner_city / env.city_by_id.
+        self.city_id = None
         self.health = CITY_HEALTH
         self.is_city = True
         self.defense_strength = CITY_DEFENSE_STRENGTH
@@ -110,21 +113,27 @@ class City:
         return True
 
     def assign_tiles(self, game_env):
-        """Assign citizens to the best adjacent tiles.
+        """Assign citizens to the best adjacent tiles this city owns.
 
         Priority: sort by food descending, then production descending.
         City center is always worked (free). Each pop works one extra tile.
-        Called on city founding and population change.
+        Called on city founding, population change, and whenever the city
+        gains or loses a tile (borders design §4).
 
+        Only tiles owned by this city (`Map.owner_city`) are candidates;
+        radius is still ring 1 (P4 widens it to `[territory] work_radius`).
         Only UNWORKABLE tiles are skipped — that is impassable ones (§3).
         Water is workable: a coastal city works its Coast and Lake tiles even
         though no land unit can walk on them.
         """
         adj_coords = game_env.map.get_adjacent_coords(self.coordinates)
+        owner = game_env.map.owner_city
 
         # Score each adjacent tile: (food, production, coords)
         tile_scores = []
         for pos in adj_coords:
+            if self.city_id is None or owner[pos] != self.city_id:
+                continue
             tile = game_env.map.get_tile(pos)
             if tile and not tile.impassable:
                 food, prod = tile.yields
@@ -295,11 +304,22 @@ class City:
         return False
 
     def set_owner(self, new_player):
-        """Transfer city ownership to a new player."""
-        if self.player:
-            self.player.cities.remove(self)
+        """Transfer city ownership to a new player (the one capture hook).
+
+        Borders design §2.3: the city keeps all its tiles and they change
+        player with it — `Map.city_changed_player` moves the per-player tile
+        counters and bumps territory_epoch. Culture pools go along untouched.
+        """
+        old_player = self.player
+        if old_player:
+            old_player.cities.remove(self)
         new_player.cities.append(self)
         self.player = new_player
+        game_env = new_player.game_env
+        game_env.map.city_changed_player(
+            self, old_player.player_index if old_player else None
+        )
+        self.assign_tiles(game_env)
 
 
 def _create_unit(unit_type, player, coordinates):

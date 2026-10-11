@@ -91,8 +91,8 @@ def test_water_is_worked_by_cities_but_cannot_be_settled():
 
     assert (4, 8) in city.worked_tiles, "water is workable (§3)"
     assert (3, 7) not in city.worked_tiles, "impassable tiles are unworkable"
-    assert env.can_found_city_at((4, 8)) is False, "water is not settleable"
-    assert env.can_found_city_at((3, 7)) is False, "mountains are not settleable"
+    assert env.can_found_city_at((4, 8), env.players[0]) is False, "water is not settleable"
+    assert env.can_found_city_at((3, 7), env.players[0]) is False, "mountains are not settleable"
 
 
 # --- §3.3 / §7.3: the masks gained a terrain filter -------------------------

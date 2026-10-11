@@ -623,7 +623,8 @@ class SettleSiteStateEncoder(FullStateEncoder):
     channel tells it about the tiles it could walk to.
 
     Channel (appended last, after the terrain block and proximity field):
-        +0  1.0 where `GameEnvironment.can_found_city_at` is True, else 0.0.
+        +0  1.0 where `GameEnvironment.can_found_city_at(coords, player)` is
+            True for the encoding player, else 0.0.
 
     Depth: 53+1 = 54 (no fog), 55+1 = 56 (fog).
 
@@ -631,40 +632,45 @@ class SettleSiteStateEncoder(FullStateEncoder):
     see settleable ground it has never visited. (The engine itself always
     knows the truth; fog is an encoder concern, per the project rule.)
 
-    Caching: the legal-site set changes only when terrain changes or a city
-    is founded/captured/destroyed, so the grid is cached on
-    (map_uid, terrain_epoch, sorted coordinates of every city on the map) —
-    the same "rare update" the issue asks for.
+    Caching: the legal-site set changes only when terrain changes, a city
+    is founded/captured/destroyed, or tile ownership changes — and since
+    founding is refused on another player's territory (borders design §2.2)
+    it differs per player. The grid is cached per player index on
+    (map_uid, terrain_epoch, territory_epoch, player index, sorted
+    coordinates of every city on the map) — the same "rare update" the issue
+    asks for, and never one player's grid shown to another.
     """
 
     SETTLE_SITE_DEPTH = 1
 
     def __init__(self, fog_of_war=None):
         super().__init__(fog_of_war=fog_of_war)
-        self._settle_cache = None
-        self._settle_cache_key = None
+        self._settle_cache = {}  # player_index -> (key, grid)
 
     def get_depth(self, num_players):
         return super().get_depth(num_players) + self.SETTLE_SITE_DEPTH
 
-    def _get_settle_layer(self, game_env):
+    def _get_settle_layer(self, game_env, player_index):
         all_cities = tuple(sorted(
             city.coordinates
             for player in game_env.players
             for city in player.cities
         ))
-        key = (game_env.map.map_uid, game_env.map.terrain_epoch, all_cities)
-        if self._settle_cache is not None and self._settle_cache_key == key:
-            return self._settle_cache
+        game_map = game_env.map
+        key = (game_map.map_uid, game_map.terrain_epoch, game_map.territory_epoch,
+               player_index, all_cities)
+        cached = self._settle_cache.get(player_index)
+        if cached is not None and cached[0] == key:
+            return cached[1]
 
+        player = game_env.players[player_index]
         n, m = game_env.n, game_env.m
         grid = np.zeros((n, m), dtype=np.float32)
         for i in range(n):
             for j in range(m):
-                if game_env.can_found_city_at((i, j)):
+                if game_env.can_found_city_at((i, j), player):
                     grid[i, j] = 1.0
-        self._settle_cache = grid
-        self._settle_cache_key = key
+        self._settle_cache[player_index] = (key, grid)
         return grid
 
     def encode(self, game_env, player_index, device=None):
@@ -672,7 +678,7 @@ class SettleSiteStateEncoder(FullStateEncoder):
             device = torch.device("cpu")
 
         base_state = super().encode(game_env, player_index, device=device)
-        grid = self._get_settle_layer(game_env)
+        grid = self._get_settle_layer(game_env, player_index)
 
         if self.fog_of_war:
             visible = game_env.get_visibility_mask(player_index)

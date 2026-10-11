@@ -129,7 +129,7 @@ def _settler_next_to_city():
 def test_settler_inside_min_city_distance_cannot_found_there():
     """Guards the premise of the regression test below."""
     env, settler = _settler_next_to_city()
-    assert not env.can_found_city_at(settler.coordinates)
+    assert not env.can_found_city_at(settler.coordinates, settler.player)
 
 
 def test_settler_inside_min_city_distance_is_not_offered_its_own_tile():
@@ -156,7 +156,7 @@ def test_settler_own_tile_is_offered_where_a_city_may_be_founded():
 
     moves = get_valid_moves_mask(_blank_state(env), _select_index(env, settler), env)
     assert moves.reshape(env.n, env.m)[settler.coordinates] == 1
-    assert env.can_found_city_at(settler.coordinates)
+    assert env.can_found_city_at(settler.coordinates, settler.player)
 
 
 # ---------------------------------------------------------------------------

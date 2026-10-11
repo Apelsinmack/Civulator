@@ -216,7 +216,7 @@ def _reference_get_valid_moves_mask(state, selected_pos, game_env):
 
     # #51: own tile is fortify for everyone (always succeeds with movement
     # points left) but found-city for a Settler, which can be refused.
-    if selected_unit.unit_type != "Settler" or game_env.can_found_city_at((row, col)):
+    if selected_unit.unit_type != "Settler" or game_env.can_found_city_at((row, col), selected_unit.player):
         valid_move_mask[row, col] = 1
 
     return valid_move_mask.flatten()

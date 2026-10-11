@@ -500,7 +500,7 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
     # Current tile: fortify (always succeeds here), or found city for a
     # Settler — only where a city may actually be founded (issue #51).
     # Checked first so `stop_at_first` usually costs one call and no loop.
-    if unit.unit_type != "Settler" or game_env.can_found_city_at((row, col)):
+    if unit.unit_type != "Settler" or game_env.can_found_city_at((row, col), unit.player):
         valid_move_mask[row, col] = 1
         if stop_at_first:
             return valid_move_mask

@@ -50,7 +50,7 @@ def test_channel_agrees_with_can_found_city_at_everywhere():
     layer = fogless().encode(env, 0).numpy()[SETTLE_CH]
     for i in range(env.n):
         for j in range(env.m):
-            assert bool(layer[i, j]) == env.can_found_city_at((i, j)), (i, j)
+            assert bool(layer[i, j]) == env.can_found_city_at((i, j), env.players[0]), (i, j)
 
 
 def test_ring_around_a_city_is_excluded():
