@@ -32,6 +32,7 @@ from civulator.viz.hex_render import (
     draw_hex,
     draw_hex_outline,
     draw_resource_marker,
+    draw_border_edges,
     draw_river_edges,
     hex_to_pixel,
     load_sprites,
@@ -95,6 +96,9 @@ def draw_board(session, sprites, selectable, targets):
     # Rivers (design doc §5 — none generate until P4; the primitive is wired
     # in now so P4's rivers appear automatically).
     draw_river_edges(env.map, HEX_SIZE, session.m)
+    draw_border_edges(env.map, {cid: c.player.player_index
+                                for cid, c in env.city_by_id.items()},
+                      PLAYER_COLORS, HEX_SIZE, session.m)
 
     for row, col in targets:
         cx, cy = hex_to_pixel(row, col, HEX_SIZE, session.m)

@@ -62,17 +62,48 @@ and the painted-scenario paths.
   player) both read it, so the `settle` channel can differ between players.
 - **Capture.** A captured city keeps all its tiles; they change player with
   it (Civ 6).
-- **Cities work only tiles they own** (still ring 1; the work radius grows to
-  `[territory] work_radius = 3` in P4). A city whose ring 1 is partly held by
-  an earlier city works fewer tiles.
+- **Cities work only tiles they own** (radius: see P4).
 - **Tile swap** between two cities of the same player
   (`GameEnvironment.swap_tile`): only tiles at least two steps from their
   current owner's centre (Civ 6: *"a tile adjacent to the City Center of one
   city cannot be swapped to another city"*) and within the target's work
   radius. Engine API only; no agent action yet (#99).
-- **Not yet:** border growth from culture (P3), work radius 3 (P4), the
-  border overlay (P5). Agents do not see ownership except through the settle
-  layer (encoder follow-up).
+- Agents do not see ownership except through the settle layer (encoder
+  follow-up).
+
+**P3 — border growth.** A city's culture also fills a border pool; the n-th
+tile it claims by culture costs `a + (b * (n - 1)) ** p` (`[territory.border_cost]`
+`curve = "civ6_community"`, a = 10, b = 6, p = 1.3: 10, 20.3, 35.3, 52.8, …;
+evaluated in floats once per n, stored as integer tenths). Curves are a named
+registry (`BORDER_COST_CURVES`); a rebalance is a config edit or a new entry.
+The claimed tile is a neutral tile within `claim_radius = 5` and adjacent to the
+city's territory, taken from the nearest ring first (Erik's rule: every tile at
+radius R before any at R+1), then ranked resource, next to a resource, food +
+production, then ties sorted canonically and shuffled with the engine RNG.
+
+- **Contest rule.** Claims resolve once per round in one border phase at the
+  round's end, never during a player's own turn. Each city's pool is taken to
+  fill linearly over the round; claims are processed in the order the cost is
+  crossed (exact integer arithmetic; ties by larger surplus, then city id with
+  an RNG shuffle). A city whose tile was just taken picks its next best and
+  loses nothing. Turn order therefore never decides a contested tile, and cities
+  of one player compete the same way as rivals.
+
+**P4 — work radius and stats.** Cities work tiles up to `work_radius = 3`
+(Civ 6), but only tiles they own; `assign_tiles` is order-independent of
+border growth within a round. Episode stats gain `tiles_owned` (live, per
+seat), `tiles_claimed_by_culture` and `culture_produced`.
+
+**P5 — border overlay.** The hex renderer draws a segment on every hex edge
+where the owning city differs between a tile and its neighbour (or one side is
+neutral), coloured by the owning player, on the owned side so contested edges
+show both colours. It follows the cylinder seam and the camera copy rules like
+rivers. Wired into `scripts/watch.py` and `scripts/order_recorder.py`.
+
+**Known gaps.** The Monument is not in `BUILD_OPTIONS`, so building culture is
+dormant in real games (#73). Agents have no ownership channels (encoder
+follow-up), start placement is still tuned to ring-1 fertility, and tile swap
+has no agent action (#99).
 
 ### City combat: cities can be attacked, besieged and taken (#84)
 

@@ -22,6 +22,8 @@ from civulator.game.map import Map
 from civulator.game.tile import Tile
 from civulator.rng import PortableRNG
 from civulator.viz.hex_render import (
+    border_edges,
+    border_segment_endpoints,
     hex_to_pixel,
     pixel_to_hex,
     river_edge_endpoints,
@@ -342,3 +344,52 @@ class TestWrapCopiesX:
         x, _ = hex_to_pixel(0, 3, _SIZE, self.WRAP_W)
         copies = wrap_copies_x(x, 0.0, _SIZE, self.WRAP_W, 10_000 * period)
         assert len(copies) == 1
+
+
+# --- (e) border overlay geometry (#87 P5) ------------------------------------
+
+def _grid(n, m, owned):
+    import numpy as np
+    g = np.full((n, m), -1, dtype=np.int64)
+    for (r, c), cid in owned.items():
+        g[r, c] = cid
+    return g
+
+
+def test_border_edges_exactly_where_owner_differs_including_across_seam():
+    """Border entries are exactly the (owned tile, neighbour) pairs with a
+    different owner, via the canonical adjacency -- including pairs that
+    straddle the column wrap seam. Breaks if the seam is not wrapped (missing
+    entries for col 0 / m-1 neighbours) or if equal-owner pairs are emitted."""
+    from civulator import hexmath
+    n, m = 6, 8
+    owned = {(2, 7): 0, (2, 0): 0, (3, 0): 1, (3, 7): 1}
+    g = _grid(n, m, owned)
+    expected = set()
+    for (r, c), cid in owned.items():
+        for nb in hexmath.adjacent_coords((r, c), n, m):
+            if int(g[nb]) != cid:
+                expected.add(((r, c), nb, cid))
+    got = border_edges(g, m)
+    assert set(got) == expected and len(got) == len(expected)
+    # no edge between the two same-owner seam neighbours
+    assert ((2, 7), (2, 0), 0) not in got and ((2, 0), (2, 7), 0) not in got
+    # contested edges are drawn from both sides
+    assert any(o == (2, 0) and t == (3, 0) for o, t, _ in got)
+    assert any(o == (3, 0) and t == (2, 0) for o, t, _ in got)
+
+
+def test_border_segment_lies_on_owned_side_near_shared_edge():
+    """The border segment sits within `inset` of the shared edge, displaced
+    toward the owned tile, also across the seam. Breaks if the inset points
+    the wrong way (toward the neighbour) or the seam copy is not chosen."""
+    n, m = 6, 8
+    for owned, other in [((2, 3), (2, 4)), ((2, 7), (2, 0)), ((2, 0), (2, 7))]:
+        a1, a2 = river_edge_endpoints(owned, other, _SIZE, m)
+        (s1, s2) = border_segment_endpoints(owned, other, _SIZE, m, inset=2.0)
+        mid_edge = ((a1[0] + a2[0]) / 2, (a1[1] + a2[1]) / 2)
+        mid_seg = ((s1[0] + s2[0]) / 2, (s1[1] + s2[1]) / 2)
+        cx, cy = hex_to_pixel(owned[0], owned[1], _SIZE, m)
+        cx = wrapped_draw_x(cx, mid_edge[0], _SIZE, m)
+        assert math.dist(mid_seg, mid_edge) == pytest.approx(2.0)
+        assert math.dist(mid_seg, (cx, cy)) < math.dist(mid_edge, (cx, cy))

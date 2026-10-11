@@ -1,5 +1,7 @@
 # Borders and culture (#87): design
 
+> **Status: implemented** (P1–P5, v0.7.0).
+
 > **v2**, 2026-10-11: v1 settled in chat between Erik and Claude, then revised
 > after three Opus critique lenses (table and synthesis at the end of §9). Civ 6 facts are from the
 > Civ 6 wiki (pages listed under Sources) unless marked otherwise. This doc is

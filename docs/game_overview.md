@@ -18,7 +18,7 @@ of sight.
 **Cities** produce one thing at a time from seven options: five military
 units (Warrior, Spearman, Archer, Horseman, Catapult), Settlers (found new
 cities), and the Granary building (growth). Food accumulates into population
-growth; a city works its surrounding tiles. An undefended city is captured by
+growth; a city owns tiles (its centre and ring 1 at founding, then more as its culture grows) and works the owned ones within three hexes. An undefended city is captured by
 moving a unit onto it.
 
 **Combat** uses a Civ6-style strength formula: units have 100 HP, melee and

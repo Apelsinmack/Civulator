@@ -28,6 +28,8 @@ import os
 
 import pyray as rl
 
+from .. import hexmath
+
 _S3 = math.sqrt(3)
 
 
@@ -480,6 +482,91 @@ def draw_river_edges(map_obj, size, wrap_w, color=RIVER_COLOR, thickness=3.0,
             rl.draw_line_ex(rl.Vector2(x1, y1), rl.Vector2(x2, y2), thickness, color)
             continue
         if view_half_width is None:
+            shifts = [wrapped_draw_x(x1, camera_x, size, wrap_w) - x1]
+        else:
+            shifts = [cx - x1 for cx in
+                      wrap_copies_x(x1, camera_x, size, wrap_w, view_half_width)]
+        for shift in shifts:
+            rl.draw_line_ex(rl.Vector2(x1 + shift, y1),
+                            rl.Vector2(x2 + shift, y2), thickness, color)
+
+
+# =====================================================================
+# Border overlay (borders design §9 P5): a segment on each hex edge where the
+# owning city differs between a tile and its neighbour (one side may be
+# neutral), coloured by the owning player. Same shared-edge geometry and seam
+# rules as the river primitive above.
+# =====================================================================
+
+BORDER_THICKNESS = 3.0
+BORDER_INSET = 2.0  # px toward the owned tile, so both sides of a contested edge show
+
+
+def border_edges(owner_city, wrap_w):
+    """Directed border edges of an ownership grid: (owned_coords, other_coords, city_id).
+
+    `owner_city` is `Map.owner_city` (n x m int array, -1 = neutral). One
+    entry per (owned tile, neighbour) pair whose owner differs, so an edge
+    between two differently-owned tiles yields two entries (one per side) and
+    an owned/neutral edge yields one. Neighbours come from the canonical
+    hexmath adjacency, so the cylindrical seam is handled there.
+    """
+    n = owner_city.shape[0]
+    edges = []
+    for row in range(n):
+        for col in range(owner_city.shape[1]):
+            cid = int(owner_city[row, col])
+            if cid < 0:
+                continue
+            for nr, nc in hexmath.adjacent_coords((row, col), n, wrap_w):
+                if int(owner_city[nr, nc]) != cid:
+                    edges.append(((row, col), (nr, nc), cid))
+    return edges
+
+
+def border_segment_endpoints(owned, other, size, wrap_w, inset=BORDER_INSET):
+    """Pixel endpoints of the border segment on the owned tile's side of the edge.
+
+    The shared-edge segment from `river_edge_endpoints`, nudged `inset` px
+    toward the owned tile's centre.
+    """
+    (x1, y1), (x2, y2) = river_edge_endpoints(owned, other, size, wrap_w)
+    cx, cy = hex_to_pixel(owned[0], owned[1], size, wrap_w)
+    mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+    # Owned centre in the copy nearest the segment (seam rule).
+    cx = wrapped_draw_x(cx, mx, size, wrap_w)
+    dx, dy = cx - mx, cy - my
+    dist = math.hypot(dx, dy)
+    if dist == 0:
+        return (x1, y1), (x2, y2)
+    ox, oy = dx / dist * inset, dy / dist * inset
+    return (x1 + ox, y1 + oy), (x2 + ox, y2 + oy)
+
+
+_border_cache = {}  # edge list memo, keyed (map_uid, territory_epoch, wrap_w)
+
+
+def draw_border_edges(map_obj, city_player, colors, size, wrap_w,
+                      thickness=BORDER_THICKNESS, camera_x=None, view_half_width=None):
+    """Draw the territory border overlay (see `border_edges`).
+
+    `city_player` maps city id -> player index (e.g. built from
+    `env.city_by_id`); `colors` is the viewer's player-colour list. Camera and
+    `view_half_width` behave exactly as in `draw_river_edges`.
+    """
+    key = (map_obj.map_uid, map_obj.territory_epoch, wrap_w)
+    if _border_cache.get("key") != key:
+        _border_cache["key"] = key
+        _border_cache["edges"] = border_edges(map_obj.owner_city, wrap_w)
+    for owned, other, cid in _border_cache["edges"]:
+        player = city_player.get(cid)
+        if player is None:
+            continue
+        color = colors[player % len(colors)]
+        (x1, y1), (x2, y2) = border_segment_endpoints(owned, other, size, wrap_w)
+        if camera_x is None:
+            shifts = [0.0]
+        elif view_half_width is None:
             shifts = [wrapped_draw_x(x1, camera_x, size, wrap_w) - x1]
         else:
             shifts = [cx - x1 for cx in

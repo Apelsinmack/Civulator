@@ -59,6 +59,7 @@ from civulator.viz.hex_render import (
     draw_hex,
     draw_hex_outline,
     draw_resource_marker,
+    draw_border_edges,
     draw_river_edges,
     hex_to_pixel,
     make_camera,
@@ -332,6 +333,12 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0,
         # wired in now so P4's rivers appear automatically).
         draw_river_edges(env.map, HEX_SIZE, env.m, camera_x=camera.target.x,
                          view_half_width=view_half_width)
+
+        # Territory borders (#87), coloured by owning player.
+        draw_border_edges(env.map, {cid: c.player.player_index
+                                    for cid, c in env.city_by_id.items()},
+                          PLAYER_COLORS, HEX_SIZE, env.m,
+                          camera_x=camera.target.x, view_half_width=view_half_width)
 
         # Draw cities
         for player in env.players:
