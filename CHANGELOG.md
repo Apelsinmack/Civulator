@@ -678,6 +678,47 @@ Population growth used to be unbounded; now a city's housing limits it.
 build improvements; the Aqueduct waits for districts (#86); amenities are out
 (#41).
 
+### Districts framework (#86)
+
+**Engine only; effect NOT yet measured.** Spec and rulings:
+`docs/districts_design.md` (v3). No agent can place or build a district until
+the action space is redesigned (#99), as with `swap_tile` (#87).
+
+- **Districts occupy a tile** and earn an adjacency score from their
+  neighbours (Civ 6 Gathering Storm values, copied, no tuning). Ten districts
+  in `[districts.*]`: Campus, Commercial Hub, Theater Square, Holy Site,
+  Industrial Zone, Harbor, Encampment, Entertainment Complex, Government Plaza,
+  Aqueduct. Rows are floored one by one, then summed; the city centre and
+  placed-but-unfinished districts count as neighbours.
+- **Two steps.** `GameEnvironment.place_district` checks `can_place_district`,
+  locks the cost, clears the tile's improvements, a removable feature
+  (Woods, Rainforest, Marsh) and a bonus resource, and points production at it;
+  `City.process_turn` pays the cost like a building and completes it.
+  `produce_district` resumes an unfinished one. A district tile is never
+  worked, cannot be swapped, built on or settled.
+- **Limits**: 1 + floor((pop - 1) / 3) slots (the Aqueduct takes none),
+  `max_per_city`, `max_per_player` (Government Plaza), all counted on placed
+  districts.
+- **Aqueduct housing**: water = max(6, water + 2), so fresh 5 -> 7, coastal
+  3 -> 6, dry 2 -> 6; a district may also declare a flat `housing`.
+- **Yields are computed and reported, not consumed.** `district_yields(city)`
+  sums the live score of complete districts per yield; `culture()` and
+  production are unchanged. New per-player stats `district_yield_<name>`.
+
+**Rulings (Erik, 2026-10-11).** The ten districts above; Government Plaza is
+only an adjacency source with a one-per-player limit; yields wired in by later
+patches, one per yield; every district stays with its city on capture,
+Government Plaza included, as with the Palace (Civ 6 removes it). Claude's
+calls: a placed district counts as a neighbour; bonus resources are cleared on
+placement; a foreign unit on the tile blocks placement.
+
+**Accepted gaps.** Costs do not escalate with tech (no tech tree, #90);
+a complete Theater Square or Industrial Zone produces no culture or
+production in play; drought protection and geothermal amenity have no
+counterpart; Civ 6 adjacency rows whose source is absent (wonders, natural
+wonders, Dam, Canal, strategic resources) are dropped; Neighborhood, Water
+Park and the other districts are not in; nothing is drawn in the viewer.
+
 ---
 
 ## v0.6.2 — Civ 6 Ancient-era combat alignment (2026-09-04)
