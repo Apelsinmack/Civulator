@@ -673,6 +673,17 @@ claim_radius = 5    # Civ 6: culture claims tiles up to 5 hexes from the centre
 work_radius = 3     # Civ 6: cities work and buy tiles up to 3 hexes out (swap_tile reads it; assign_tiles widens to it in P4)
 founding_ring = 1   # tiles claimed at founding
 
+# Border growth cost (borders design §3.1): the n-th culture claim costs
+# curve(n) culture points. `curve` keys BORDER_COST_CURVES in
+# civulator/game/territory.py (unknown names raise); every other key is a
+# parameter of that curve. civ6_community: a + (b*(n-1))**p, a community
+# reading of Civ 6 (10, 20.3, 35.3, 52.8, ...).
+[territory.border_cost]
+curve = "civ6_community"
+a = 10
+b = 6
+p = 1.3
+
 # --- Buildings (issue #7) ---------------------------------------------------
 # One table per building: `production_cost` is what a city pays for it, and
 # `defense_bonus` (optional, default 0) is added to the city's defensive combat

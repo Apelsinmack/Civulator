@@ -73,3 +73,147 @@ def choose_claim_tile(game_map, city, rng, claim_radius=None):
     if len(tied) >= 2:
         rng.shuffle(tied)
     return tied[0]
+
+
+# --- §3.1 border cost curves ------------------------------------------------
+#
+# A curve is a pure function (n, **params) -> cost in culture points (float),
+# n = 1, 2, ... the n-th tile a city claims by culture. Never change what an
+# existing name computes (old manifests pin the name); add a new entry.
+
+
+def _civ6_community(n, a, b, p):
+    """Community reading of Civ 6's GlobalParameters: a + (b*(n-1))**p."""
+    return a + (b * (n - 1)) ** p
+
+
+BORDER_COST_CURVES = {
+    "civ6_community": _civ6_community,
+}
+
+
+def border_cost_function(table):
+    """Build the cost function selected by a `[territory.border_cost]` table.
+
+    `table["curve"]` names an entry of `BORDER_COST_CURVES` (unknown names
+    raise); every other key is passed to it as a keyword parameter. Returns
+    `cost(n) -> int tenths`: the curve is evaluated in float once per n and
+    converted once, `round(10 * curve(n))`, so every pool comparison is exact
+    integer arithmetic.
+    """
+    params = dict(table)
+    name = params.pop("curve")
+    if name not in BORDER_COST_CURVES:
+        raise ValueError(
+            f"[territory.border_cost] curve = {name!r} is not in BORDER_COST_CURVES "
+            f"(known: {sorted(BORDER_COST_CURVES)})"
+        )
+    curve = BORDER_COST_CURVES[name]
+    cache = {}
+
+    def cost(n):
+        if n < 1:
+            raise ValueError(f"border cost index must be >= 1, got {n}")
+        if n not in cache:
+            cache[n] = int(round(10 * curve(n, **params)))
+        return cache[n]
+
+    return cost
+
+
+# --- §3.3 the round-end border phase ----------------------------------------
+
+
+class _PhaseCity:
+    """One city's state for one border phase. `b0` = pool at phase start
+    (= p0 + r), `spent` = S_{k-1}, the culture claimed so far this phase."""
+
+    __slots__ = ("city", "r", "p0", "b0", "spent", "next_cost")
+
+    def __init__(self, city, cost):
+        self.city = city
+        self.r = city.culture_this_round
+        self.b0 = city.border_culture
+        self.p0 = self.b0 - self.r
+        self.spent = 0
+        self.next_cost = cost(city.border_claims + 1)
+
+    def has_event(self):
+        """Event k exists iff t_k <= 1, i.e. S_k <= p0 + r. With r = 0 this is
+        S_k <= p0, the boxed-in case (events at t = 0)."""
+        return self.spent + self.next_cost <= self.b0
+
+    def numerator(self):
+        """S_k - p0 clamped at 0: t_k = numerator / r."""
+        return max(0, self.spent + self.next_cost - self.p0)
+
+    def surplus(self):
+        """End-of-round surplus p0 + r - S_k (the §3.3 second key)."""
+        return self.b0 - self.spent - self.next_cost
+
+
+def _compare_events(a, b):
+    """§3.3 keys 1 and 2, exact integers: negative if a's event comes first,
+    0 if tied on both t and surplus. Clamped events (t = 0) are all equal on
+    t and precede every unclamped one; unclamped events always have r > 0
+    and compare by cross-multiplication (S_a - p0_a)*r_b vs (S_b - p0_b)*r_a.
+    """
+    na, nb = a.numerator(), b.numerator()
+    if na == 0 or nb == 0:
+        t_cmp = (na != 0) - (nb != 0)
+    else:
+        lhs, rhs = na * b.r, nb * a.r
+        t_cmp = (lhs > rhs) - (lhs < rhs)
+    if t_cmp:
+        return t_cmp
+    sa, sb = a.surplus(), b.surplus()
+    return (sb > sa) - (sb < sa)
+
+
+def run_border_phase(game_map, cities, cost, rng, on_claim=None, claim_radius=None):
+    """Resolve one round's culture claims for `cities` (borders design §3.3).
+
+    Lazy queue: each city holds at most its next event; the earliest event
+    by `_compare_events` is popped, ties on both keys are sorted by city id
+    and shuffled with the engine RNG (drawn only when two or more tie). The
+    popped city claims `choose_claim_tile` at that moment, pays `cost(n+1)`
+    from its pool and increments its `border_claims`; `on_claim(city, pos)`
+    runs after every claim. A city with no candidate is dropped for the rest
+    of the phase (its pool is kept). Finally every city's
+    `culture_this_round` is zeroed. Returns the claims as [(city_id, pos)]
+    in event order.
+    """
+    states = sorted((_PhaseCity(c, cost) for c in cities), key=lambda s: s.city.city_id)
+    pending = [s for s in states if s.has_event()]
+    claims = []
+    while pending:
+        first = pending[0]
+        tied = [first]
+        for state in pending[1:]:
+            cmp = _compare_events(state, first)
+            if cmp < 0:
+                first, tied = state, [state]
+            elif cmp == 0:
+                tied.append(state)
+        if len(tied) >= 2:
+            tied.sort(key=lambda s: s.city.city_id)
+            rng.shuffle(tied)
+        state = tied[0]
+        city = state.city
+        pos = choose_claim_tile(game_map, city, rng, claim_radius)
+        if pos is None:
+            pending.remove(state)
+            continue
+        game_map.claim(pos, city)
+        city.border_culture -= state.next_cost
+        city.border_claims += 1
+        state.spent += state.next_cost
+        state.next_cost = cost(city.border_claims + 1)
+        claims.append((city.city_id, pos))
+        if on_claim is not None:
+            on_claim(city, pos)
+        if not state.has_event():
+            pending.remove(state)
+    for state in states:
+        state.city.culture_this_round = 0
+    return claims
