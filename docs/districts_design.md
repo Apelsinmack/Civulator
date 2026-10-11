@@ -1,6 +1,6 @@
 # Districts (#86): design
 
-> **Status: v2, 2026-10-11.** Rulings agreed with Erik (§9); critique pending. Erik's rulings so far (chat,
+> **Status: v3, 2026-10-11 — the build contract.** Rulings agreed with Erik (§9); two Opus critique lenses resolved in "v3 fixes". Erik's rulings so far (chat,
 > 2026-10-11): follow Civ 6 for adjacency and copy its values; no tuning before
 > the milestone plays; no agent action yet (the action space waits until all
 > game changes of milestone D are done, #99); what is done *inside* a district
@@ -299,6 +299,102 @@ them; no RNG is involved.
 4. **Capture:** every district stays with its city, the Government Plaza
    included, as with the Palace.
 
+## v3 fixes (critique round 1)
+
+Where this section and §1–§8 differ, **this section wins**.
+
+**Tile state and caches**
+- `place_district` clears `tile.improvements` **directly** (improvements are not
+  a layer). It clears a removable feature and a bonus resource in **one**
+  `set_layers(base, relief, feature=None/kept, resource=None, map_ref=map)` call
+  (clearing only the feature can raise in `validate`: Deer, Bananas and Rice
+  need their feature), and only when there is something to clear.
+- New **`Map.district_epoch`**, bumped by every `place_district` and by
+  `remove_city` when it clears districts. The settle-layer cache key
+  (`agents/state_encoders.py:660`) gains it. Any future cache of
+  district-derived state keys on it.
+- `place_district` re-runs `city.assign_tiles(env)`, so a worked tile leaves
+  `worked_tiles` at once.
+
+**Every path that could put something else on a district tile refuses it**
+- `can_found_city_at` refuses a tile with a district (the settle mask follows);
+  `create_city` raises on one (covers the painter's `_place_city`).
+- `can_build_improvement_at` refuses a tile with a district.
+- `swap_tile` refuses a tile with a district (as in §3).
+- Invariant: a district tile is always owned by the district's city.
+
+**Placement details**
+- Placement is refused if a **foreign** unit stands on the tile (Claude's
+  call); own units are fine.
+- `max_per_city`, `max_per_player` and the population slot all count
+  **placed** districts, complete or not. They bind placement only: an
+  incomplete district can still be finished after the city loses population,
+  and a conqueror may exceed `max_per_player` (§3).
+- The `district = "any"` source counts every adjacent district and city centre,
+  **whoever owns it** (Civ 6).
+- Aqueduct river test: some edge between the Aqueduct's own tile and a
+  neighbour n with `Map.has_river_between` true, where n is **not** the city
+  centre. Spelled `river_edge_not_shared_with_center = true`, a district-tile
+  test, not a neighbour source.
+- Harbor "adjacent to land": `requires_adjacent = [{ terrain = { bases =
+  [<the land bases>] } }]`. A mountain counts as land (its base is land).
+
+**`resources` match key** (`terrain_model`)
+- `matches(on, base, relief=None, feature=None, resource=None)`. `resources` is
+  a list of resource names or `"any"`. Evaluating a mapping that has
+  `resources` with `resource` not passed raises (no silent pass).
+- `resources` is rejected inside layer and improvement `on` tables at load, and
+  every `on` table rejects unknown keys at load. Existing callers keep their
+  behaviour: the mapgen golden tests and `test_terrain_model` are in D1's gate.
+- Resource class (placement: bonus only) is read through one new accessor,
+  `terrain_model.resource_class(name)`.
+- Improvement names are validated through a `terrain_model` accessor
+  (`IMPROVEMENT_NAMES`), never by reading `CFG["improvements"]` again.
+
+**Config loading**
+- `[districts]` scalars and sub-tables are split by the loader. `"City Center"`
+  and `"any"` are reserved and no district may take them. Names with spaces are
+  quoted in TOML.
+- District housing values (`housing`, `water_housing_min`,
+  `water_housing_boost`) go through `unit_model.to_tenths`.
+
+**Cost: one integer rule**
+- `game_progress(player)` returns a fraction `(num, den)`, `(0, 1)` until #90.
+- `escalated = base * (den + factor * num) // den`.
+- A = the number of configured `discounted` types (static). B = the player's
+  **completed** `discounted` districts across all its cities, captured ones
+  included. count_T = the same, of type T. T is discounted iff
+  `B >= A and count_T * A < B`.
+- `cost = escalated * (100 - discount_percent) // 100` when discounted, else
+  `escalated`. Integers throughout; locked at placement.
+
+**Production and capture**
+- `produce_district(T)` returns False unless the city has an **incomplete**
+  placed district of type T (like `produce_building` refusing a cost-less name).
+- On capture the city's incomplete districts, its `production` pool and
+  `current_production` go with it unchanged.
+- `build_agent.encode_build_state` (`agents/build_agent.py:146`) gains an
+  explicit `"district"` branch that raises `NotImplementedError` naming #99, in
+  place of a silent `KeyError`.
+
+**Stats**
+- `district_yield_<name>` for every accepted yield is declared in
+  `_fresh_episode_stats` and accrued once per city per round under the same
+  guard as culture (`_culture_round`), so a city captured mid-round is not
+  counted twice.
+
+**Smoke determinism**
+- The smoke script lists candidate tiles from `Map.tiles_of_city`, sorted,
+  before choosing with its seeded RNG.
+
+**CLAUDE.md row amendments** (D2), besides the four new rows: Housing (complete
+districts are a declared source; the Aqueduct adjusts the water term through
+its declared fields), City economy (district production branch; district tiles
+are never worked), Territory (`swap_tile` refuses district tiles; a district
+tile is always owned by its city), Action masking (`can_found_city_at` refuses
+district tiles; the settle key includes `district_epoch`), Terrain model (the
+`resources` match key and the two accessors).
+
 ## 10. Tests (properties, each naming the change that breaks it)
 
 | Property | Breaks if |
@@ -316,6 +412,12 @@ them; no RNG is involved.
 | A config row naming a missing terrain, improvement or district raises at load | validation is skipped |
 | Captured city keeps its districts; `remove_city` clears its tiles | district references outlive their city |
 | Same seed, same actions → identical districts and yields | anything order-dependent on set iteration |
+| A district tile cannot host a new city, an improvement, or be swapped; its owner is always its city | any of `can_found_city_at`, `create_city`, `can_build_improvement_at`, `swap_tile` ignores districts |
+| The settle layer refuses a district placed on a featureless, resourceless tile | the settle cache key misses `district_epoch` |
+| A tile worked before placement is not worked right after it | `place_district` does not re-run `assign_tiles` |
+| A `resources` constraint evaluated without a resource raises; an unknown `on` key raises at load; mapgen goldens unchanged | `matches` silently ignores keys |
+| The discount follows the integer rule exactly (e.g. A = 9, B = 10: count 1 discounted, count 2 not) | real division or a different rounding order |
+| A city captured mid-round accrues district stats once that round | the stats accrual skips the once-per-round guard |
 
 ## 11. Patch plan
 
@@ -324,14 +426,21 @@ merged when green.
 
 | Patch | Content | Gate | Mode · tier |
 |---|---|---|---|
-| D1 | `district_model.py` + the `[districts]` tables; `terrain_model.matches` `resources` key; `game/districts.py` `adjacency_score`, `can_place_district`, cost; `District`, `Tile.district`, `City.districts` | §10 adjacency, placement, cost and load properties; full suite green | subagent · Sonnet |
-| D2 | `place_district`, production path, `produce_district`, `assign_tiles` / `swap_tile` / `remove_city` / capture handling, `district_yields` + its `episode_stats` counters, Aqueduct housing, CHANGELOG (v0.7.0), CLAUDE.md rows, extend `scripts/smoke_random_selfplay.py` to place districts through the engine | the remaining §10 properties; full suite green; seeded smoke run | subagent · Opus (composes territory, housing, city economy, terrain epoch) |
+| D1 | `district_model.py` + the `[districts]` tables; `terrain_model` `resources` key, `resource_class`, `IMPROVEMENT_NAMES`, unknown-key rejection; `game/districts.py` `adjacency_score`, `can_place_district`, cost; `District`, `Tile.district`, `City.districts`; `Map.district_epoch`; a minimal `place_district` (check, create, link, clear, lock cost, bump epoch, re-run `assign_tiles`); `remove_city` clearing; refusals in `can_found_city_at`, `create_city`, `can_build_improvement_at`, `swap_tile`; settle cache key | §10 adjacency, placement, cost, load, refusal and cache properties; mapgen goldens and `test_terrain_model` unchanged; full suite green | subagent · Opus (changes the canonical `on` evaluator) |
+| D2 | production branch, `produce_district`, capture behaviour, `district_yields` + its `episode_stats` counters, Aqueduct housing, `build_agent` district branch, CHANGELOG (v0.7.0), CLAUDE.md rows and amendments, extend `scripts/smoke_random_selfplay.py` to place districts through the engine | the remaining §10 properties; full suite green; seeded smoke run | subagent · Sonnet |
 
 ## Critique (lens table)
 
 | Lens | Verdict | Blockers |
 |---|---|---|
+| Systems reuse, regression and determinism (Opus) | survives with fixes | (1) settle cache key (state_encoders.py:660) goes stale on placement on a bare tile; (2) `terrain_model.matches` cannot see resources and silently ignores unknown keys (terrain_model.py:107-121; callers incl. mapgen starts.py:747); (3) Housing row's "never add a term" broken without amendment; (4) D1 cannot test placed-district properties without `place_district`. Non-blocking: one `set_layers` call (Deer/Bananas/Rice need their feature); row amendments for City economy, Territory, Action masking; no third reader of `CFG["improvements"]`; reserved names and scalar/sub-table split; stats keys and once-per-round guard; build_agent.py:146 branch; integer cost arithmetic; sorted smoke candidates; D1 on Opus |
 | Rules semantics and edge cases (Opus) | survives with fixes | (1) improvements are not a layer: `set_layers` cannot clear them; the epoch bump on placement is unstated; (2) a city can be founded on an owned district tile (`can_found_city_at` environment.py:929, `_founding_claim`; painter `_place_city` bypass); (3) `can_build_improvement_at` (environment.py:1065) lets an improvement onto a district tile; (4) `assign_tiles` is not re-run on placement, so the tile stays worked; (5) the §4.1 discount is not one deterministic integer rule (division, A, count_T, rounding order). Non-blocking: placed-vs-complete for every limit; incomplete districts after population loss; `produce_district` on complete/unplaced T; Aqueduct river test is on its own edges; Harbor "adjacent to land" encoding; `resources` key described two ways; units on the tile; "any" counts other cities' districts; `_fresh_episode_stats` keys and accrual phase; build_agent.py:146 treats any non-unit production as a building |
+
+
+**Synthesis (v3).** Both lenses: survives with fixes. All nine blockers are
+resolved in "v3 fixes" (it overrides §1–§8 where they differ); the
+non-blocking points are folded in there too. No further round: v3 is the build
+contract.
 
 ---
 
