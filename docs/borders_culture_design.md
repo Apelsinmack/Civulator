@@ -110,8 +110,9 @@ Both founding paths (`GameEnvironment.found_city` and the settler's
 ### 2.2 Where a city may be founded
 
 `can_found_city_at` gains one condition: the tile is not owned by another
-player. Founding inside your own territory is allowed, and the tile moves to the
-new city. The settler action mask already calls `can_found_city_at`, so masks
+player. Founding on a tile you already own (outside `min_city_distance` of every
+city, as today) is allowed, and the tile moves to the new city. Erik,
+2026-10-11: "I think it should be allowed." The settler action mask already calls `can_found_city_at`, so masks
 and rules stay one function.
 
 ### 2.3 Capture and destruction
@@ -323,17 +324,29 @@ question.
 
 ## 9. Patch plan
 
-| Patch | Content | Gate |
-|---|---|---|
-| P1 | Culture yield: `culture(city)`, `[culture]` config, `culture` column on buildings, Monument = 2, accrual in `process_turn`, `Player.culture` civic pool | culture tests; suite green |
-| P2 | Ownership grid + mutation API + `territory_epoch`, city ids, founding claim through one function (both founding paths), founding restriction, capture/destroy transfer, `swap_tile` | ownership properties; suite green |
-| P3 | Border growth: cost-curve registry, tile choice, round-end border phase with the event queue and tie rules | ring-order, turn-order independence, seed determinism |
-| P4 | Work radius 3 over owned tiles in `assign_tiles`; `episode_stats` additions | work-radius property; a seeded 250-turn self-play smoke run shows borders growing (tiles owned per player over time) |
-| P5 | Border overlay in `viz/hex_render.py` (city-coloured edges between owned and other tiles), CHANGELOG, version, epoch, CLAUDE.md rows | Erik looks at a seeded game in the viewer |
+Erik, 2026-10-11: the arc runs to the end without him. No patch is HUMAN-TEST.
+All patches are subagents, one at a time, on one implementation branch, each
+merged `--no-ff` to `develop` when its gate is green.
 
-E2E check at the end: a seeded game played in the viewer, where borders visibly
-grow ring by ring, a contested tile goes to the earlier city, and a captured
-city's territory changes colour.
+| Patch | Content | Gate (oracle) | Mode · tier |
+|---|---|---|---|
+| P1 | Culture yield: `culture(city)`, `[culture]` config, `culture` column on buildings, Monument = 2, accrual in `process_turn`, `Player.culture` civic pool | §8 culture properties; full suite green | subagent · Sonnet |
+| P2 | Ownership grid + mutation API + `territory_epoch`, city ids, founding claim through one function (both founding paths), founding restriction, capture/destroy transfer, `swap_tile` | §8 ownership properties; full suite green | subagent · Opus (touches founding, capture, masks) |
+| P3 | Border growth: cost-curve registry, tile choice, round-end border phase with the event queue and tie rules | §8 ring-order, turn-order independence, seed determinism; full suite green | subagent · Opus (the subtle one) |
+| P4 | Work radius 3 over owned tiles in `assign_tiles`; `episode_stats` additions | §8 work-radius property; full suite green; a seeded 250-turn random-policy self-play smoke run logs tiles owned per player over time and shows growth | subagent · Sonnet |
+| P5 | Border overlay in `viz/hex_render.py` (city-coloured edges between owned and other tiles), CHANGELOG, version, epoch, CLAUDE.md rows | full suite green; the adjacency-render invariant test still passes; a headless screenshot of a seeded mid-game map shows borders (checked by the orchestrator) | subagent · Sonnet |
+
+E2E check at the end (orchestrator): a seeded game rendered at several turns,
+where borders visibly grow ring by ring, plus the turn-order independence test
+run on the merged `develop`.
+
+## Critique (lens table — one Opus critic per lens, run one at a time, each verdict written here before the next spawns)
+
+| Lens | Verdict | Blockers |
+|---|---|---|
+| Rules semantics and edge cases | pending | |
+| Systems reuse and regression | pending | |
+| Determinism and single-writer | pending | |
 
 ---
 
