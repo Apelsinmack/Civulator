@@ -99,6 +99,32 @@ CITY_HEAL_PER_TURN = _CITY_CFG["heal_per_turn"]
 _BUILDINGS_CFG = CFG.get("buildings", {})
 
 BUILDING_COSTS = {name: table["production_cost"] for name, table in _BUILDINGS_CFG.items()}
+
+
+def to_tenths(value, what):
+    """Convert a human-readable culture value to integer tenths (issue #87).
+
+    Culture is stored and summed as int tenths so comparisons are exact on
+    every machine. A value that is not a multiple of 0.1 raises.
+    """
+    tenths = round(10 * value)
+    if abs(10 * value - tenths) > 1e-9:
+        raise ValueError(f"{what} = {value!r} is not a multiple of 0.1")
+    return int(tenths)
+
+
+# Culture sources (issue #87 s1): any table may declare an optional `culture`
+# column; today only [buildings.*]. Values are int tenths.
+BUILDING_CULTURE = {
+    name: to_tenths(table["culture"], f"[buildings.{name}] culture")
+    for name, table in _BUILDINGS_CFG.items()
+    if table.get("culture")
+}
+
+_CULTURE_CFG = CFG["culture"]
+CULTURE_BASE = to_tenths(_CULTURE_CFG["base"], "[culture] base")
+CULTURE_PER_POP = to_tenths(_CULTURE_CFG["per_pop"], "[culture] per_pop")
+
 BUILDING_DEFENSE_BONUS = {
     name: table["defense_bonus"]
     for name, table in _BUILDINGS_CFG.items()

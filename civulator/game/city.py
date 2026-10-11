@@ -11,6 +11,7 @@ from ..unit_model import (
     CITY_RANGED_RANGE,
     CITY_RANGED_STRENGTH,
 )
+from .culture import culture
 from .unit import (
     Unit, WarriorUnit, SlingerUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
     HorsemanUnit, CatapultUnit, BatteringRamUnit, SiegeTowerUnit,
@@ -50,6 +51,12 @@ class City:
         self.production = 0
         self.current_production = {"type": "unit", "unit_type": "Warrior"}
         self.worked_tiles = []  # List of (row, col) assigned to citizens
+        # Culture (issue #87), all int tenths. border_culture is the city's
+        # border pool; culture_this_round is what the border phase reads and
+        # zeroes; _culture_round stamps the round of the last accrual.
+        self.border_culture = 0
+        self.culture_this_round = 0
+        self._culture_round = None
 
     def get_combat_strength(self, is_attacking=False, target=None):
         """Return the defensive combat strength of the city.
@@ -173,8 +180,8 @@ class City:
     def process_turn(self, game_env):
         """Process a game turn for this city.
 
-        Order: repair → collect food → consume → growth/starvation → collect
-        production → build.
+        Order: repair → collect food → consume → growth/starvation → culture →
+        collect production → build.
         """
         # --- Repair phase (issue #84) ---
         # Civ 6: a city heals 20 HP per turn unless it is under siege. A
@@ -206,6 +213,9 @@ class City:
             self.population += 1
             self.assign_tiles(game_env)
 
+        # --- Culture phase (issue #87) ---
+        self._accrue_culture(game_env)
+
         # --- Production phase ---
         self.production += self.calculate_production(game_env)
 
@@ -228,6 +238,18 @@ class City:
                     self.production -= building_cost
                     self.buildings.append(building_type)
                     self.current_production = None
+
+    def _accrue_culture(self, game_env):
+        """Add this turn's culture (int tenths) to the border pool, the
+        per-round counter and the owner's civic pool; at most once per round.
+        """
+        if self._culture_round == game_env.turn_counter:
+            return
+        self._culture_round = game_env.turn_counter
+        yield_tenths = culture(self)
+        self.border_culture += yield_tenths
+        self.culture_this_round += yield_tenths
+        self.player.culture += yield_tenths
 
     def get_unit_cost(self, unit_type):
         """Get the production cost for a unit type."""

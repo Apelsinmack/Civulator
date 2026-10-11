@@ -14,7 +14,7 @@ class Player:
         self.is_dead = False
         self.gold = 0
         self.science = 0
-        self.culture = 0
+        self.culture = 0  # civic pool, integer tenths (issue #87)
         self.technologies = []
         self.policies = []
         # Fog-of-war memory: (n, m) bool array of ever-seen tiles, owned by
