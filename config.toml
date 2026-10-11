@@ -657,6 +657,14 @@ ranged_range = 2
 # Civ 6: a city heals 20 HP per turn unless it is under siege.
 heal_per_turn = 20
 
+# --- Culture (issue #87) ----------------------------------------------------
+# culture(city) = base + per_pop * population + sum of each source's `culture`
+# (sources: [buildings.*]). Values must be multiples of 0.1; the loader turns
+# them into integer tenths.
+[culture]
+base = 1.0          # per city per turn (stand-in for the Civ 6 Palace)
+per_pop = 0.3       # per citizen (community-reported Civ 6 game-file value)
+
 # --- Buildings (issue #7) ---------------------------------------------------
 # One table per building: `production_cost` is what a city pays for it, and
 # `defense_bonus` (optional, default 0) is added to the city's defensive combat
@@ -668,6 +676,7 @@ production_cost = 60
 
 [buildings.Monument]
 production_cost = 50
+culture = 2         # optional column (default 0); Civ 6 Monument. A multiple of 0.1
 
 # Walls: +30 defence, Civ 6's Ancient Walls (see CHANGELOG). The one building
 # that changes combat, and the reason the [buildings.*] table has a
