@@ -15,6 +15,7 @@ class Player:
         self.gold = 0
         self.science = 0
         self.culture = 0  # civic pool, integer tenths (issue #87)
+        self.palace_granted = False  # create_city grants the Palace once (#88)
         self.technologies = []
         self.policies = []
         # Fog-of-war memory: (n, m) bool array of ever-seen tiles, owned by

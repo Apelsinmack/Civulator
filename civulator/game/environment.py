@@ -334,6 +334,7 @@ class GameEnvironment:
                 player.gold = 0
                 player.science = 0
                 player.culture = 0
+                player.palace_granted = False
                 player.technologies = []
                 player.policies = []
                 player.explored = None
@@ -974,6 +975,9 @@ class GameEnvironment:
         self.city_by_id[city.city_id] = city
         tile.set_city(city)
         player.cities.append(city)
+        if not player.palace_granted:
+            city.buildings.append("Palace")
+            player.palace_granted = True
 
         changed = {city.city_id} | self._founding_claim(city)
         for city_id in sorted(changed):

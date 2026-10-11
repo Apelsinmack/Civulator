@@ -112,7 +112,10 @@ class City:
         return True
 
     def produce_building(self, building_type):
-        """Start producing a building."""
+        """Start producing a building. Refused (False) for a name with no
+        production cost - the Palace is granted, never built (#88)."""
+        if building_type not in self.BUILDING_COSTS:
+            return False
         self.current_production = {"type": "building", "building_type": building_type}
         return True
 
@@ -278,7 +281,7 @@ class City:
 
     def get_building_cost(self, building_type):
         """Get the production cost for a building type."""
-        return self.BUILDING_COSTS.get(building_type, 100)
+        return self.BUILDING_COSTS[building_type]
 
     def complete_unit_production(self, unit_type, game_env):
         """Place a newly produced unit on the city tile or first empty adjacent tile.

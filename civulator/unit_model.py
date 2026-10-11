@@ -98,7 +98,13 @@ CITY_HEAL_PER_TURN = _CITY_CFG["heal_per_turn"]
 
 _BUILDINGS_CFG = CFG.get("buildings", {})
 
-BUILDING_COSTS = {name: table["production_cost"] for name, table in _BUILDINGS_CFG.items()}
+# Only buildings that declare `production_cost` are producible (#88: the Palace
+# is granted, never built).
+BUILDING_COSTS = {
+    name: table["production_cost"]
+    for name, table in _BUILDINGS_CFG.items()
+    if "production_cost" in table
+}
 
 
 def to_tenths(value, what):
@@ -120,6 +126,20 @@ BUILDING_CULTURE = {
     for name, table in _BUILDINGS_CFG.items()
     if table.get("culture")
 }
+
+# Housing sources (issue #88 s1): same pattern; [improvements.*] housing is
+# parsed by terrain_model.IMPROVEMENT_HOUSING. Values are int tenths.
+BUILDING_HOUSING = {
+    name: to_tenths(table["housing"], f"[buildings.{name}] housing")
+    for name, table in _BUILDINGS_CFG.items()
+    if table.get("housing")
+}
+
+_HOUSING_CFG = CFG["housing"]
+HOUSING_WATER_FRESH = to_tenths(_HOUSING_CFG["water_fresh"], "[housing] water_fresh")
+HOUSING_WATER_COASTAL = to_tenths(_HOUSING_CFG["water_coastal"], "[housing] water_coastal")
+HOUSING_WATER_DRY = to_tenths(_HOUSING_CFG["water_dry"], "[housing] water_dry")
+HOUSING_IMPROVEMENT_RADIUS = _HOUSING_CFG["improvement_radius"]
 
 _CULTURE_CFG = CFG["culture"]
 CULTURE_BASE = to_tenths(_CULTURE_CFG["base"], "[culture] base")
