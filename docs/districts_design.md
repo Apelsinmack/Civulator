@@ -1,11 +1,10 @@
 # Districts (#86): design
 
-> **Status: v1 draft, 2026-10-11.** Not yet agreed. Erik's rulings so far (chat,
+> **Status: v2, 2026-10-11.** Rulings agreed with Erik (§9); critique pending. Erik's rulings so far (chat,
 > 2026-10-11): follow Civ 6 for adjacency and copy its values; no tuning before
 > the milestone plays; no agent action yet (the action space waits until all
 > game changes of milestone D are done, #99); what is done *inside* a district
-> (buildings, specialists) is designed later. Questions still open for Erik are
-> marked **ERIK** and listed in §9.
+> (buildings, specialists) is designed later. The four further rulings are in §9.
 >
 > Civ 6 facts: Gathering Storm ruleset, final patch 1.0.12.68, read from two
 > independent dumps of the game database (they agree on every row compared) and
@@ -31,7 +30,7 @@ action space is redesigned (#99), exactly as `swap_tile` shipped in #87.
 3. `can_place_district(city, district_type, tile)`: the one placement check.
 4. `GameEnvironment.place_district` and the production path that completes a
    district.
-5. District yields flowing into the city (§5).
+5. District yields computed and reported, not yet consumed (§5).
 6. The Aqueduct's housing effect (§6).
 
 ## Out of scope
@@ -40,7 +39,7 @@ action space is redesigned (#99), exactly as `swap_tile` shipped in #87.
 |---|---|
 | An agent action to place or build a district | #99, after all milestone-D game changes |
 | Buildings inside districts, specialists, great-person points | later, per district (#90–#95) |
-| Science, gold, faith as yields | #90, #91, #93. Adjacency into those is computed but goes nowhere yet (§5) |
+| Consuming any district yield (culture, production, science, gold, faith) | one later patch per yield. Adjacency is computed and reported only (§5) |
 | Cost escalation with tech/civic progress | needs a tech tree (#90). The hook exists; progress is 0 (§4.3) |
 | Tech prerequisites | needs a tech tree. Every configured district is available |
 | Encampment defence, pillaging, district combat | later |
@@ -77,7 +76,7 @@ adjacency = [
 ]
 ```
 
-The districts in this patch (**ERIK**, Q1 and Q2), with Civ 6's values:
+The districts in this patch (§9), with Civ 6's values:
 
 | District | Cost (model) | Limit slot | Score becomes | Placement beyond the general rules |
 |---|---|---|---|---|
@@ -195,9 +194,12 @@ A placed district (complete or not):
 - **counts as a neighbour** for others' adjacency (**Claude's call**: the sources leave this unconfirmed; counting it
   makes a placement's value fixed when it is placed);
 - **cannot be swapped**: `swap_tile` refuses a tile with a district (Civ 6);
-- **goes with its city on capture** (the City object keeps `city.districts`;
-  ownership already moves with `City.set_owner`). **ERIK** Q4: Civ 6 removes
-  the Government Plaza on capture;
+- **goes with its city on capture**, every type including the Government Plaza
+  (Erik, 2026-10-11: "leave it like the Palace"; Civ 6 removes a captured
+  Government Plaza). The City object keeps `city.districts`; ownership already
+  moves with `City.set_owner`. The conqueror may then hold more than
+  `max_per_player` of a type, as with the Palace; the limit binds placement
+  only;
 - is deleted with its city in `remove_city`.
 
 A district earns yields (§5) and effects (§6) only when **complete**.
@@ -231,24 +233,23 @@ The cost is computed once, at placement, and stored on the `District`.
 ## 5. Yields
 
 A complete district turns its adjacency score into `adjacency_yield`, whole
-points per turn:
+points per turn. `district_yields(city)` (in `game/districts.py`) returns a
+mapping `yield name → summed score` over the city's complete districts, and is
+the only place a district's yield is computed. Loading accepts `culture`,
+`production`, `science`, `gold`, `faith` and `none`.
 
-- **culture**: `culture(city)` adds 10 × the summed score of the city's complete
-  culture districts (culture is int tenths);
-- **production**: `City.calculate_production` adds the summed score of complete
-  production districts;
-- **science, gold, faith**: no consumer exists. The score is computed and
-  reported by `district_yields(city)`, but nothing reads it until #90, #91 and
-  #93 bring those yields. Loading accepts only these five names plus `none`.
+**Nothing consumes it yet** (Erik, 2026-10-11: "just calculated what they
+produce for now … they get their own patch"). `culture(city)` and
+`City.calculate_production` are unchanged; wiring each yield into its consumer
+is a later patch per yield. `district_yields` is reported per player in
+`episode_stats` (`district_yield_<name>`, summed per turn) so the patch that
+wires it in has a measured baseline.
 
-**ERIK** Q3: whether the Theater Square's culture and the Industrial Zone's
-production go live now (as above), or whether all district yields wait until
-the milestone's yields exist. Nothing can build a district in play either way.
+**ACCEPTED GAP:** a complete Theater Square or Industrial Zone produces no
+culture or production in play.
 
-`district_yields(city)` (in `game/districts.py`) is the only place a district's
-yield is computed; `culture()` and `calculate_production` call it. The score is
-recomputed every turn from the live map, never cached, so a later district
-next door raises an old one's yield (Civ 6).
+The score is recomputed from the live map on every call, never cached, so a
+later district next door raises an old one's yield (Civ 6).
 
 ## 6. The Aqueduct
 
@@ -289,18 +290,14 @@ them; no RNG is involved.
   nothing.
 - `GameEnvironment.place_district`: the only mutator, beside `remove_city`.
 
-## 9. Questions for Erik
+## 9. Rulings (Erik, 2026-10-11)
 
-1. **Which districts.** The ten in §1 (the six with adjacency, plus Encampment,
-   Entertainment Complex, Government Plaza and Aqueduct), or fewer?
-2. **Government Plaza.** In Civ 6 it hosts government buildings and policies,
-   which we do not have. Here it would only be an adjacency source (+1 to six
-   districts) with a one-per-player limit. Keep it, or wait for a government
-   system?
-3. **Live yields.** Theater Square culture and Industrial Zone production live
-   now (§5), or all district yields wait?
-4. **Capture.** Districts go with the captured city (Civ 6). Civ 6 removes a
-   captured Government Plaza; copy that, or keep it like the Palace?
+1. **Districts:** the ten in §1.
+2. **Government Plaza:** in, as an adjacency source with a one-per-player limit;
+   no government system.
+3. **Yields:** computed only (§5); each yield is wired in by its own later patch.
+4. **Capture:** every district stays with its city, the Government Plaza
+   included, as with the Palace.
 
 ## 10. Tests (properties, each naming the change that breaks it)
 
@@ -313,7 +310,7 @@ them; no RNG is involved.
 | Aqueduct placement needs the centre next to it and a qualifying water/mountain neighbour; a river on the edge it shares with the centre does not qualify | the Aqueduct rule drifts |
 | Placing clears a removable feature and improvements and bumps the terrain epoch | placement mutates tile layers without `set_layers(map_ref=...)` |
 | A district tile is never worked; `swap_tile` refuses it | `assign_tiles` or `swap_tile` ignores districts |
-| A district earns nothing until complete; when complete, its yield follows its score live | yields read incomplete districts, or are cached |
+| `district_yields` counts only complete districts and follows the live score; `culture()` and production are unchanged by districts | yields read incomplete districts, are cached, or leak into a consumer |
 | The discount applies exactly under Civ 6's condition; the cost is locked at placement | the cost is recomputed later |
 | Aqueduct water housing: fresh 5 → 7, coastal 3 → 6, dry 2 → 6 | the formula is per case or hardcoded |
 | A config row naming a missing terrain, improvement or district raises at load | validation is skipped |
@@ -328,7 +325,7 @@ merged when green.
 | Patch | Content | Gate | Mode · tier |
 |---|---|---|---|
 | D1 | `district_model.py` + the `[districts]` tables; `terrain_model.matches` `resources` key; `game/districts.py` `adjacency_score`, `can_place_district`, cost; `District`, `Tile.district`, `City.districts` | §10 adjacency, placement, cost and load properties; full suite green | subagent · Sonnet |
-| D2 | `place_district`, production path, `produce_district`, `assign_tiles` / `swap_tile` / `remove_city` / capture handling, `district_yields` into culture and production, Aqueduct housing, CHANGELOG (v0.7.0), CLAUDE.md rows, extend `scripts/smoke_random_selfplay.py` to place districts through the engine | the remaining §10 properties; full suite green; seeded smoke run | subagent · Opus (composes territory, housing, culture, city economy, terrain epoch) |
+| D2 | `place_district`, production path, `produce_district`, `assign_tiles` / `swap_tile` / `remove_city` / capture handling, `district_yields` + its `episode_stats` counters, Aqueduct housing, CHANGELOG (v0.7.0), CLAUDE.md rows, extend `scripts/smoke_random_selfplay.py` to place districts through the engine | the remaining §10 properties; full suite green; seeded smoke run | subagent · Opus (composes territory, housing, city economy, terrain epoch) |
 
 ## Critique (lens table)
 
@@ -353,9 +350,8 @@ merged when green.
 - **Terrain epoch**: placement changes layers through `set_layers(map_ref=...)`.
 - **City economy** (`process_turn`, `assign_tiles`, `calculate_production`): the
   district production branch, the worked-tile exclusion, production yield.
-- **Culture yield** (`culture(city)`): one district term, fed by
-  `district_yields`. Amends the row: districts declare `adjacency_yield`, the
-  formula gains one term covering every district.
+- **Culture yield** (`culture(city)`): untouched in this patch (§5). The patch
+  that wires district culture in adds one term fed by `district_yields`.
 - **Housing** (`housing(city)`): the water term reads district water fields.
 - **Gameplay config** (`CFG`): every number.
 - **Game interface** (`GameEnvironment`): `place_district` lives there.
