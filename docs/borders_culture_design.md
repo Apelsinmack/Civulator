@@ -344,7 +344,7 @@ run on the merged `develop`.
 
 | Lens | Verdict | Blockers |
 |---|---|---|
-| Rules semantics and edge cases | pending | |
+| Rules semantics and edge cases | survives with fixes | (1) stale `culture_last_turn` after mid-round capture/founding → `culture_this_round`; (2) r = 0 undefined; (3) failed claim invalidates later t_k; (4) overflow tiebreak degenerate at t > 0; (5) `can_found_city_at` has no player arg, settle-layer cache and capture don't bump an ownership key; (6) founding replacements shortfall/order, and losing a tile to a new own city must re-run `assign_tiles`; (7) swap of a centre tile, and tool paths (`recording._place_city` fallback, `_clear_board`) bypass the claim/release API. Non-blocking: accrual order vs growth, centre not a worked candidate, resource adjacency counts any owner, ring property needs a claim-source notion, unbounded pool when boxed in, phase relies on dead players still cycling, phase only in `next_turn` |
 | Systems reuse and regression | pending | |
 | Determinism and single-writer | pending | |
 
