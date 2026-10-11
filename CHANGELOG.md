@@ -71,9 +71,9 @@ and the painted-scenario paths.
 - Agents do not see ownership except through the settle layer (encoder
   follow-up).
 
-**P3 — border growth.** A city's culture also fills a border pool; the n-th
+**P3 â€” border growth.** A city's culture also fills a border pool; the n-th
 tile it claims by culture costs `a + (b * (n - 1)) ** p` (`[territory.border_cost]`
-`curve = "civ6_community"`, a = 10, b = 6, p = 1.3: 10, 20.3, 35.3, 52.8, …;
+`curve = "civ6_community"`, a = 10, b = 6, p = 1.3: 10, 20.3, 35.3, 52.8, â€¦;
 evaluated in floats once per n, stored as integer tenths). Curves are a named
 registry (`BORDER_COST_CURVES`); a rebalance is a config edit or a new entry.
 The claimed tile is a neutral tile within `claim_radius = 5` and adjacent to the
@@ -89,12 +89,12 @@ production, then ties sorted canonically and shuffled with the engine RNG.
   loses nothing. Turn order therefore never decides a contested tile, and cities
   of one player compete the same way as rivals.
 
-**P4 — work radius and stats.** Cities work tiles up to `work_radius = 3`
+**P4 â€” work radius and stats.** Cities work tiles up to `work_radius = 3`
 (Civ 6), but only tiles they own; `assign_tiles` is order-independent of
 border growth within a round. Episode stats gain `tiles_owned` (live, per
 seat), `tiles_claimed_by_culture` and `culture_produced`.
 
-**P5 — border overlay.** The hex renderer draws a segment on every hex edge
+**P5 â€” border overlay.** The hex renderer draws a segment on every hex edge
 where the owning city differs between a tile and its neighbour (or one side is
 neutral), coloured by the owning player, on the owned side so contested edges
 show both colours. It follows the cylinder seam and the camera copy rules like
@@ -104,6 +104,22 @@ rivers. Wired into `scripts/watch.py` and `scripts/order_recorder.py`.
 dormant in real games (#73). Agents have no ownership channels (encoder
 follow-up), start placement is still tuned to ring-1 fertility, and tile swap
 has no agent action (#99).
+
+### A founding Settler is consumed from its tile too (#113)
+
+`SettlerUnit.found_city` removed the Settler from its player's units but left
+it in the tile's unit list. Everything that reads a tile's units saw the
+phantom:
+- the city's own production never placed a unit on its centre, because it
+  counted a friendly unit there (`City.complete_unit_production`);
+- the A* occupancy grid treated the city tile as occupied;
+- for an enemy, the move mask offered the city tile as an attack on the
+  phantom, and `_get_enemy_unit_at` returned it as the defender.
+
+Cities founded by a Settler during play were affected; capitals placed at
+reset were not. The Settler now leaves through `GameEnvironment.delete_unit`,
+like every other removed unit. This is a rule change inside the v0.7.0 epoch.
+Pre-0.7 weights trained with the phantom present.
 
 ### City combat: cities can be attacked, besieged and taken (#84)
 

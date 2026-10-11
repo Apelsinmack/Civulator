@@ -733,7 +733,8 @@ class SettlerUnit(Unit):
             return None
 
         city = game_env.create_city(self.player, self.coordinates, name)
-        self.player.remove_unit(self)
+        # Consumed: off its tile as well as out of its player's list (#113).
+        game_env.delete_unit(self)
 
         return city
 
