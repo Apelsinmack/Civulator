@@ -11,7 +11,9 @@ from ..rng import PortableRNG
 from ..terrain_model import can_enter, matches
 from .player import Player
 from .city import City
-from .districts import District, can_place_district, district_cost
+from .districts import (
+    YIELD_NAMES as DISTRICT_YIELD_NAMES, District, can_place_district, district_cost,
+)
 from ..district_model import REMOVABLE_FEATURES as DISTRICT_REMOVABLE_FEATURES
 from . import territory
 from .territory import (
@@ -224,6 +226,8 @@ class GameEnvironment:
                 "tiles_claimed_by_culture": 0,
                 "culture_produced": 0,  # int tenths of a culture point
                 "growth_slowed_turns": 0,  # city-turns, positive net, band < 100 % (#88)
+                # Summed adjacency score per yield, per city-round (#86 s5)
+                **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
             }
             for i in range(self.num_players)
         }

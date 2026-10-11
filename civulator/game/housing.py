@@ -5,6 +5,7 @@ and the live map. All values are integer tenths of a housing point. Nothing is
 cached on the city, so ownership changes need no extra rule.
 """
 
+from ..district_model import DISTRICTS
 from ..terrain_model import IMPROVEMENT_HOUSING
 from ..unit_model import (
     BUILDING_HOUSING,
@@ -25,15 +26,28 @@ def _water_housing(game_map, coordinates):
     return HOUSING_WATER_DRY
 
 
+def _district_water(city, water):
+    """Apply every complete district's declared water adjustment (design §6):
+    max(water_housing_min, water + water_housing_boost). Fields come from
+    config; no district name appears here."""
+    for district in city.districts:
+        spec = DISTRICTS[district.type]
+        if district.complete and spec.water_housing_min is not None:
+            water = max(spec.water_housing_min, water + (spec.water_housing_boost or 0))
+    return water
+
+
 def housing(city):
     """Housing a city offers, in integer tenths.
 
-    water + sum of each building's `housing` + sum, over tiles this city owns
+    water (adjusted by complete districts) + sum of each complete district's
+    flat `housing` + sum of each building's `housing` + sum, over tiles this city owns
     within `[housing] improvement_radius` (centre excluded), of the largest
     `housing` among that tile's improvements.
     """
     game_map = city.player.game_env.map
-    total = _water_housing(game_map, city.coordinates)
+    total = _district_water(city, _water_housing(game_map, city.coordinates))
+    total += sum(DISTRICTS[d.type].housing for d in city.districts if d.complete)
     total += sum(BUILDING_HOUSING.get(b, 0) for b in city.buildings)
     for pos in game_map.tiles_of_city(city.city_id):
         if pos == tuple(city.coordinates):
