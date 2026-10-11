@@ -11,7 +11,10 @@ from ..rng import PortableRNG
 from ..terrain_model import can_enter, matches
 from .player import Player
 from .city import City
-from .territory import FOUNDING_RING, NEUTRAL, WORK_RADIUS, choose_claim_tile
+from .territory import (
+    FOUNDING_RING, NEUTRAL, WORK_RADIUS, border_cost_function, choose_claim_tile,
+    run_border_phase,
+)
 from .unit import WarriorUnit, calculate_damage, movement_domain
 from ..config import CFG
 
@@ -146,6 +149,10 @@ class GameEnvironment:
         # reproduce the identical stream (issue #33).
         self.rng = PortableRNG(seed)
 
+        # Border cost curve (borders design §3.1), read from
+        # [territory.border_cost] at construction: cost(n) -> int tenths.
+        self.border_cost = border_cost_function(CFG["territory"]["border_cost"])
+
         # Initialize map and players. Construction follows the same
         # unseeded-resample policy as reset (design doc D26, see reset's
         # docstring): a pinned seed is loyal — it either works or raises
@@ -211,6 +218,7 @@ class GameEnvironment:
                 "cities_founded": 0,
                 "cities_captured": 0,
                 "civilians_captured": 0,
+                "tiles_claimed_by_culture": 0,
             }
             for i in range(self.num_players)
         }
@@ -771,6 +779,7 @@ class GameEnvironment:
         self.current_player = self.players[self.current_player_index]
 
         if self.current_player_index == 0:
+            self._border_phase()
             self.turn_counter += 1
 
         self.current_player.start_turn()
@@ -781,6 +790,22 @@ class GameEnvironment:
 
         if self.turn_counter > self.max_turns:
             self.done = True
+
+    def _border_phase(self):
+        """The round-end border phase (borders design §3.3): every existing
+        city, whoever owns it, resolves this round's culture claims in
+        crossing-time order. Runs only from `next_turn`, on the wrap to
+        player 0 and before `turn_counter += 1`, so turn order cannot decide
+        a contest. Each claim re-runs `assign_tiles` for the claiming city
+        (culture claims take only neutral tiles, so no city loses one)."""
+        cities = [self.city_by_id[city_id] for city_id in sorted(self.city_by_id)]
+        claims = run_border_phase(
+            self.map, cities, self.border_cost, self.rng,
+            on_claim=lambda city, pos: city.assign_tiles(self),
+        )
+        for city_id, _ in claims:
+            player_index = self.city_by_id[city_id].player.player_index
+            self.episode_stats[player_index]["tiles_claimed_by_culture"] += 1
 
     # --- Perception (fog of war) ---
     # The engine owns the truth about what each player can see; encoders

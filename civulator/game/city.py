@@ -60,6 +60,9 @@ class City:
         self.border_culture = 0
         self.culture_this_round = 0
         self._culture_round = None
+        # Border cost index n (borders design §3.1): culture claims made so
+        # far; founding claims don't count. Travels with the city on capture.
+        self.border_claims = 0
 
     def get_combat_strength(self, is_attacking=False, target=None):
         """Return the defensive combat strength of the city.
