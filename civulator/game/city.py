@@ -66,6 +66,9 @@ class City:
         # Border cost index n (borders design §3.1): culture claims made so
         # far; founding claims don't count. Travels with the city on capture.
         self.border_claims = 0
+        # Placed districts (issue #86), in placement order. Written only by
+        # GameEnvironment.place_district / remove_city; travel with the city.
+        self.districts = []
 
     def get_combat_strength(self, is_attacking=False, target=None):
         """Return the defensive combat strength of the city.
@@ -140,7 +143,8 @@ class City:
         (row, col). Each pop works one extra tile. Called on city founding,
         population change, and whenever the city gains or loses a tile.
 
-        Only UNWORKABLE tiles are skipped — that is impassable ones (§3).
+        Only UNWORKABLE tiles are skipped — impassable ones (§3) and
+        district tiles, placed or complete (issue #86).
         Water is workable: a coastal city works its Coast and Lake tiles even
         though no land unit can walk on them.
         """
@@ -158,7 +162,8 @@ class City:
                 if owner[pos] != self.city_id:
                     continue
                 tile = game_map.get_tile(pos)
-                if tile and not tile.impassable:
+                # A district replaces the tile's yields: never worked (#86).
+                if tile and not tile.impassable and tile.district is None:
                     food, prod = tile.yields
                     scored.append((-food, -prod, pos))
 

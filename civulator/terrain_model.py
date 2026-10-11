@@ -71,6 +71,11 @@ IMPROVEMENT_HOUSING = {
     if table.get("housing")
 }
 
+# Every configured improvement name (issue #86): the one accessor for
+# "does this improvement exist", so no other module re-reads
+# CFG["improvements"] to validate a name.
+IMPROVEMENT_NAMES = frozenset(CFG.get("improvements", {}))
+
 _LAYER_TABLES = {
     "base": BASE_TABLE,
     "relief": RELIEF_TABLE,
@@ -104,8 +109,23 @@ class ComposedProperties:
     impassable: bool
 
 
-def _match(on, base, relief, feature):
-    """True if one `on` mapping (bases/relief/features, each an OR-list) is satisfied."""
+# Sentinel for "the caller did not pass a resource" (districts design v3
+# fixes): a `resources` constraint evaluated without one raises instead of
+# silently passing. `None` stays the explicit "this tile has no resource".
+_NOT_GIVEN = object()
+
+# The keys an `on` mapping may carry. `resources` (issue #86) is accepted only
+# where the caller evaluates it with a resource -- district rules -- and is
+# rejected at load in layer and improvement tables (validate_on_table).
+ON_KEYS = frozenset({"bases", "relief", "features"})
+ON_KEYS_WITH_RESOURCES = ON_KEYS | {"resources"}
+
+# `resources = ["any"]` matches any resource (but not "no resource").
+ANY_RESOURCE = "any"
+
+
+def _match(on, base, relief, feature, resource=_NOT_GIVEN):
+    """True if one `on` mapping (bases/relief/features/resources, each an OR-list) is satisfied."""
     relief_key = relief if relief is not None else _UNSET_RELIEF
     feature_key = feature if feature is not None else _UNSET_FEATURE
 
@@ -115,26 +135,77 @@ def _match(on, base, relief, feature):
         return False
     if "features" in on and feature_key not in on["features"]:
         return False
+    if "resources" in on:
+        if resource is _NOT_GIVEN:
+            raise ValueError(
+                f"`on` mapping {on!r} constrains `resources` but no resource was passed"
+            )
+        if resource is None:
+            return False
+        if ANY_RESOURCE not in on["resources"] and resource not in on["resources"]:
+            return False
     return True
 
 
-def matches(on, base, relief=None, feature=None):
-    """Evaluate any `on` constraint against a base/relief/feature combination.
+def matches(on, base, relief=None, feature=None, resource=_NOT_GIVEN):
+    """Evaluate any `on` constraint against a base/relief/feature(/resource) combination.
 
     The single `on`-matrix evaluator (design doc D7). Terrain layers reach it
     through check_on(); non-layer consumers that carry their own `on` tables —
-    improvements, `[improvements.*]` in config.toml, per §3.1 — call this
-    directly.
+    improvements, `[improvements.*]` in config.toml, per §3.1, and district
+    rules (issue #86) — call this directly.
 
     Args:
-        on: a mapping (bases/relief/features OR-lists, AND-ed) or a list of
-            mappings (valid if ANY matches). Falsy means unconstrained.
+        on: a mapping (bases/relief/features/resources OR-lists, AND-ed) or a
+            list of mappings (valid if ANY matches). Falsy means unconstrained.
+        resource: the tile's resource name, or None for none. Must be passed
+            whenever `on` may carry a `resources` key: evaluating such a
+            mapping without it raises ValueError (no silent pass).
     """
     if not on:
         return True
     if isinstance(on, dict):
-        return _match(on, base, relief, feature)
-    return any(_match(group, base, relief, feature) for group in on)
+        return _match(on, base, relief, feature, resource)
+    return any(_match(group, base, relief, feature, resource) for group in on)
+
+
+def validate_on_table(on, where, allow_resources=False, check_names=False):
+    """Load-time check of one `on` value (a mapping or a list of mappings).
+
+    Unknown keys raise; `resources` raises unless `allow_resources`. With
+    `check_names`, every listed name must exist in its table ("none" is a
+    valid feature, "any" a valid resource). Returns `on` unchanged.
+    """
+    allowed = ON_KEYS_WITH_RESOURCES if allow_resources else ON_KEYS
+    groups = [on] if isinstance(on, dict) else on
+    if not isinstance(groups, list):
+        raise ValueError(f"{where}: `on` must be a mapping or a list of mappings, got {on!r}")
+    known = {
+        "bases": set(BASE_TABLE),
+        "relief": set(RELIEF_TABLE),
+        "features": set(FEATURE_TABLE) | {_UNSET_FEATURE},
+        "resources": set(RESOURCE_TABLE) | {ANY_RESOURCE},
+    }
+    for group in groups:
+        if not isinstance(group, dict):
+            raise ValueError(f"{where}: `on` group must be a mapping, got {group!r}")
+        unknown = set(group) - allowed
+        if unknown:
+            raise ValueError(f"{where}: unknown `on` key(s) {sorted(unknown)}")
+        for key, names in group.items():
+            if not isinstance(names, list):
+                raise ValueError(f"{where}: `on` key {key!r} must be a list, got {names!r}")
+            if check_names:
+                missing = [n for n in names if n not in known[key]]
+                if missing:
+                    raise ValueError(f"{where}: `on` {key} names unknown {missing}")
+    return on
+
+
+def resource_class(name):
+    """The `class` of a resource ("bonus", later luxury/strategic). Unknown
+    names raise KeyError. The one accessor for resource class (issue #86)."""
+    return RESOURCE_TABLE[name]["class"]
 
 
 def check_on(layer_kind, layer_name, base, relief, feature):
@@ -252,3 +323,18 @@ def compose(base, relief=None, feature=None, resource=None):
         domain=domain,
         impassable=impassable,
     )
+
+
+def _validate_config_on_tables():
+    """Load-time: every layer and improvement `on` table rejects unknown keys
+    and `resources` (issue #86, districts design v3 fixes)."""
+    for kind, table in _LAYER_TABLES.items():
+        for name, entry in table.items():
+            if "on" in entry:
+                validate_on_table(entry["on"], f"[terrain.{kind}.{name}]")
+    for name, entry in CFG.get("improvements", {}).items():
+        if "on" in entry:
+            validate_on_table(entry["on"], f"[improvements.{name}]")
+
+
+_validate_config_on_tables()
