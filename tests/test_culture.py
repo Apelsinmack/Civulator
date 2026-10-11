@@ -111,7 +111,7 @@ def test_accrual_uses_post_growth_population():
     culture accrues before the growth step."""
     env = make_flat_env()
     city = make_city(env)
-    city.food_surplus = city.get_growth_threshold() + 1000  # force growth
+    city.food_surplus = 100 * city.get_growth_threshold() + 100000  # force growth (hundredths)
     pop0 = city.population
     city.process_turn(env)
     assert city.population > pop0

@@ -2,8 +2,8 @@
 
 Both seats play uniformly random VALID actions (DQNAgent epsilon=1.0 draws from
 the real action masks), cities pick a random build option when idle. Logs, at
-round checkpoints, tiles owned per player, total population and cumulative
-culture claims, plus wall-clock. A sanity check that borders grow in real games,
+round checkpoints, tiles owned per player, total population, cumulative
+culture claims, per-player housing vs population and growth_slowed_turns, plus wall-clock. A sanity check that borders grow in real games,
 not a measurement.
 
 Usage: python scripts/smoke_random_selfplay.py [--seed 4242] [--rounds 250]
@@ -24,6 +24,7 @@ from civulator.agents import DQNAgent, ReplayMemory, get_encoder
 from civulator.agents.action_space import decode_action, end_turn_index
 from civulator.agents.build_agent import BUILD_OPTIONS
 from civulator.game.city import City
+from civulator.game.housing import housing
 from civulator.game import GameEnvironment, resolve_size_and_players
 
 STEP_LIMIT = 200_000
@@ -54,8 +55,15 @@ def main():
         pop = sum(c.population for p in env.players for c in p.cities)
         cities = [len(p.cities) for p in env.players]
         claims = sum(s["tiles_claimed_by_culture"] for s in env.episode_stats.values())
+        # Per player: total housing (whole units) vs total population, and
+        # city-turns where growth was slowed by housing (issue #88).
+        house = [sum(housing(c) for c in p.cities) // 10 for p in env.players]
+        pops = [sum(c.population for c in p.cities) for p in env.players]
+        slowed = [env.episode_stats[i]["growth_slowed_turns"] for i in range(num_players)]
         print(f"round {round_no:4d}  tiles_owned={owned}  cities={cities}  "
-              f"population={pop}  culture_claims={claims}  t={time.perf_counter() - t0:.1f}s")
+              f"population={pop}  culture_claims={claims}  housing={house}  "
+              f"pop_by_player={pops}  growth_slowed_turns={slowed}  "
+              f"t={time.perf_counter() - t0:.1f}s")
 
     t0 = time.perf_counter()
     log(0)

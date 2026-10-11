@@ -10,9 +10,11 @@ from ..unit_model import (
     CITY_RANGED_BUILDING,
     CITY_RANGED_RANGE,
     CITY_RANGED_STRENGTH,
+    growth_percent,
 )
 from . import territory
 from .culture import culture
+from .housing import housing
 from .unit import (
     Unit, WarriorUnit, SlingerUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
     HorsemanUnit, CatapultUnit, BatteringRamUnit, SiegeTowerUnit,
@@ -51,7 +53,7 @@ class City:
         self.defense_strength = CITY_DEFENSE_STRENGTH
         self.buildings = []
         self.population = 1
-        self.food_surplus = 0  # Accumulated surplus toward growth
+        self.food_surplus = 0  # Growth bucket, in hundredths of food (issue #88)
         self.production = 0
         self.current_production = {"type": "unit", "unit_type": "Warrior"}
         self.worked_tiles = []  # List of (row, col) assigned to citizens
@@ -217,20 +219,29 @@ class City:
         food_consumed = 2 * self.population
         food_net = food_produced - food_consumed
 
+        # Housing (issue #88 s2), read at the start of the food phase. The
+        # band key is housing - population in tenths.
+        percent = growth_percent(housing(self) - 10 * self.population)
+
+        # `food_surplus` is the growth bucket in HUNDREDTHS of food (exact
+        # integer arithmetic; a 1-food surplus at 25 % still accumulates).
         if food_net >= 0:
-            self.food_surplus += food_net
+            self.food_surplus += food_net * percent
+            if food_net > 0 and percent < 100:
+                game_env.episode_stats[self.player.player_index]["growth_slowed_turns"] += 1
         else:
-            # Starvation: lose accumulated surplus first
-            self.food_surplus += food_net  # food_net is negative
+            # Starvation (never scaled by housing): drain the bucket first
+            self.food_surplus += 100 * food_net  # food_net is negative
             if self.food_surplus < 0:
                 self.food_surplus = 0
                 if self.population > 1:
                     self.population -= 1
                     self.assign_tiles(game_env)
 
-        # Population growth
-        growth_threshold = self.get_growth_threshold()
-        if self.food_surplus >= growth_threshold:
+        # Population growth. The 0 % band is a hard cap: no growth even with
+        # a full bucket (the bucket is kept).
+        growth_threshold = 100 * self.get_growth_threshold()
+        if percent > 0 and self.food_surplus >= growth_threshold:
             self.food_surplus -= growth_threshold
             self.population += 1
             self.assign_tiles(game_env)

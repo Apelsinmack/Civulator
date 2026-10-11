@@ -1,5 +1,7 @@
 # Housing (#88): design
 
+> **Status: implemented** (H1 + H2, 2026-10-11).
+
 > **v2**, 2026-10-11 (v1 + two Opus critique lenses, see the lens table). Rules settled in chat between Erik and Claude; Civ 6 facts
 > from the [Civ 6 wiki Housing page](https://civilization.fandom.com/wiki/Housing_(Civ6)).
 > This doc is the contract for the implementing patches.

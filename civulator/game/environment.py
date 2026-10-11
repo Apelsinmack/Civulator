@@ -221,6 +221,7 @@ class GameEnvironment:
                 "civilians_captured": 0,
                 "tiles_claimed_by_culture": 0,
                 "culture_produced": 0,  # int tenths of a culture point
+                "growth_slowed_turns": 0,  # city-turns, positive net, band < 100 % (#88)
             }
             for i in range(self.num_players)
         }

@@ -141,6 +141,36 @@ HOUSING_WATER_COASTAL = to_tenths(_HOUSING_CFG["water_coastal"], "[housing] wate
 HOUSING_WATER_DRY = to_tenths(_HOUSING_CFG["water_dry"], "[housing] water_dry")
 HOUSING_IMPROVEMENT_RADIUS = _HOUSING_CFG["improvement_radius"]
 
+
+def parse_growth_bands(bands):
+    """[[min, percent], ...] -> tuple of (min_tenths, int percent).
+
+    Raises on a non-int percent or mins that are not strictly descending, so a
+    mis-ordered table cannot silently change which band wins (issue #88 s2)."""
+    parsed = []
+    for band in bands:
+        low, percent = band
+        if isinstance(percent, bool) or not isinstance(percent, int):
+            raise ValueError(f"[housing] growth_bands percent must be an int, got {percent!r}")
+        parsed.append((to_tenths(low, "[housing] growth_bands min"), percent))
+    for (a, _), (b, _) in zip(parsed, parsed[1:]):
+        if not a > b:
+            raise ValueError("[housing] growth_bands mins must be strictly descending")
+    return tuple(parsed)
+
+
+HOUSING_GROWTH_BANDS = parse_growth_bands(_HOUSING_CFG["growth_bands"])
+
+
+def growth_percent(margin_tenths, bands=None):
+    """Percent of a positive food surplus that counts toward growth, for a
+    housing-minus-population margin in tenths. First matching band wins; no
+    match is 0 (the hard cap)."""
+    for low, percent in (HOUSING_GROWTH_BANDS if bands is None else bands):
+        if margin_tenths >= low:
+            return percent
+    return 0
+
 _CULTURE_CFG = CFG["culture"]
 CULTURE_BASE = to_tenths(_CULTURE_CFG["base"], "[culture] base")
 CULTURE_PER_POP = to_tenths(_CULTURE_CFG["per_pop"], "[culture] per_pop")

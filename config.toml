@@ -680,6 +680,10 @@ water_fresh = 5
 water_coastal = 3
 water_dry = 2
 improvement_radius = 3
+# Growth slowdown (s2): [min, percent] of (housing - population); min is
+# inclusive and a multiple of 0.1, percent an int; first match wins, no match
+# = 0 % (hard cap). mins must be strictly descending. -4.9 encodes "> -5".
+growth_bands = [ [2.0, 100], [1.0, 50], [-4.9, 25] ]
 
 # --- Territory (issue #87, docs/borders_culture_design.md §2, §4, §5) --------
 # Tiles are owned per city (Map.owner_city). Read only by
