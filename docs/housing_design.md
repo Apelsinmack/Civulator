@@ -109,7 +109,7 @@ the growth bucket:
   keeps a helper that reports whole food.
 - **Starvation is unchanged.** A negative net drains the bucket and then drops a
   population, as today. Housing never removes population: losing housing (the
-  Palace on capture, a lost improvement tile) only slows or stops growth.
+  an improvement tile lost with a captured city) only slows or stops growth.
 - `housing − population` is evaluated with the housing **at the start of the
   food phase**, before this turn's growth.
 
@@ -124,10 +124,12 @@ the growth bucket:
   flag). At reset that is each player's capital. Under #85 (no pre-founded
   capital) it will be the first city a player founds, with no code change.
   Painted scenarios get it on each team's first placed city, the same rule.
-- **Capture:** the captured city loses the Palace (it was the old owner's
-  seat). It is not transferred and not re-granted to the old owner: Civ 6
-  needs a Palace relocation project for that, which does not exist here.
-  (Claude's call, 2026-10-11, Erik delegated the Palace decision.)
+- **Capture: the Palace stays with the city** (Erik, 2026-10-11: "I don't want
+  it to be removed upon capture. This is something new I'd like to change in my
+  civ"). This departs from Civ 6 on purpose. The building and its housing go to
+  the conqueror with the city, so a player can hold more than one Palace. The
+  old owner keeps `palace_granted = True` and gets no replacement; there is no
+  relocation project.
 - Nothing else reads "capital" for gameplay.
 
 ---
@@ -153,7 +155,7 @@ the growth bucket:
 | The growth share follows the band table; changing a band in config changes growth | a percent is hardcoded |
 | A 1-food surplus at 25 % still grows the city eventually | the bucket floors fractional food |
 | Housing never removes population; starvation still does | housing is applied to negative nets |
-| Each player's first city holds the Palace; later cities do not; a captured Palace city loses it and nobody gets a new one | the grant rule or capture hook drifts |
+| Each player's first city holds the Palace; later cities do not; a captured Palace city keeps it, and its old owner gets no new one | the grant rule drifts, or capture strips buildings |
 | The Palace cannot be produced | the production path accepts a building without a cost |
 | Same seed, same actions → identical populations and buckets | float arithmetic in growth |
 
@@ -164,7 +166,7 @@ branch, merged when green.
 
 | Patch | Content | Gate | Mode · tier |
 |---|---|---|---|
-| H1 | `housing(city)`: `[housing]` water values + radius, `housing` column on buildings and improvements, Palace building + grant in `create_city` + loss on capture | §5 housing and Palace properties; full suite green | subagent · Sonnet |
+| H1 | `housing(city)`: `[housing]` water values + radius, `housing` column on buildings and improvements, Palace building + grant in `create_city` (kept on capture) | §5 housing and Palace properties; full suite green | subagent · Sonnet |
 | H2 | Growth bands in `process_turn` with the hundredths bucket, `growth_slowed_turns` stat, CHANGELOG (v0.7.0), CLAUDE.md rows, smoke run | §5 growth properties; full suite green; seeded 250-round random-play smoke showing population vs housing | subagent · Sonnet |
 
 ## Critique (lens table)
@@ -191,8 +193,8 @@ branch, merged when green.
   second growth loop.
 - **Culture yield / Buildings** (`unit_model.py`, `to_tenths`): the `housing`
   column is parsed beside `culture`, in tenths.
-- **Territory lifecycle** (`create_city`, `_capture_city` → `set_owner`): the
-  Palace grant and loss hook in there.
+- **Territory lifecycle** (`create_city`): the Palace grant hooks in there.
+  Capture needs no hook: buildings already travel with the city.
 - **Gameplay config** (`CFG`): every number.
 
 ### (b) New systems, with draft CLAUDE.md rows
@@ -201,4 +203,4 @@ branch, merged when green.
 |---|---|---|
 | Housing | `housing(city)` (module chosen at H1) over `[housing]`, `[buildings.*] housing`, `[improvements.*] housing` | The only computation of a city's housing (integer tenths). A new housing source declares a `housing` value in its own config table; never add a term to the formula |
 | Growth bands | `[housing] growth_bands`, applied in `City.process_turn` | The only way housing affects growth; the growth bucket is in hundredths of food, never floats |
-| Palace | `[buildings.Palace]`, granted in `create_city` | Granted once per player to its first city, lost on capture, never buildable; gameplay never reads "capital", it reads the Palace |
+| Palace | `[buildings.Palace]`, granted in `create_city` | Granted once per player to its first city, kept by the city on capture, never buildable; gameplay never reads "capital", it reads the Palace |
