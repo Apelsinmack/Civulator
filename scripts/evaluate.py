@@ -312,7 +312,7 @@ def _play_game(env, agents_by_seat, build_agents_by_seat, epsilon):
     winner = determine_winner(env)
     # Snapshot the engine's per-player episode counters (kills, losses,
     # damage, cities founded/captured, civilians captured) for aggregation.
-    combat_by_seat = {seat: dict(env.episode_stats[seat]) for seat in agents_by_seat}
+    combat_by_seat = {seat: env.episode_stats_snapshot(seat) for seat in agents_by_seat}
     return winner, env.turn_counter, builds_by_seat, combat_by_seat, truncated
 
 
