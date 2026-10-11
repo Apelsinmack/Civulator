@@ -113,17 +113,48 @@ the growth bucket:
 - `housing − population` is evaluated with the housing **at the start of the
   food phase**, before this turn's growth.
 
+### v2 fixes (critic 1)
+
+- **Units.** The band key is `housing_tenths − 10·population`; band `min` values
+  go through `to_tenths`; percents are ints. A negative or zero net is handled as
+  today but in the new unit: a negative net drains `100 * food_net`
+  hundredths; `food_net == 0` takes the positive branch (adds 0).
+- **The 0 % band is a real cap.** When `housing − population` is in the 0 %
+  band, the city does not grow this turn even if the stored bucket is at or
+  above the threshold; the bucket is kept. In every other band growth checks
+  the bucket as today.
+- **One improvement per tile counts** (Claude's call: Civ 6 allows one
+  improvement per tile, our engine lets several stack). A tile contributes the
+  largest `housing` among its improvements.
+- **The city centre never counts** for improvement housing (Civ 6 clears
+  improvements from a city centre).
+- `housing(city)` reads `Map.owner_city` live every call; nothing about housing
+  is cached on `City`, so swaps, capture and border growth need no extra rule.
+- The coastal test is `tile.is_water()` on the centre's neighbours.
+- `growth_slowed_turns` counts city-turns with a positive net whose band was
+  below 100 %.
+
 ## 3. The Palace
 
 - `[buildings.Palace]` with `housing = 1` and **no** `production_cost`: it can
   never be built (it is not in `BUILD_OPTIONS`, and the production path must
   refuse a building without a cost). Civ 6's Palace also gives culture; ours
   does not, because `[culture] base = 1` already stands in for it (#87).
+- **Costs.** `BUILDING_COSTS` holds only buildings that declare
+  `production_cost`. `City.produce_building` refuses (returns False) any name
+  not in `BUILDING_COSTS`, and the silent `100` default in `get_building_cost`
+  goes. The pre-existing `test_city_walls.py` property becomes "every
+  *costed* building mirrors config" (a contract change this spec makes).
 - **Granting:** the creation function (`GameEnvironment.create_city`) gives the
   Palace to a city when its player has never held one (`player.palace_granted`
-  flag). At reset that is each player's capital. Under #85 (no pre-founded
+  flag). The flag is reset to False in every reset attempt (the player-reset
+  branch of `_reset_attempt`, unseeded retries included) and by
+  `recording._clear_board`, so the grant works in every episode. At reset that
+  is each player's capital. Under #85 (no pre-founded
   capital) it will be the first city a player founds, with no code change.
-  Painted scenarios get it on each team's first placed city, the same rule.
+  Painted scenarios get it on each team's first placed city, the same rule; the
+  scenario format does not store a Palace, it is always re-granted in file
+  order.
 - **Capture: the Palace stays with the city** (Erik, 2026-10-11: "I don't want
   it to be removed upon capture. This is something new I'd like to change in my
   civ"). This departs from Civ 6 on purpose. The building and its housing go to
@@ -157,6 +188,9 @@ the growth bucket:
 | Housing never removes population; starvation still does | housing is applied to negative nets |
 | Each player's first city holds the Palace; later cities do not; a captured Palace city keeps it, and its old owner gets no new one | the grant rule drifts, or capture strips buildings |
 | The Palace cannot be produced | the production path accepts a building without a cost |
+| A second reset (same env object) still grants every capital a Palace | `palace_granted` is not reset per attempt |
+| At the 0 % band a city with a full bucket does not grow | growth ignores the band |
+| A tile with several improvements adds only the largest housing; the centre adds none | stacking is summed, or the centre counts |
 | Same seed, same actions → identical populations and buckets | float arithmetic in growth |
 
 ## 6. Patch plan
@@ -173,7 +207,7 @@ branch, merged when green.
 
 | Lens | Verdict | Blockers |
 |---|---|---|
-| Rules semantics and edge cases | pending | |
+| Rules semantics and edge cases | survives with fixes | (1) `BUILDING_COSTS` comprehension (unit_model.py:101) KeyErrors on a cost-less Palace; `test_city_walls.py:85` pins "every building has a cost"; (2) `produce_building` accepts any name and `get_building_cost` defaults to 100, so a Palace could be built; (3) `palace_granted` on reused `Player` objects is not reset between episodes / retry attempts; (4) starvation units in the hundredths bucket unspecified; (5) the 0 % band does not cap growth from an already-full bucket. Non-blocking: band key units, int percents, stacked improvements per tile, improvements on the centre, ownership read live, `_clear_board` and the grant flag, scenario format has no Palace, `growth_slowed_turns` with non-positive net, water test via `tile.is_water()` |
 | Systems reuse, regression and determinism | pending | |
 
 ---
