@@ -53,6 +53,7 @@ the `features = ["none", ...]` convention shown in the Wheat example above).
 from dataclasses import dataclass
 
 from .config import CFG
+from .unit_model import to_tenths
 
 _TERRAIN_CFG = CFG.get("terrain", {})
 
@@ -60,6 +61,15 @@ BASE_TABLE = _TERRAIN_CFG.get("base", {})
 RELIEF_TABLE = _TERRAIN_CFG.get("relief", {})
 FEATURE_TABLE = _TERRAIN_CFG.get("feature", {})
 RESOURCE_TABLE = _TERRAIN_CFG.get("resource", {})
+
+# Improvement housing (issue #88): optional `housing` column of each
+# [improvements.*] table, in int tenths. This module is the one interpreter of
+# tile gameplay numbers; civulator/game/housing.py reads this table.
+IMPROVEMENT_HOUSING = {
+    name: to_tenths(table["housing"], f"[improvements.{name}] housing")
+    for name, table in CFG.get("improvements", {}).items()
+    if table.get("housing")
+}
 
 _LAYER_TABLES = {
     "base": BASE_TABLE,

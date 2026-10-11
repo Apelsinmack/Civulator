@@ -83,6 +83,8 @@ def test_building_costs_come_from_config():
     from civulator.config import CFG
 
     for name, table in CFG["buildings"].items():
+        if "production_cost" not in table:
+            continue  # granted-only buildings (Palace, #88) have no cost
         assert City.BUILDING_COSTS[name] == table["production_cost"]
     assert City.BUILDING_COSTS is unit_model.BUILDING_COSTS, (
         "city.py must alias the interpreter's table, not keep a second copy"

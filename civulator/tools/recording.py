@@ -215,6 +215,7 @@ def _clear_board(env):
             env.remove_city(city)  # releases its tiles (borders design §2.1)
         player.cities = []
         player.units = []
+        player.palace_granted = False
 
 
 def _place_unit(env, entry):
