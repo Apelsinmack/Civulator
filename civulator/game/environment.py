@@ -219,9 +219,20 @@ class GameEnvironment:
                 "cities_captured": 0,
                 "civilians_captured": 0,
                 "tiles_claimed_by_culture": 0,
+                "culture_produced": 0,  # int tenths of a culture point
             }
             for i in range(self.num_players)
         }
+
+    def episode_stats_snapshot(self, player_index):
+        """Copy of one player's episode counters plus the live
+        `tiles_owned` (a count read from the ownership grid, not an
+        accumulating counter — so it is only meaningful when read, e.g. at
+        episode end; a sum over games is the total of end-of-game holdings).
+        """
+        stats = dict(self.episode_stats[player_index])
+        stats["tiles_owned"] = self.map.owned_tile_count(player_index)
+        return stats
 
     def reset(self, num_players=None, seed=None):
         """Reset the game for a new episode.

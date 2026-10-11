@@ -11,6 +11,7 @@ from ..unit_model import (
     CITY_RANGED_RANGE,
     CITY_RANGED_STRENGTH,
 )
+from . import territory
 from .culture import culture
 from .unit import (
     Unit, WarriorUnit, SlingerUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
@@ -116,43 +117,49 @@ class City:
         return True
 
     def assign_tiles(self, game_env):
-        """Assign citizens to the best adjacent tiles this city owns.
+        """Assign citizens to the best tiles this city owns within work radius.
 
-        Priority: sort by food descending, then production descending.
-        City center is always worked (free). Each pop works one extra tile.
-        Called on city founding, population change, and whenever the city
-        gains or loses a tile (borders design §4).
+        Candidates (borders design §4): tiles whose `Map.owner_city` is this
+        city, at hex distance 1..`[territory] work_radius` from the centre
+        (rings from the canonical `Map.get_ring_coords`), and workable. The
+        centre is worked free and is never a candidate. A city therefore never
+        works a neutral or enemy tile, nor an owned tile beyond the radius;
+        both would break by reading ring 1 only or by dropping the ownership
+        test.
 
-        Only tiles owned by this city (`Map.owner_city`) are candidates;
-        radius is still ring 1 (P4 widens it to `[territory] work_radius`).
+        Priority: food descending, then production descending. Ties between
+        equal-yield tiles are deterministic and independent of set/dict
+        iteration: candidates are enumerated nearest ring first, each ring in
+        (row, col) order (`hexmath.hex_rings`), and a stable sort keeps that
+        order among equals — nearer tiles are worked first, then lower
+        (row, col). Each pop works one extra tile. Called on city founding,
+        population change, and whenever the city gains or loses a tile.
+
         Only UNWORKABLE tiles are skipped — that is impassable ones (§3).
         Water is workable: a coastal city works its Coast and Lake tiles even
         though no land unit can walk on them.
         """
-        adj_coords = game_env.map.get_adjacent_coords(self.coordinates)
-        owner = game_env.map.owner_city
-
-        # Score each adjacent tile: (food, production, coords)
-        tile_scores = []
-        for pos in adj_coords:
-            if self.city_id is None or owner[pos] != self.city_id:
-                continue
-            tile = game_env.map.get_tile(pos)
-            if tile and not tile.impassable:
-                food, prod = tile.yields
-                tile_scores.append((food, prod, pos))
-
-        # Sort: food desc, then production desc
-        tile_scores.sort(key=lambda x: (x[0], x[1]), reverse=True)
-
-        # Assign: population workers (city center is free, doesn't consume a pop)
-        workers = self.population
         self.worked_tiles = []
-        for food, prod, pos in tile_scores:
-            if workers <= 0:
-                break
-            self.worked_tiles.append(pos)
-            workers -= 1
+        if self.city_id is None or self.population <= 0:
+            return
+        game_map = game_env.map
+        owner = game_map.owner_city
+        # Read through the module so the radius is the live config value.
+        rings = game_map.get_ring_coords(self.coordinates, territory.WORK_RADIUS)
+
+        scored = []  # (-food, -production, pos) in canonical enumeration order
+        for ring in rings[1:]:
+            for pos in ring:
+                if owner[pos] != self.city_id:
+                    continue
+                tile = game_map.get_tile(pos)
+                if tile and not tile.impassable:
+                    food, prod = tile.yields
+                    scored.append((-food, -prod, pos))
+
+        # Stable sort on (food, production) only: ties keep ring/(row, col) order.
+        scored.sort(key=lambda entry: (entry[0], entry[1]))
+        self.worked_tiles = [pos for _, _, pos in scored[:self.population]]
 
     def calculate_food(self, game_env):
         """Calculate total food from city center + worked tiles."""
@@ -262,6 +269,7 @@ class City:
         self.border_culture += yield_tenths
         self.culture_this_round += yield_tenths
         self.player.culture += yield_tenths
+        game_env.episode_stats[self.player.player_index]["culture_produced"] += yield_tenths
 
     def get_unit_cost(self, unit_type):
         """Get the production cost for a unit type."""
