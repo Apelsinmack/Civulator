@@ -11,8 +11,9 @@ from ..rng import PortableRNG
 from ..terrain_model import can_enter, matches
 from .player import Player
 from .city import City
+from . import territory
 from .territory import (
-    FOUNDING_RING, NEUTRAL, WORK_RADIUS, border_cost_function, choose_claim_tile,
+    FOUNDING_RING, NEUTRAL, border_cost_function, choose_claim_tile,
     run_border_phase,
 )
 from .unit import WarriorUnit, calculate_damage, movement_domain
@@ -1048,7 +1049,7 @@ class GameEnvironment:
         from_city = self.city_by_id[owner_id]
         if from_city.player is not to_city.player:
             return False
-        if self.map.distance_function(coords, to_city.coordinates) > WORK_RADIUS:
+        if self.map.distance_function(coords, to_city.coordinates) > territory.WORK_RADIUS:
             return False
         if coords == from_city.coordinates or coords in self.map.get_adjacent_coords(from_city.coordinates):
             return False
