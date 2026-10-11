@@ -1,6 +1,6 @@
 # Housing (#88): design
 
-> v1, 2026-10-11. Rules settled in chat between Erik and Claude; Civ 6 facts
+> **v2**, 2026-10-11 (v1 + two Opus critique lenses, see the lens table). Rules settled in chat between Erik and Claude; Civ 6 facts
 > from the [Civ 6 wiki Housing page](https://civilization.fandom.com/wiki/Housing_(Civ6)).
 > This doc is the contract for the implementing patches.
 
@@ -61,15 +61,16 @@ housing(city) = water(city)
   (optional, default 0): Farm, Pasture, Plantation, Camp and Fishing Boats get
   `housing = 0.5` (Civ 6). They count only on tiles **owned by this city**
   (Erik, 2026-10-11: "owned only") within `improvement_radius` (3, Civ 6's
-  "within 3 tiles"). The column is parsed by the module that already
-  interprets `[improvements.*]` (today `GameEnvironment` reads
-  `CFG["improvements"]` directly; the implementer puts the parse next to the
-  existing reader, one interpreter).
+  "within 3 tiles"). The column is parsed into `IMPROVEMENT_HOUSING` (tenths)
+  by `civulator/terrain_model.py`, the only interpreter of tile gameplay
+  numbers and already the reader of `[improvements.*]` placement (v2, critic 2).
+  Owned tiles come from `Map.tiles_of_city(city_id)`, the radius from
+  `Map.distance_function`; no new ring scan.
 - **Integer tenths**, as for culture: every housing value is converted once at
   load with `unit_model.to_tenths` (raises on non-multiples of 0.1), so
   `housing(city)` is an int in tenths and all comparisons are exact.
-- `housing(city)` lives in one function and is the only place housing is
-  computed. It is a pure query of current state (no cache needed; it is called
+- `housing(city)` lives in `civulator/game/housing.py` (mirroring
+  `game/culture.py`) and is the only place housing is computed. It is a pure query of current state (no cache needed; it is called
   once per city per turn).
 
 **ACCEPTED GAP:** no unit can build improvements in play, so improvement
@@ -99,7 +100,8 @@ the growth bucket:
   improvement_radius = 3
   growth_bands = [ [2.0, 100], [1.0, 50], [-4.9, 25] ]   # min (inclusive), percent
   ```
-  `-4.9` encodes "> −5" for values in tenths.
+  `-4.9` encodes "> −5" for values in tenths. At load, percents must be ints
+  and band `min`s strictly descending, or loading raises.
 - **Exact arithmetic.** The growth bucket (`city.food_surplus`) changes units to
   hundredths of food: `food_surplus += food_net * percent` for a positive net,
   and growth happens when `food_surplus >= 100 * threshold`. No float, no
@@ -200,15 +202,19 @@ branch, merged when green.
 
 | Patch | Content | Gate | Mode · tier |
 |---|---|---|---|
-| H1 | `housing(city)`: `[housing]` water values + radius, `housing` column on buildings and improvements, Palace building + grant in `create_city` (kept on capture) | §5 housing and Palace properties; full suite green | subagent · Sonnet |
-| H2 | Growth bands in `process_turn` with the hundredths bucket, `growth_slowed_turns` stat, CHANGELOG (v0.7.0), CLAUDE.md rows, smoke run | §5 growth properties; full suite green; seeded 250-round random-play smoke showing population vs housing | subagent · Sonnet |
+| H1 | `game/housing.py` `housing(city)`: `[housing]` water values + radius, `housing` column on buildings (`unit_model.BUILDING_HOUSING`) and improvements (`terrain_model.IMPROVEMENT_HOUSING`), Palace building + grant in `create_city` (kept on capture), `palace_granted` (default in `Player.__init__`, reset per attempt and in `_clear_board`), the §3 cost changes (filtered `BUILDING_COSTS`, `produce_building` refusal, no default 100, `test_city_walls.py` contract) | §5 housing and Palace properties; full suite green | subagent · Sonnet |
+| H2 | Growth bands in `process_turn` with the hundredths bucket (and `tests/test_culture.py:114`, the one outside reader), the 0 % cap, load checks, `growth_slowed_turns` stat, CHANGELOG (v0.7.0), CLAUDE.md rows, smoke run by extending `scripts/smoke_random_selfplay.py` | §5 growth properties; full suite green; seeded 250-round random-play smoke showing population vs housing | subagent · Sonnet |
 
 ## Critique (lens table)
 
 | Lens | Verdict | Blockers |
 |---|---|---|
 | Rules semantics and edge cases | survives with fixes | (1) `BUILDING_COSTS` comprehension (unit_model.py:101) KeyErrors on a cost-less Palace; `test_city_walls.py:85` pins "every building has a cost"; (2) `produce_building` accepts any name and `get_building_cost` defaults to 100, so a Palace could be built; (3) `palace_granted` on reused `Player` objects is not reset between episodes / retry attempts; (4) starvation units in the hundredths bucket unspecified; (5) the 0 % band does not cap growth from an already-full bucket. Non-blocking: band key units, int percents, stacked improvements per tile, improvements on the centre, ownership read live, `_clear_board` and the grant flag, scenario format has no Palace, `growth_slowed_turns` with non-positive net, water test via `tile.is_water()` |
-| Systems reuse, regression and determinism | pending | |
+| Systems reuse, regression and determinism | survives with fixes | (1) improvement-housing parse placed in environment.py breaks the Terrain-model rule and creates an import cycle → `terrain_model.IMPROVEMENT_HOUSING`. Non-blocking: H1 must carry the cost changes; `test_culture.py:114` breaks in H2 (bucket units); reject float percents and unordered bands at load; reuse `tiles_of_city`/`distance_function`, `game/housing.py`; Growth bands is an amendment to City economy, Buildings row must be amended; Combat-training tools missing from Systems (a); `palace_granted` default in `Player.__init__`; extend `scripts/smoke_random_selfplay.py` |
+
+**Synthesis (v2).** Both lenses: survives with fixes. All blockers resolved in
+the text above (§1 parse location and module, §2 units/cap/load checks, §3
+costs and the grant flag reset). No further round: v2 is the build contract.
 
 ---
 
@@ -220,14 +226,21 @@ branch, merged when green.
   housing reads it.
 - **Hex math** (`hexmath` adjacency, distance): the coastal check and the
   improvement radius.
-- **Terrain model**: `tile.domain` for water; no terrain names.
+- **Terrain model**: `tile.is_water()` for the coastal test, and the
+  interpreter of `[improvements.*] housing` (`IMPROVEMENT_HOUSING`); no terrain
+  names.
 - **Territory** (`Map.owner_city`, #87): improvement housing counts owned tiles
   only.
 - **City economy** (`City.process_turn`): the growth slowdown lives there; no
   second growth loop.
-- **Culture yield / Buildings** (`unit_model.py`, `to_tenths`): the `housing`
-  column is parsed beside `culture`, in tenths.
-- **Territory lifecycle** (`create_city`): the Palace grant hooks in there.
+- **Buildings** (`unit_model.py`, `to_tenths`): `BUILDING_HOUSING` beside
+  `BUILDING_CULTURE`; `production_cost` becomes optional (absent = never
+  buildable). Amend the row.
+- **Culture yield** (`game/culture.py`): the pattern `housing.py` mirrors.
+- **Combat-training tools** (`recording._place_city` / `_clear_board`): the
+  Palace is re-granted through `create_city`; `_clear_board` resets the flag.
+- **Territory** (`create_city`, `Map.tiles_of_city`): the Palace grant hooks
+  into `create_city`; owned tiles for improvement housing.
   Capture needs no hook: buildings already travel with the city.
 - **Gameplay config** (`CFG`): every number.
 
@@ -235,6 +248,6 @@ branch, merged when green.
 
 | System | Where | Draft rule |
 |---|---|---|
-| Housing | `housing(city)` (module chosen at H1) over `[housing]`, `[buildings.*] housing`, `[improvements.*] housing` | The only computation of a city's housing (integer tenths). A new housing source declares a `housing` value in its own config table; never add a term to the formula |
-| Growth bands | `[housing] growth_bands`, applied in `City.process_turn` | The only way housing affects growth; the growth bucket is in hundredths of food, never floats |
+| Housing | `housing(city)` (`game/housing.py`) over `[housing]`, `[buildings.*] housing`, `[improvements.*] housing` | The only computation of a city's housing (integer tenths). A new housing source declares a `housing` value in its own config table; never add a term to the formula |
+| City economy (amend) | `City.process_turn` | Add: growth is scaled by `[housing] growth_bands`; the growth bucket is in hundredths of food, never floats; the 0 % band blocks growth |
 | Palace | `[buildings.Palace]`, granted in `create_city` | Granted once per player to its first city, kept by the city on capture, never buildable; gameplay never reads "capital", it reads the Palace |
