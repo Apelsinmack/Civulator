@@ -1,6 +1,6 @@
 # Districts (#86): design
 
-> **Status: v3, 2026-10-11 — the build contract.** Rulings agreed with Erik (§9); two Opus critique lenses resolved in "v3 fixes". Erik's rulings so far (chat,
+> **Status: implemented** (D1 + D2, 2026-10-11). **v3** is the build contract. Rulings agreed with Erik (§9); two Opus critique lenses resolved in "v3 fixes". Erik's rulings so far (chat,
 > 2026-10-11): follow Civ 6 for adjacency and copy its values; no tuning before
 > the milestone plays; no agent action yet (the action space waits until all
 > game changes of milestone D are done, #99); what is done *inside* a district
