@@ -499,6 +499,12 @@ def draw_river_edges(map_obj, size, wrap_w, color=RIVER_COLOR, thickness=3.0,
 # =====================================================================
 
 BORDER_THICKNESS = 3.0
+# Borders are dashed with a dark outline (#115): rivers are solid blue lines,
+# and a solid blue player border was indistinguishable from them.
+BORDER_DASHES = 2            # dashes per hex edge
+BORDER_DASH_FILL = 0.55      # fraction of each dash period that is drawn
+BORDER_OUTLINE = rl.Color(20, 20, 24, 255)
+BORDER_OUTLINE_EXTRA = 2.0   # outline is this many px thicker than the dash
 BORDER_INSET = 2.0  # px toward the owned tile, so both sides of a contested edge show
 
 
@@ -543,6 +549,20 @@ def border_segment_endpoints(owned, other, size, wrap_w, inset=BORDER_INSET):
     return (x1 + ox, y1 + oy), (x2 + ox, y2 + oy)
 
 
+def dash_segments(p1, p2, dashes=BORDER_DASHES, fill=BORDER_DASH_FILL):
+    """Split the segment p1->p2 into `dashes` equal periods and return the
+    drawn part of each, centred in its period, as [((x1, y1), (x2, y2))].
+
+    Pure geometry, so the dash pattern is testable without a window.
+    """
+    (x1, y1), (x2, y2) = p1, p2
+    dx, dy = (x2 - x1) / dashes, (y2 - y1) / dashes
+    gap = (1.0 - fill) / 2.0
+    return [((x1 + dx * (i + gap), y1 + dy * (i + gap)),
+             (x1 + dx * (i + 1 - gap), y1 + dy * (i + 1 - gap)))
+            for i in range(dashes)]
+
+
 _border_cache = {}  # edge list memo, keyed (map_uid, territory_epoch, wrap_w)
 
 
@@ -571,9 +591,14 @@ def draw_border_edges(map_obj, city_player, colors, size, wrap_w,
         else:
             shifts = [cx - x1 for cx in
                       wrap_copies_x(x1, camera_x, size, wrap_w, view_half_width)]
+        dashes = dash_segments((x1, y1), (x2, y2))
         for shift in shifts:
-            rl.draw_line_ex(rl.Vector2(x1 + shift, y1),
-                            rl.Vector2(x2 + shift, y2), thickness, color)
+            for (a, b), (c, d) in dashes:
+                rl.draw_line_ex(rl.Vector2(a + shift, b), rl.Vector2(c + shift, d),
+                                thickness + BORDER_OUTLINE_EXTRA, BORDER_OUTLINE)
+            for (a, b), (c, d) in dashes:
+                rl.draw_line_ex(rl.Vector2(a + shift, b), rl.Vector2(c + shift, d),
+                                thickness, color)
 
 
 def load_sprites(sprite_files, art_dir):

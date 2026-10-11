@@ -24,6 +24,7 @@ from civulator.rng import PortableRNG
 from civulator.viz.hex_render import (
     border_edges,
     border_segment_endpoints,
+    dash_segments,
     hex_to_pixel,
     pixel_to_hex,
     river_edge_endpoints,
@@ -393,3 +394,29 @@ def test_border_segment_lies_on_owned_side_near_shared_edge():
         cx = wrapped_draw_x(cx, mid_edge[0], _SIZE, m)
         assert math.dist(mid_seg, mid_edge) == pytest.approx(2.0)
         assert math.dist(mid_seg, (cx, cy)) < math.dist(mid_edge, (cx, cy))
+
+
+def test_border_dashes_lie_on_the_edge_and_leave_gaps():
+    """Property: the dashes of a border segment are collinear with it, stay
+    inside it, are ordered from p1 to p2, and leave a gap between consecutive
+    dashes (#115: dashed so borders read differently from solid rivers).
+    Breaks if the dashes stray off the edge or merge into a solid line."""
+    p1, p2 = (3.0, -2.0), (13.0, 8.0)
+    dashes = dash_segments(p1, p2, dashes=3, fill=0.6)
+    length = math.dist(p1, p2)
+
+    def along(pt):  # position along p1->p2 as a fraction, plus off-line distance
+        t = ((pt[0] - p1[0]) * (p2[0] - p1[0]) + (pt[1] - p1[1]) * (p2[1] - p1[1])) / length**2
+        foot = (p1[0] + t * (p2[0] - p1[0]), p1[1] + t * (p2[1] - p1[1]))
+        return t, math.dist(pt, foot)
+
+    prev_end = 0.0
+    for a, b in dashes:
+        ta, da = along(a)
+        tb, db = along(b)
+        assert da < 1e-9 and db < 1e-9
+        assert 0.0 <= ta < tb <= 1.0
+        assert ta > prev_end  # a real gap before every dash
+        prev_end = tb
+    assert prev_end < 1.0
+
