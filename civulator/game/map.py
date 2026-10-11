@@ -193,6 +193,10 @@ class Map:
         self.territory_epoch = 0
         # Live owned-tile count per player index, kept by the mutation API.
         self._owned_tile_counts = {}
+        # Bumped by every GameEnvironment.place_district and by remove_city
+        # when it clears districts (issue #86). Any cache of district-derived
+        # state keys on it.
+        self.district_epoch = 0
 
     # --- Territory: the ownership grid's only writers (borders design §2) ---
 

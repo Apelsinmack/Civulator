@@ -658,7 +658,7 @@ class SettleSiteStateEncoder(FullStateEncoder):
         ))
         game_map = game_env.map
         key = (game_map.map_uid, game_map.terrain_epoch, game_map.territory_epoch,
-               player_index, all_cities)
+               game_map.district_epoch, player_index, all_cities)
         cached = self._settle_cache.get(player_index)
         if cached is not None and cached[0] == key:
             return cached[1]

@@ -24,6 +24,9 @@ class Tile:
         self.improvements = []
         self.units = []
         self.city = None
+        # The District on this tile, or None (issue #86). Written only by
+        # GameEnvironment.place_district / remove_city.
+        self.district = None
 
         self.set_layers(base_terrain, relief=relief, feature=feature, resource=resource)
 

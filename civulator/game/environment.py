@@ -11,6 +11,8 @@ from ..rng import PortableRNG
 from ..terrain_model import can_enter, matches
 from .player import Player
 from .city import City
+from .districts import District, can_place_district, district_cost
+from ..district_model import REMOVABLE_FEATURES as DISTRICT_REMOVABLE_FEATURES
 from . import territory
 from .territory import (
     FOUNDING_RING, NEUTRAL, border_cost_function, choose_claim_tile,
@@ -930,9 +932,9 @@ class GameEnvironment:
         """Settleable (§3) for `player`: land domain, not impassable, free of
         a city, spaced out, and not owned by another player (borders design
         §2.2). Founding on a tile `player` already owns is allowed; the tile
-        moves to the new city."""
+        moves to the new city. A district tile is never settleable (#86)."""
         tile = self.map.get_tile(coordinates)
-        if not tile or tile.city:
+        if not tile or tile.city or tile.district is not None:
             return False
         if tile.domain != "land" or tile.impassable:
             return False
@@ -969,6 +971,8 @@ class GameEnvironment:
             raise ValueError(f"create_city: {coordinates} is off the map")
         if tile.city is not None:
             raise ValueError(f"create_city: a city already stands on {tile.coordinates}")
+        if tile.district is not None:
+            raise ValueError(f"create_city: a district stands on {tile.coordinates}")
 
         city = City(player, tile.coordinates, name)
         city.city_id = self._next_city_id
@@ -1025,7 +1029,15 @@ class GameEnvironment:
 
     def remove_city(self, city):
         """The ONLY way a city ceases to exist without being captured
-        (borders design §2.3): its tiles become neutral."""
+        (borders design §2.3): its tiles become neutral and its districts
+        are deleted with it (issue #86)."""
+        if city.districts:
+            for district in city.districts:
+                tile = self.map.get_tile(district.coordinates)
+                if tile is not None and tile.district is district:
+                    tile.district = None
+            city.districts = []
+            self.map.district_epoch += 1
         for pos in self.map.tiles_of_city(city.city_id):
             self.map.release(pos, city)
         tile = self.map.get_tile(city.coordinates)
@@ -1041,11 +1053,14 @@ class GameEnvironment:
         design §5). Valid only if the tile is owned by another city of
         `to_city`'s player, lies within `to_city`'s `[territory]
         work_radius`, and is neither its current owner's centre nor adjacent
-        to it. Free and instant; both cities re-run `assign_tiles`.
-        Returns True if the swap happened.
+        to it, and holds no district (issue #86: a district tile always
+        belongs to its district's city). Free and instant; both cities re-run
+        `assign_tiles`. Returns True if the swap happened.
         """
         tile = self.map.get_tile(coordinates)
         if tile is None or self.city_by_id.get(to_city.city_id) is not to_city:
+            return False
+        if tile.district is not None:
             return False
         coords = tile.coordinates
         owner_id = self.map.owner_id_at(coords)
@@ -1063,11 +1078,51 @@ class GameEnvironment:
         to_city.assign_tiles(self)
         return True
 
+    # --- Districts (issue #86, docs/districts_design.md §3) ---
+
+    def place_district(self, city, district_type, coordinates):
+        """Place a district (Civ 6's first step). The only writer of
+        `Tile.district` / `City.districts` besides `remove_city`.
+
+        Checks `can_place_district`, then creates the District with its cost
+        locked, links it from the tile and the city, clears the tile's
+        improvements and (in one `set_layers` call, only when there is
+        something to clear) a removable feature and its bonus resource, bumps
+        `Map.district_epoch`, re-runs `assign_tiles` and points the city's
+        production at it. Returns True if placed.
+        """
+        if self.city_by_id.get(city.city_id) is not city:
+            return False
+        if not can_place_district(city, district_type, coordinates):
+            return False
+        tile = self.map.get_tile(coordinates)
+        district = District(
+            type=district_type,
+            city_id=city.city_id,
+            coordinates=tile.coordinates,
+            complete=False,
+            cost=district_cost(city.player, district_type),
+        )
+        tile.district = district
+        city.districts.append(district)
+
+        tile.improvements.clear()
+        feature = None if tile.feature in DISTRICT_REMOVABLE_FEATURES else tile.feature
+        if feature != tile.feature or tile.resource is not None:
+            tile.set_layers(tile.base_terrain, relief=tile.relief, feature=feature,
+                            resource=None, map_ref=self.map)
+        self.map.district_epoch += 1
+        city.assign_tiles(self)
+        city.current_production = {"type": "district", "district_type": district_type}
+        return True
+
     # --- Improvements ---
 
     def can_build_improvement_at(self, coordinates, improvement_type):
         tile = self.map.get_tile(coordinates)
         if not tile or tile.city or improvement_type in tile.improvements:
+            return False
+        if tile.district is not None:  # issue #86
             return False
 
         entry = IMPROVEMENTS.get(improvement_type)

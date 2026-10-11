@@ -736,6 +736,146 @@ production_cost = 240
 [buildings.Palace]
 housing = 1
 
+# --- Districts (issue #86, docs/districts_design.md) ------------------------
+# Civ 6 Gathering Storm values. Read only by civulator/district_model.py.
+# Scalars first; every sub-table is one district (names with spaces quoted;
+# "City Center" and "any" are reserved). Per district:
+#   production_cost      base cost (positive int)
+#   cost_model           "discounted" | "progress" | "fixed" (design §4)
+#   discount_percent     int, for "discounted"
+#   counts_toward_limit  takes a population slot (default true)
+#   max_per_city         default 1;  max_per_player: absent = unlimited
+#   adjacency_yield      what the adjacency score becomes (§5): culture,
+#                        production, science, gold, faith or none (default)
+#   adjacency            rows { amount, per (default 1), <one source> } (§1.2);
+#                        each row floored separately: floor(count/per)*amount
+#   on                   terrain mapping for the district's own tile; absent = land
+#   adjacent_to_city_center   true = required, false = forbidden, absent = either
+#   requires_adjacent    sources of which at least one must hold (§2)
+# Sources: terrain = {bases/relief/features/resources} (terrain_model `on`
+# form), improvement = [...], district = [...] | "any" ("City Center" names a
+# city centre; "any" = any district or centre), river_on_tile = true
+# (adjacency only), river_edge_not_shared_with_center = true (requires_adjacent only).
+[districts]
+population_per_district = 3   # specialty districts allowed = 1 + floor((pop - 1) / 3)
+cost_progress_factor = 9      # cost = base * (1 + 9 * P); P = 0 until tech exists (§4.3)
+removable_features = ["Woods", "Rainforest", "Marsh"]   # cleared on placement
+allowed_features = ["Floodplains"]                      # kept on placement
+
+[districts.Campus]
+production_cost = 54
+cost_model = "discounted"
+discount_percent = 40
+adjacency_yield = "science"
+adjacency = [
+    { amount = 1, terrain = { relief = ["mountain"] } },
+    { amount = 1, per = 2, terrain = { features = ["Rainforest"] } },
+    { amount = 2, terrain = { features = ["Reef"] } },
+    { amount = 1, per = 2, district = "any" },
+    { amount = 1, district = ["Government Plaza"] },
+]
+
+[districts."Commercial Hub"]
+production_cost = 54
+cost_model = "discounted"
+discount_percent = 40
+adjacency_yield = "gold"
+adjacency = [
+    { amount = 2, river_on_tile = true },
+    { amount = 2, district = ["Harbor"] },
+    { amount = 1, per = 2, district = "any" },
+    { amount = 1, district = ["Government Plaza"] },
+]
+
+[districts."Theater Square"]
+production_cost = 54
+cost_model = "discounted"
+discount_percent = 40
+adjacency_yield = "culture"
+adjacency = [
+    { amount = 2, district = ["Entertainment Complex"] },
+    { amount = 1, per = 2, district = "any" },
+    { amount = 1, district = ["Government Plaza"] },
+]
+
+[districts."Holy Site"]
+production_cost = 54
+cost_model = "discounted"
+discount_percent = 40
+adjacency_yield = "faith"
+adjacency = [
+    { amount = 1, terrain = { relief = ["mountain"] } },
+    { amount = 1, per = 2, terrain = { features = ["Woods"] } },
+    { amount = 1, per = 2, district = "any" },
+    { amount = 1, district = ["Government Plaza"] },
+]
+
+[districts."Industrial Zone"]
+production_cost = 54
+cost_model = "discounted"
+discount_percent = 40
+adjacency_yield = "production"
+adjacency = [
+    { amount = 2, district = ["Aqueduct"] },
+    { amount = 1, improvement = ["Quarry"] },
+    { amount = 1, per = 2, improvement = ["Mine"] },
+    { amount = 1, per = 2, district = "any" },
+    { amount = 1, district = ["Government Plaza"] },
+]
+
+# Harbor: on Coast or Lake, adjacent to land (a mountain's base is land).
+# "Not on Reef" needs no rule here: Reef is in neither removable_features nor
+# allowed_features, so the general feature rule refuses it.
+[districts.Harbor]
+production_cost = 54
+cost_model = "discounted"
+discount_percent = 40
+adjacency_yield = "gold"
+on = { bases = ["Coast", "Lake"] }
+requires_adjacent = [
+    { terrain = { bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] } },
+]
+adjacency = [
+    { amount = 2, district = ["City Center"] },
+    { amount = 1, terrain = { bases = ["Coast", "Lake", "Ocean"], resources = ["any"] } },
+    { amount = 1, per = 2, district = "any" },
+    { amount = 1, district = ["Government Plaza"] },
+]
+
+[districts.Encampment]
+production_cost = 54
+cost_model = "discounted"
+discount_percent = 40
+adjacent_to_city_center = false
+
+[districts."Entertainment Complex"]
+production_cost = 54
+cost_model = "discounted"
+discount_percent = 40
+
+[districts."Government Plaza"]
+production_cost = 30
+cost_model = "discounted"
+discount_percent = 25
+max_per_player = 1
+
+# Aqueduct: next to the centre and to a river (on an edge not shared with the
+# centre), a lake, an oasis or a mountain. Water housing (§6, applied in D2):
+# water = max(water_housing_min, water + water_housing_boost).
+[districts.Aqueduct]
+production_cost = 36
+cost_model = "progress"
+counts_toward_limit = false
+adjacent_to_city_center = true
+requires_adjacent = [
+    { river_edge_not_shared_with_center = true },
+    { terrain = { bases = ["Lake"] } },
+    { terrain = { features = ["Oasis"] } },
+    { terrain = { relief = ["mountain"] } },
+]
+water_housing_min = 6
+water_housing_boost = 2
+
 [training]
 episodes = 64
 batch_size = 32
