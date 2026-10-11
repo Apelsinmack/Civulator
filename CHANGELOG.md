@@ -643,6 +643,41 @@ The harness did need one fix to measure it at all: it placed every ranged
 attacker at hex distance 2, where a range-1 shooter would record a duel it
 could never fire in.
 
+### Housing and the Palace (#88)
+
+**Rule change, effect NOT yet measured.** Spec: `docs/housing_design.md` (v2).
+Source: the Civilization Wiki,
+[Housing (Civ6)](https://civilization.fandom.com/wiki/Housing_(Civ6)).
+Population growth used to be unbounded; now a city's housing limits it.
+
+- **Water tiers** at the city centre: fresh 5, coastal 3, dry 2 (`[housing]`).
+- **Buildings and improvements declare `housing`** in their own config table:
+  Granary 2, Palace 1; Farm, Pasture, Plantation, Camp and Fishing Boats 0.5,
+  counted only on tiles the city owns within `improvement_radius` (3), one
+  improvement per tile (the largest). `housing(city)` (`game/housing.py`) is
+  the only computation, in integer tenths.
+- **Growth bands** (`[housing] growth_bands`), keyed on housing minus
+  population: >= 2 keeps 100 % of a positive food surplus, >= 1 keeps 50 %,
+  > -5 keeps 25 %, otherwise 0 % (**hard cap** at housing + 5: no growth even
+  with a full bucket). Starvation is unchanged; housing never removes
+  population.
+- **Exact arithmetic.** The growth bucket `City.food_surplus` is now in
+  hundredths of food (`+= food_net * percent`; growth at `100 * threshold`), so
+  a 1-food surplus at 25 % still accumulates. Percents must be ints and band
+  mins strictly descending, or loading raises.
+- **Palace.** Each player's first city gets a Palace (housing 1); it is never
+  buildable. **The Palace stays with the city on capture** (Erik's deliberate
+  departure from Civ 6): a conqueror can hold several, the old owner gets no
+  replacement.
+- `[buildings.*] production_cost` is now optional; absent means never
+  buildable (the silent default of 100 is gone).
+- New per-player episode stat `growth_slowed_turns`: city-turns with a
+  positive food net whose band was below 100 %.
+
+**Accepted gaps.** Improvement housing is dormant in play until Workers can
+build improvements; the Aqueduct waits for districts (#86); amenities are out
+(#41).
+
 ---
 
 ## v0.6.2 — Civ 6 Ancient-era combat alignment (2026-09-04)
