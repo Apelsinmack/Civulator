@@ -98,7 +98,9 @@ seat), `tiles_claimed_by_culture` and `culture_produced`.
 where the owning city differs between a tile and its neighbour (or one side is
 neutral), coloured by the owning player, on the owned side so contested edges
 show both colours. It follows the cylinder seam and the camera copy rules like
-rivers. Wired into `scripts/watch.py` and `scripts/order_recorder.py`.
+rivers. Borders are drawn dashed with a dark outline, so they cannot be
+mistaken for the solid blue river edges (#115). Wired into `scripts/watch.py`
+and `scripts/order_recorder.py`.
 
 **Known gaps.** The Monument is not in `BUILD_OPTIONS`, so building culture is
 dormant in real games (#73). Agents have no ownership channels (encoder
