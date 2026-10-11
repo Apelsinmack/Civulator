@@ -14,6 +14,7 @@ from ..unit_model import (
 )
 from . import territory
 from .culture import culture
+from .districts import district_yields
 from .housing import housing
 from .unit import (
     Unit, WarriorUnit, SlingerUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
@@ -122,6 +123,23 @@ class City:
         if building_type not in self.BUILDING_COSTS:
             return False
         self.current_production = {"type": "building", "building_type": building_type}
+        return True
+
+    def _incomplete_district(self, district_type):
+        """The city's oldest placed, unfinished district of this type, or None."""
+        for district in self.districts:
+            if district.type == district_type and not district.complete:
+                return district
+        return None
+
+    def produce_district(self, district_type):
+        """Resume building the city's placed, unfinished district of this type
+        (oldest first). Refused (False) when there is none: placing is
+        `GameEnvironment.place_district`, and a finished district cannot be
+        built again (issue #86)."""
+        if self._incomplete_district(district_type) is None:
+            return False
+        self.current_production = {"type": "district", "district_type": district_type}
         return True
 
     def assign_tiles(self, game_env):
@@ -277,6 +295,16 @@ class City:
                     self.buildings.append(building_type)
                     self.current_production = None
 
+            elif self.current_production["type"] == "district":
+                # Pays the cost locked at placement, like a building (#86).
+                district = self._incomplete_district(self.current_production["district_type"])
+                if district is None:
+                    self.current_production = None
+                elif self.production >= district.cost:
+                    self.production -= district.cost
+                    district.complete = True
+                    self.current_production = None
+
     def _accrue_culture(self, game_env):
         """Add this turn's culture (int tenths) to the border pool, the
         per-round counter and the owner's civic pool; at most once per round.
@@ -288,7 +316,11 @@ class City:
         self.border_culture += yield_tenths
         self.culture_this_round += yield_tenths
         self.player.culture += yield_tenths
-        game_env.episode_stats[self.player.player_index]["culture_produced"] += yield_tenths
+        stats = game_env.episode_stats[self.player.player_index]
+        stats["culture_produced"] += yield_tenths
+        # District yields are reported, not consumed (#86 s5); same guard.
+        for name, score in district_yields(self).items():
+            stats[f"district_yield_{name}"] += score
 
     def get_unit_cost(self, unit_type):
         """Get the production cost for a unit type."""

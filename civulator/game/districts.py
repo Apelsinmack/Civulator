@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from ..district_model import (
     ALLOWED_FEATURES,
+    ACCEPTED_YIELDS,
     ANY_DISTRICT,
     CITY_CENTER,
     COST_PROGRESS_FACTOR,
@@ -23,6 +24,9 @@ from ..district_model import (
 )
 from ..terrain_model import matches, resource_class
 from . import territory
+
+# Reportable yield names; "none" is not a yield.
+YIELD_NAMES = tuple(y for y in ACCEPTED_YIELDS if y != "none")
 
 # The resource class a district tile may carry (design §2). Not a gameplay
 # number: the class name Civ 6's rule is written in.
@@ -96,6 +100,23 @@ def adjacency_score(district_type, coords, game_map):
         (_source_count(row.source, coords, game_map) // row.per) * row.amount
         for row in spec.adjacency
     )
+
+
+# --- Yields (design §5) --------------------------------------------------------
+
+
+def district_yields(city):
+    """Mapping yield name -> summed adjacency score over the city's COMPLETE
+    districts, for every reportable yield name (0 when none). Live, never
+    cached; reported only -- nothing consumes it yet (design §5)."""
+    game_map = city.player.game_env.map
+    result = dict.fromkeys(YIELD_NAMES, 0)
+    for district in city.districts:
+        spec = DISTRICTS[district.type]
+        if district.complete and spec.adjacency_yield in result:
+            result[spec.adjacency_yield] += adjacency_score(
+                district.type, district.coordinates, game_map)
+    return result
 
 
 # --- Placement (design §2 + v3 fixes) -----------------------------------------

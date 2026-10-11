@@ -6,6 +6,12 @@ round checkpoints, tiles owned per player, total population, cumulative
 culture claims, per-player housing vs population and growth_slowed_turns, plus wall-clock. A sanity check that borders grow in real games,
 not a measurement.
 
+Districts (#86): at each player's turn start every city has a small chance to
+place a district through the engine (candidate tiles from Map.tiles_of_city,
+sorted, filtered by can_place_district; type and tile drawn from a seeded RNG over the config-ordered types)
+and idle cities finish their placed districts. The end line reports districts
+placed / completed and the Aqueduct housing seen.
+
 Usage: python scripts/smoke_random_selfplay.py [--seed 4242] [--rounds 250]
 """
 
@@ -23,11 +29,14 @@ import torch
 from civulator.agents import DQNAgent, ReplayMemory, get_encoder
 from civulator.agents.action_space import decode_action, end_turn_index
 from civulator.agents.build_agent import BUILD_OPTIONS
+from civulator.district_model import DISTRICTS
 from civulator.game.city import City
+from civulator.game.districts import can_place_district
 from civulator.game.housing import housing
 from civulator.game import GameEnvironment, resolve_size_and_players
 
 STEP_LIMIT = 200_000
+DISTRICT_CHANCE = 0.1  # per city per own turn start
 
 
 def main():
@@ -65,6 +74,32 @@ def main():
               f"pop_by_player={pops}  growth_slowed_turns={slowed}  "
               f"t={time.perf_counter() - t0:.1f}s")
 
+    district_rng = random.Random(args.seed)
+    placed = 0
+    water_cities = set()      # city ids that ever held a complete water-adjusting district
+    water_gain = []           # housing tenths a city gained from it, at sight
+
+    def district_turn(city):
+        nonlocal placed
+        if district_rng.random() < DISTRICT_CHANCE:
+            name = district_rng.choice(list(DISTRICTS))
+            tiles = [pos for pos in sorted(env.map.tiles_of_city(city.city_id))
+                     if can_place_district(city, name, pos)]
+            if tiles and env.place_district(city, name, district_rng.choice(tiles)):
+                placed += 1
+        if city.current_production is None:
+            for d in city.districts:
+                if not d.complete and city.produce_district(d.type):
+                    break
+        for d in city.districts:
+            spec = DISTRICTS[d.type]
+            if d.complete and spec.water_housing_min is not None and city.city_id not in water_cities:
+                water_cities.add(city.city_id)
+                d.complete = False
+                without = housing(city)
+                d.complete = True
+                water_gain.append(housing(city) - without)
+
     t0 = time.perf_counter()
     log(0)
     next_log = args.every
@@ -74,6 +109,7 @@ def main():
         steps += 1
         if env.current_player.player_index != last_player:
             for city in env.current_player.cities:
+                district_turn(city)
                 if city.current_production is None:
                     option = random.choice(BUILD_OPTIONS)
                     if option in City.BUILDING_COSTS:
@@ -92,6 +128,11 @@ def main():
             log(next_log)
             next_log += args.every
     log(env.turn_counter)
+    all_districts = [d for p in env.players for c in p.cities for d in c.districts]
+    print(f"districts placed={placed} completed={sum(d.complete for d in all_districts)} "
+          f"by_type={ {n: sum(d.type == n and d.complete for d in all_districts) for n in DISTRICTS} } "
+          f"water_housing_cities={len(water_cities)} water_housing_gain_tenths={sorted(water_gain)} "
+          f"yields={[{k: v for k, v in env.episode_stats[i].items() if k.startswith('district_yield_') and v} for i in range(num_players)]}")
     print(f"done={env.done} steps={steps} wall={time.perf_counter() - t0:.1f}s")
 
 

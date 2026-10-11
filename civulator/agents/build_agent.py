@@ -146,6 +146,10 @@ def encode_build_state(combat_state, city, game_env, options=None):
     if city.current_production:
         if city.current_production["type"] == "unit":
             total_cost = city.get_unit_cost(city.current_production["unit_type"])
+        elif city.current_production["type"] == "district":
+            raise NotImplementedError(
+                "district production has no build-state encoding yet: "
+                "agents get a district action with #99")
         else:
             total_cost = city.get_building_cost(city.current_production["building_type"])
         extra[num_options, ci, cj] = min(city.production / max(1, total_cost), 1.0)
