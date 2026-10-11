@@ -492,7 +492,7 @@ def draw_river_edges(map_obj, size, wrap_w, color=RIVER_COLOR, thickness=3.0,
 
 
 # =====================================================================
-# Border overlay (borders design ง9 P5): a segment on each hex edge where the
+# Border overlay (borders design ยง9 P5): a segment on each hex edge where the
 # owning city differs between a tile and its neighbour (one side may be
 # neutral), coloured by the owning player. Same shared-edge geometry and seam
 # rules as the river primitive above.
