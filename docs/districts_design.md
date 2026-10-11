@@ -331,7 +331,7 @@ merged when green.
 
 | Lens | Verdict | Blockers |
 |---|---|---|
-| (after Erik's answers) | | |
+| Rules semantics and edge cases (Opus) | survives with fixes | (1) improvements are not a layer: `set_layers` cannot clear them; the epoch bump on placement is unstated; (2) a city can be founded on an owned district tile (`can_found_city_at` environment.py:929, `_founding_claim`; painter `_place_city` bypass); (3) `can_build_improvement_at` (environment.py:1065) lets an improvement onto a district tile; (4) `assign_tiles` is not re-run on placement, so the tile stays worked; (5) the §4.1 discount is not one deterministic integer rule (division, A, count_T, rounding order). Non-blocking: placed-vs-complete for every limit; incomplete districts after population loss; `produce_district` on complete/unplaced T; Aqueduct river test is on its own edges; Harbor "adjacent to land" encoding; `resources` key described two ways; units on the tile; "any" counts other cities' districts; `_fresh_episode_stats` keys and accrual phase; build_agent.py:146 treats any non-unit production as a building |
 
 ---
 
