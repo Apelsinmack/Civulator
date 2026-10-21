@@ -11,10 +11,13 @@ researched, the government and the slotted policy cards per player (the
 engine's civic, government and loadout defaults, #116 P4), and per player the
 treasury (whole gold), the upkeep paid, the units disbanded by bankruptcy,
 the trade routes opened and running (the engine's Trader default) and the
-gold and faith spent on purchases (#116 P5; 0: no default buys), plus
-wall-clock. A sanity check that borders grow, research and civics progress,
-the defaults adopt governments, slot cards and send Traders, and upkeep is
-paid in real games, not a measurement.
+gold and faith spent on purchases (#116 P5; 0: no default buys), and
+per player the lowest and the mean loyalty of its cities and the cities it
+lost and gained by loyalty flips (#116 P7; the end line adds the lowest
+loyalty any of its cities had after any round), plus wall-clock. A sanity check
+that borders grow, research and civics progress, the defaults adopt
+governments, slot cards and send Traders, upkeep is paid and loyalty moves
+in real games, not a measurement.
 
 Districts (#86) and wonders (#116 P6, district-registry entries of kind
 "wonder"): at each player's turn start every city has a small chance to
@@ -93,7 +96,7 @@ def main():
               f"pop_by_player={pops}  growth_slowed_turns={slowed}  "
               f"techs_researched={techs}  civics_researched={civics}  "
               f"governments={governments}  policies={policies}  "
-              f"{gold_line()}  t={time.perf_counter() - t0:.1f}s")
+              f"{gold_line()}  {loyalty_line()}  t={time.perf_counter() - t0:.1f}s")
 
     def gold_line():
         """Per player: treasury (whole gold), upkeep paid (whole gold),
@@ -106,6 +109,17 @@ def main():
                 f"routes_running={[len(p.routes) for p in env.players]}  "
                 f"purchases_gold_faith_tenths="
                 f"{[(s['gold_spent_purchases'], s['faith_spent_purchases']) for s in stats]}")
+
+    def loyalty_line():
+        """Per player: (lowest, mean) loyalty of its cities -- None without a
+        city -- and the cities it lost / gained by loyalty flips (#116 P7)."""
+        spread = []
+        for p in env.players:
+            values = [c.loyalty for c in p.cities]
+            spread.append((min(values), round(sum(values) / len(values), 1)) if values else None)
+        stats = [env.episode_stats[i] for i in range(num_players)]
+        return (f"loyalty_min_mean={spread}  "
+                f"flips_out_in={[(s['cities_flipped_out'], s['cities_flipped_in']) for s in stats]}")
 
     district_rng = random.Random(args.seed)
     placed = 0
@@ -138,6 +152,8 @@ def main():
     log(0)
     next_log = args.every
     last_player = -1
+    lowest_seen = [None] * num_players   # per player, over every round end (#116 P7)
+    last_round = env.turn_counter
     steps = 0
     while not env.done and steps < STEP_LIMIT:
         steps += 1
@@ -160,6 +176,12 @@ def main():
             env.next_turn()
         else:
             env.step(decode_action(selected, move, n, m))
+        if env.turn_counter != last_round:  # a round just ended: loyalty moved
+            last_round = env.turn_counter
+            for p in env.players:
+                for c in p.cities:
+                    low = lowest_seen[p.player_index]
+                    lowest_seen[p.player_index] = c.loyalty if low is None else min(low, c.loyalty)
         while next_log <= args.rounds and env.turn_counter > next_log:
             log(next_log)
             next_log += args.every
@@ -182,6 +204,7 @@ def main():
               f"government={player.government} policies={player.policies} "
               f"order={player.civics}")
     print(f"gold {gold_line()}")
+    print(f"loyalty {loyalty_line()}  lowest_after_any_round={lowest_seen}")
     print(f"done={env.done} steps={steps} wall={time.perf_counter() - t0:.1f}s")
 
 
