@@ -13,6 +13,7 @@ Civulator is a **research project**: deep reinforcement learning in a simplified
 - **Session handoff**: pinned issue #31 — read its newest comment when starting a session; append one comment at session close (done / next / open questions). Only the latest comment is current.
 - **Narrative** (design thinking, specs, results discussion): `docs/` and `documents/`. Gameplay-rule changes with measured effects: `CHANGELOG.md` (semver game version).
 - **Scientific record**: `stats/`, `weights/trained/` (+ its `manifest.md` registry). Never delete previous results.
+- **Dev procedures for the progression block** (adding a tech/civic/card/unit/building/wonder, the combat oracle, the balancing dials, the engine defaults, the turn order): the repo skill `.claude/skills/civulator-progression/SKILL.md` -- load it before touching those tables or modules.
 
 ## Rules (invariants)
 

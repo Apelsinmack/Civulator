@@ -423,5 +423,8 @@ weights/
 # real scientific record -- see run_baseline.py's module docstring.
 runs/
 
-# Claude Code local settings
-.claude/
+# Claude Code local settings and worktrees are ignored; the project's
+# skills (.claude/skills/) are tracked -- they are repo procedure, not
+# local state (Erik, 2026-10-21).
+.claude/*
+!.claude/skills/
