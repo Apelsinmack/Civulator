@@ -656,6 +656,18 @@ def test_a_one_shot_kind_belongs_on_a_wonder_table_only():
         parse_effect(entry, "building", "Probe")
 
 
+def test_a_building_never_requires_a_wonder():
+    """`[buildings.*] requires_district` names a `kind = "district"` entry:
+    a wonder name raises, a district name passes. Breaks if a building
+    could be gated on standing in a wonder."""
+    wonder = next(n for n, s in district_model.DISTRICTS.items() if s.kind == WONDER)
+    district = next(n for n, s in district_model.DISTRICTS.items()
+                    if s.kind == district_model.KIND_DISTRICT)
+    district_model.validate_building_districts({"Probe": district}, district_model.DISTRICTS)
+    with pytest.raises(ValueError):
+        district_model.validate_building_districts({"Probe": wonder}, district_model.DISTRICTS)
+
+
 # --- (i) growth_percent scales the growth bucket exactly -------------------------------------
 
 

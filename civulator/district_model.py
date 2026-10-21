@@ -415,9 +415,10 @@ def parse_wonders(cfg):
 
 def validate_building_districts(requires_district, districts):
     """Raise ValueError unless every `[buildings.*] requires_district` value
-    (building -> district name) names a district of `districts`."""
+    (building -> district name) names a `kind = "district"` entry of
+    `districts` (a building never stands in a wonder, #116 P6)."""
     for building, district in requires_district.items():
-        if district not in districts:
+        if district not in districts or districts[district].kind != KIND_DISTRICT:
             raise ValueError(
                 f"[buildings.{building}] requires_district {district!r} is not a district"
             )
