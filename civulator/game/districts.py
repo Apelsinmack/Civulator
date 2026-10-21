@@ -3,9 +3,18 @@ adjacency computation, the one placement check and the cost rule. Since #116
 P2 the placement check also asks `availability.player_can_build` (a
 district's `requires_tech`) and the cost escalates with `game_progress`.
 
+Wonders (#116 P6, progression design §9) are registry entries of `kind =
+"wonder"` and ride every rule here; where they differ, the code tests the
+kind, never a name: a wonder is world-unique (`completed_wonder_city`, read
+from live state), takes no population slot and never escalates (the loader
+holds it to `counts_toward_limit = false` and `cost_model = "fixed"`), is no
+source for `district = "any"`, and is counted by the `wonder = "any"` source
+once complete.
+
 Pure: reads the map, the config registry (district_model) and the city;
 mutates nothing. The only writers of `Tile.district` / `City.districts` are
-`GameEnvironment.place_district` and `GameEnvironment.remove_city`.
+`GameEnvironment.place_district` and `GameEnvironment._remove_district`
+(race losers and `remove_city`).
 
 No terrain, improvement or district name appears here: every source is
 matched through terrain_model.matches or the names the config declares.
@@ -22,6 +31,7 @@ from ..district_model import (
     DISCOUNTED_TYPES,
     DISTRICTS,
     KIND_DISTRICT,
+    KIND_WONDER,
     POPULATION_PER_DISTRICT,
     REMOVABLE_FEATURES,
 )
@@ -60,6 +70,23 @@ def district_spec(district_type):
     return DISTRICTS[district_type]
 
 
+def is_wonder(district_type):
+    """Whether registry entry `district_type` is a wonder (`kind`)."""
+    return district_spec(district_type).kind == KIND_WONDER
+
+
+def completed_wonder_city(game_env, wonder_type):
+    """The city holding a COMPLETE `wonder_type`, or None -- computed from
+    live state (progression design "v2 fixes", Wonders: no registry), every
+    city of `game_env.city_by_id` in id order. Captures move the wonder with
+    its city, so this is whoever holds it now."""
+    for city_id in sorted(game_env.city_by_id):
+        city = game_env.city_by_id[city_id]
+        if any(d.type == wonder_type and d.complete for d in city.districts):
+            return city
+    return None
+
+
 def specialty_districts(city):
     """The city's COMPLETE specialty districts, in placement order: registry
     entries with `kind == "district"` that take a population slot
@@ -80,7 +107,9 @@ def specialty_districts(city):
 
 
 def _neighbour_matches(source, tile):
-    """True if neighbour `tile` counts for a neighbour source."""
+    """True if neighbour `tile` counts for a neighbour source. `district =
+    "any"` counts a city centre or a placed district that is not a wonder;
+    `wonder = "any"` a COMPLETE wonder (#116 P6, design §9.1)."""
     if source.kind == "terrain":
         return matches(source.value, tile.base_terrain, tile.relief, tile.feature,
                        resource=tile.resource)
@@ -88,10 +117,14 @@ def _neighbour_matches(source, tile):
         return any(i in source.value for i in tile.improvements)
     if source.kind == "district":
         if source.value == ANY_DISTRICT:
-            return tile.city is not None or tile.district is not None
+            return tile.city is not None or (
+                tile.district is not None and not is_wonder(tile.district.type))
         if tile.city is not None and CITY_CENTER in source.value:
             return True
         return tile.district is not None and tile.district.type in source.value
+    if source.kind == "wonder":
+        return (tile.district is not None and tile.district.complete
+                and is_wonder(tile.district.type))
     raise ValueError(f"not a neighbour source: {source.kind!r}")
 
 
@@ -125,7 +158,8 @@ def adjacency_score(district_type, coords, game_map):
 
     Each row is floored on its own, then summed: floor(count / per) * amount.
     Neighbouring districts count whether placed or complete, and city centres
-    count as districts (Civ 6). Never cached.
+    count as districts (Civ 6); wonders count only for `wonder = "any"`, and
+    only once complete (#116 P6). Never cached.
     """
     spec = DISTRICTS[district_type]
     return sum(
@@ -170,7 +204,9 @@ def _district_slots(city):
 
 def can_place_district(city, district_type, coords):
     """The only placement check. True iff `city` may place `district_type` on
-    `coords` now. Pure."""
+    `coords` now. Pure. A wonder (#116 P6) is refused once any player has
+    completed it (`completed_wonder_city`); placed, unfinished copies in
+    other cities are the race and refuse nothing."""
     spec = DISTRICTS.get(district_type)
     if spec is None or city.city_id is None:
         return False
@@ -178,6 +214,8 @@ def can_place_district(city, district_type, coords):
     if not availability.player_can_build(city.player, "district", district_type):
         return False
     game_env = city.player.game_env
+    if spec.kind == KIND_WONDER and completed_wonder_city(game_env, district_type) is not None:
+        return False
     game_map = game_env.map
     tile = game_map.get_tile(coords)
     if tile is None:
@@ -228,14 +266,19 @@ def can_place_district(city, district_type, coords):
         if used >= _district_slots(city):
             return False
 
-    # The district's own rules.
+    # The district's own rules: any one of requires_adjacent, every one of
+    # requires_adjacent_all (#116 P6).
     if spec.adjacent_to_city_center is not None:
         if (tuple(city.coordinates) in neighbours) != spec.adjacent_to_city_center:
             return False
+    centre = tuple(city.coordinates)
     if spec.requires_adjacent and not any(
-        _source_count(source, coords, game_map, centre=tuple(city.coordinates)) > 0
+        _source_count(source, coords, game_map, centre=centre) > 0
         for source in spec.requires_adjacent
     ):
+        return False
+    if not all(_source_count(source, coords, game_map, centre=centre) > 0
+               for source in spec.requires_adjacent_all):
         return False
     return True
 
@@ -256,16 +299,21 @@ def game_progress(player):
 
 
 def _completed_discounted(player):
+    """B of design §4.1: the player's completed `discounted` districts. A
+    wonder is never one (the loader holds wonders to "fixed"; the kind test
+    says so here too)."""
     return [
         d.type for c in player.cities for d in c.districts
-        if d.complete and DISTRICTS[d.type].cost_model == "discounted"
+        if d.complete and DISTRICTS[d.type].kind == KIND_DISTRICT
+        and DISTRICTS[d.type].cost_model == "discounted"
     ]
 
 
 def district_cost(player, district_type):
     """Integer production cost of `district_type` for `player` now.
 
-    escalated = base * (den + factor * num) // den; "fixed" never scales.
+    escalated = base * (den + factor * num) // den; "fixed" never scales
+    (every wonder is "fixed", #116 P6: Civ 6 wonder costs do not escalate).
     A "discounted" type costs discount_percent less iff B >= A and
     count_T * A < B, where A = the configured discounted types, B = the
     player's completed discounted districts (captured ones included) and

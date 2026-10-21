@@ -278,9 +278,11 @@ def test_a_refused_route_changes_nothing(case):
 def _dressed_destination(env, coords, player_index):
     """A city holding every configured district complete except one specialty
     district left unfinished (so the table's specialty and non-specialty
-    entries, and an unfinished one, are all exercised)."""
+    entries, and an unfinished one, are all exercised). Sites come from rings
+    1 to 3 (with the wonders, #116 P6, the registry outgrew two rings)."""
     city = city_at(env, coords, player_index)
-    sites = sorted(set(ring(env, coords, 1)) | set(ring(env, coords, 2)))
+    sites = sorted(set(ring(env, coords, 1)) | set(ring(env, coords, 2))
+                   | set(ring(env, coords, 3)))
     names = list(district_model.DISTRICTS)
     specialty = [n for n in names if _is_specialty(n)]
     assert specialty and any(not _is_specialty(n) for n in names), "fixture"

@@ -7,10 +7,12 @@ immutable values. A new district is a new config table, never code.
 Validation (design §1.2 and "v3 fixes", config loading):
 - scalars and sub-tables are split; unknown keys anywhere raise;
 - "City Center" and "any" are reserved and no district may take them;
-- every adjacency row / `requires_adjacent` entry has exactly one source, and
-  every name it uses exists (terrain through terrain_model.validate_on_table,
-  improvements through terrain_model.IMPROVEMENT_NAMES, districts through
-  this registry);
+- every adjacency row / `requires_adjacent` / `requires_adjacent_all` entry
+  has exactly one source, and every name it uses exists (terrain through
+  terrain_model.validate_on_table, improvements through
+  terrain_model.IMPROVEMENT_NAMES, districts through this registry -- a
+  `district = [...]` list names `kind = "district"` entries or "City
+  Center" only; wonders are matched by the `wonder = "any"` source, #116 P6);
 - `amount` and `per` are positive ints; `adjacency_yield` is one of
   ACCEPTED_YIELDS; housing values and the optional flat yield columns
   (unit_model.YIELD_COLUMNS, issue #116) go through unit_model.to_tenths;
@@ -20,7 +22,14 @@ Validation (design §1.2 and "v3 fixes", config loading):
 - `effects` is kept raw (a list; #116 P4) and validated by
   civulator/effects.py, which loads after this registry;
 - every `[buildings.*] requires_district` (parsed by unit_model, which loads
-  before this registry) names a district of this registry.
+  before this registry) names a district of this registry;
+- `kind` is "district" (default) or "wonder" (#116 P6, progression design
+  §9.1): a wonder table declares `era` (one of research_model.ERAS),
+  `counts_toward_limit = false`, `cost_model = "fixed"` and `max_per_city =
+  1`, and no adjacency of its own (`adjacency_yield`, `adjacency`,
+  `discount_percent`); `era` is a wonder column only;
+- `[wonders]` holds `consolation_percent` (0..100), the share of a race
+  loser's locked cost refunded into its city's production pool (design §9.2).
 
 Imports only config / research_model / terrain_model / unit_model: no
 civulator.game.
@@ -30,11 +39,14 @@ from dataclasses import dataclass
 
 from .config import CFG
 from . import terrain_model
-from .research_model import validate_civic_name, validate_tech_name
+from .research_model import ERAS, validate_civic_name, validate_tech_name
 from .unit_model import BUILDING_REQUIRES_DISTRICT, YIELD_COLUMNS, to_tenths
 
 CITY_CENTER = "City Center"
 ANY_DISTRICT = "any"
+# The one value of the `wonder` source (#116 P6): every adjacent COMPLETE
+# wonder counts (Civ 6's "+N per adjacent wonder").
+ANY_WONDER = "any"
 RESERVED_NAMES = frozenset({CITY_CENTER, ANY_DISTRICT})
 
 ACCEPTED_YIELDS = ("culture", "production", "science", "gold", "faith", "none")
@@ -42,9 +54,11 @@ COST_MODELS = ("discounted", "progress", "fixed")
 
 # Source kinds (design §1.2). Neighbour sources count matching neighbours;
 # tile tests are true once or not at all, from the district's own tile.
-NEIGHBOUR_SOURCES = ("terrain", "improvement", "district")
+NEIGHBOUR_SOURCES = ("terrain", "improvement", "district", "wonder")
 ADJACENCY_TILE_TESTS = ("river_on_tile",)
-REQUIREMENT_TILE_TESTS = ("river_edge_not_shared_with_center",)
+# `river_on_tile` is a requirement too since #116 P6 (the Hanging Gardens:
+# "next to a river"; progression design "v2 fixes").
+REQUIREMENT_TILE_TESTS = ("river_edge_not_shared_with_center", "river_on_tile")
 
 _SCALAR_KEYS = frozenset({
     "population_per_district", "cost_progress_factor",
@@ -58,15 +72,26 @@ _DISTRICT_KEYS = frozenset({
     *YIELD_COLUMNS,
     "requires_tech", "requires_civic", "maintenance",  # #116 P2
     "effects",  # #116 P4
+    "kind", "era", "requires_adjacent_all",  # #116 P6
 })
 
-# What a registry entry is (progression design §9.1). Every configured entry
-# is a "district" until #116 P6 adds the `kind` column and its wonders; the
-# field exists now so that readers (specialty districts, the effects
-# interpreter) are written against it once.
+# What a registry entry is (progression design §9.1): the `kind` column,
+# "district" by default; "wonder" since #116 P6. Readers test the kind, never
+# a name (specialty districts, the discount, the race, the effects
+# interpreter's one-shot rule).
 KIND_DISTRICT = "district"
 KIND_WONDER = "wonder"
 KINDS = (KIND_DISTRICT, KIND_WONDER)
+
+# What a wonder table must declare, exactly (design §9.1): no population slot,
+# a cost that never escalates, one per city.
+_WONDER_REQUIRED = (("counts_toward_limit", False), ("cost_model", "fixed"),
+                    ("max_per_city", 1))
+# What a wonder table may not declare: it has no adjacency of its own and no
+# discount.
+_WONDER_FORBIDDEN = ("adjacency_yield", "adjacency", "discount_percent")
+
+_WONDERS_KEYS = frozenset({"consolation_percent"})
 
 
 @dataclass(frozen=True)
@@ -100,7 +125,7 @@ class DistrictSpec:
     adjacency: tuple  # of AdjacencyRow
     on: object  # terrain mapping / list, or None = land
     adjacent_to_city_center: object  # True / False / None (either)
-    requires_adjacent: tuple  # of Source; empty = no requirement
+    requires_adjacent: tuple  # of Source; empty = no requirement (any one must hold)
     housing: int  # tenths
     water_housing_min: object  # tenths or None
     water_housing_boost: object  # tenths or None
@@ -118,8 +143,14 @@ class DistrictSpec:
     # The raw `effects` list (#116 P4), validated by civulator/effects.py;
     # city scope by default. Empty when absent.
     effects: tuple = ()
-    # KIND_DISTRICT for every entry until #116 P6 configures wonders.
+    # KIND_DISTRICT or KIND_WONDER (#116 P6).
     kind: str = KIND_DISTRICT
+    # A wonder's era (one of research_model.ERAS, #116 P6; read by the
+    # `wonder_era` target of production_percent); None for a district.
+    era: object = None
+    # Sources of which EVERY one must hold (#116 P6, the Colossus: land and a
+    # Harbor); empty = no requirement. `requires_adjacent` needs any one.
+    requires_adjacent_all: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -159,7 +190,9 @@ def _feature_names(names, what):
 
 
 def _parse_source(entry, where, district_names, tile_tests):
-    """Exactly one source key in `entry` (other keys already removed)."""
+    """Exactly one source key in `entry` (other keys already removed).
+    `district_names` are the names a `district = [...]` list may use: the
+    registry's `kind = "district"` entries."""
     kinds = [k for k in entry if k in NEIGHBOUR_SOURCES or k in tile_tests]
     unknown = set(entry) - set(kinds)
     if unknown:
@@ -185,8 +218,13 @@ def _parse_source(entry, where, district_names, tile_tests):
             raise ValueError(f"{where}: district must be \"any\" or a non-empty list")
         missing = [n for n in value if n != CITY_CENTER and n not in district_names]
         if missing:
-            raise ValueError(f"{where}: unknown district(s) {missing}")
+            raise ValueError(f"{where}: unknown district(s) {missing} (a wonder is matched "
+                             f"by the `wonder` source, never by name)")
         return Source(kind, tuple(value))
+    if kind == "wonder":
+        if value != ANY_WONDER:
+            raise ValueError(f"{where}: wonder must be \"{ANY_WONDER}\", got {value!r}")
+        return Source(kind, ANY_WONDER)
     # tile test
     if value is not True:
         raise ValueError(f"{where}: {kind} must be true")
@@ -241,9 +279,10 @@ def _parse_district(name, table, district_names):
     rows = table.get("adjacency", [])
     if not isinstance(rows, list):
         raise ValueError(f"{where}: adjacency must be a list of rows")
-    requires = table.get("requires_adjacent", [])
-    if not isinstance(requires, list):
-        raise ValueError(f"{where}: requires_adjacent must be a list")
+    kind = table.get("kind", KIND_DISTRICT)
+    if kind not in KINDS:
+        raise ValueError(f"{where}: kind {kind!r} not in {KINDS}")
+    era = _wonder_columns(table, kind, where)
     return DistrictSpec(
         name=name,
         production_cost=_positive_int(table["production_cost"], f"{where} production_cost"),
@@ -260,11 +299,7 @@ def _parse_district(name, table, district_names):
         ),
         on=on,
         adjacent_to_city_center=adjacent_to_center,
-        requires_adjacent=tuple(
-            _parse_source(dict(entry), f"{where} requires_adjacent[{i}]",
-                          district_names, REQUIREMENT_TILE_TESTS)
-            for i, entry in enumerate(requires)
-        ),
+        requires_adjacent=_requirements(table, "requires_adjacent", where, district_names),
         housing=_optional_tenths(table, "housing", where) or 0,
         water_housing_min=_optional_tenths(table, "water_housing_min", where),
         water_housing_boost=_optional_tenths(table, "water_housing_boost", where),
@@ -275,7 +310,46 @@ def _parse_district(name, table, district_names):
                         if "requires_civic" in table else None),
         maintenance=_maintenance(table, where),
         effects=_effects(table, where),
+        kind=kind,
+        era=era,
+        requires_adjacent_all=_requirements(table, "requires_adjacent_all", where,
+                                            district_names),
     )
+
+
+def _requirements(table, key, where, district_names):
+    """`requires_adjacent` / `requires_adjacent_all`: a list of sources
+    (neighbour sources or REQUIREMENT_TILE_TESTS) -> tuple of Source."""
+    entries = table.get(key, [])
+    if not isinstance(entries, list):
+        raise ValueError(f"{where}: {key} must be a list")
+    return tuple(
+        _parse_source(dict(entry), f"{where} {key}[{i}]", district_names,
+                      REQUIREMENT_TILE_TESTS)
+        for i, entry in enumerate(entries)
+    )
+
+
+def _wonder_columns(table, kind, where):
+    """The wonder rules of design §9.1: a `kind = "wonder"` table declares
+    its era and exactly the columns of _WONDER_REQUIRED, none of
+    _WONDER_FORBIDDEN; `era` is a wonder column only. Returns the era (None
+    for a district)."""
+    if kind != KIND_WONDER:
+        if "era" in table:
+            raise ValueError(f"{where}: era is a wonder column (kind = \"{KIND_WONDER}\")")
+        return None
+    for key, value in _WONDER_REQUIRED:
+        declared = table.get(key)
+        if key not in table or type(declared) is not type(value) or declared != value:
+            raise ValueError(f"{where}: a wonder declares {key} = {value!r}")
+    forbidden = [key for key in _WONDER_FORBIDDEN if key in table]
+    if forbidden:
+        raise ValueError(f"{where}: a wonder declares none of {forbidden}")
+    era = table.get("era")
+    if era not in ERAS:
+        raise ValueError(f"{where}: a wonder declares era, one of {ERAS}; got {era!r}")
+    return era
 
 
 def _effects(table, where):
@@ -306,7 +380,10 @@ def parse_districts(cfg):
     reserved = RESERVED_NAMES & set(tables)
     if reserved:
         raise ValueError(f"[districts]: reserved name(s) {sorted(reserved)}")
-    names = frozenset(tables)
+    # Names a `district = [...]` source may use: the `kind = "district"`
+    # entries (a table of an unknown kind raises in _parse_district).
+    names = frozenset(n for n, t in tables.items()
+                      if t.get("kind", KIND_DISTRICT) != KIND_WONDER)
     return DistrictRegistry(
         population_per_district=_positive_int(
             scalars["population_per_district"], "[districts] population_per_district"),
@@ -320,11 +397,28 @@ def parse_districts(cfg):
     )
 
 
+def parse_wonders(cfg):
+    """Parse the `[wonders]` table (#116 P6, design §9.2) -> the consolation
+    percent, an int in 0..100. Unknown or missing keys raise."""
+    if not isinstance(cfg, dict):
+        raise ValueError("[wonders] must be a table")
+    unknown = set(cfg) - _WONDERS_KEYS
+    if unknown:
+        raise ValueError(f"[wonders]: unknown key(s) {sorted(unknown)}")
+    if "consolation_percent" not in cfg:
+        raise ValueError("[wonders]: consolation_percent is required")
+    percent = _non_negative_int(cfg["consolation_percent"], "[wonders] consolation_percent")
+    if percent > 100:
+        raise ValueError("[wonders] consolation_percent must be <= 100")
+    return percent
+
+
 def validate_building_districts(requires_district, districts):
     """Raise ValueError unless every `[buildings.*] requires_district` value
-    (building -> district name) names a district of `districts`."""
+    (building -> district name) names a `kind = "district"` entry of
+    `districts` (a building never stands in a wonder, #116 P6)."""
     for building, district in requires_district.items():
-        if district not in districts:
+        if district not in districts or districts[district].kind != KIND_DISTRICT:
             raise ValueError(
                 f"[buildings.{building}] requires_district {district!r} is not a district"
             )
@@ -338,5 +432,9 @@ POPULATION_PER_DISTRICT = REGISTRY.population_per_district
 COST_PROGRESS_FACTOR = REGISTRY.cost_progress_factor
 REMOVABLE_FEATURES = REGISTRY.removable_features
 ALLOWED_FEATURES = REGISTRY.allowed_features
-# The configured `discounted` types, in config order (A of design §4.1 is its length).
-DISCOUNTED_TYPES = tuple(n for n, s in DISTRICTS.items() if s.cost_model == "discounted")
+# The configured `discounted` types, in config order (A of design §4.1 is its
+# length). A wonder is never one: the loader holds every wonder to "fixed".
+DISCOUNTED_TYPES = tuple(n for n, s in DISTRICTS.items()
+                         if s.kind == KIND_DISTRICT and s.cost_model == "discounted")
+# The share of a race loser's locked cost its city gets back (design §9.2).
+CONSOLATION_PERCENT = parse_wonders(CFG["wonders"])

@@ -148,6 +148,9 @@ class Stage:
         out["faith categories"] = faith_purchase_categories(self.player, city)
         out["route capacity"] = route_capacity(self.player)
         out["route yields"] = tuple(sorted(route_yields(self.route, env).items()))
+        # The #116 P6 consumer: what 7 surplus food at the 100 % housing band
+        # adds to the growth bucket (hundredths).
+        out["growth gain"] = city.growth_bucket_gain(7, 100)
         return out
 
 
@@ -302,12 +305,14 @@ def test_each_p5_kind_moves_exactly_its_consumer(monkeypatch, entries, expected)
 
 @pytest.mark.parametrize("entry", [
     {"kind": "loyalty", "amount": 2, "requires_garrison": True},
-    {"kind": "growth_percent", "percent": 15},
 ])
 def test_a_deferred_kind_is_validated_and_moves_nothing_yet(monkeypatch, entry):
-    """The kinds whose consumers land in P6-P7 parse on a card and change
-    nothing a P4 or P5 consumer computes. Breaks if one of them is read
-    early by the wrong consumer."""
+    """The kinds whose consumers land in P7 parse on a card and change
+    nothing a P4-P6 consumer computes. Restated by #116 P6: `growth_percent`
+    left this list (its consumer is the growth bucket, the next test) and
+    the one-shot kinds too (they fire in `complete_district`,
+    tests/test_wonders.py); `loyalty` stays deferred. Breaks if a deferred
+    kind is read early by the wrong consumer."""
     assert entry["kind"] in DEFERRED_KINDS
     stage = Stage(monkeypatch)
     before = stage.fingerprint()
@@ -315,6 +320,23 @@ def test_a_deferred_kind_is_validated_and_moves_nothing_yet(monkeypatch, entry):
     assert stage.fingerprint() == before
     assert [e.kind for e in active_effects(stage.player)
             if e.source == ("policy", CARD)] == [entry["kind"]], "the card is in force"
+
+
+def test_growth_percent_moves_exactly_the_growth_bucket(monkeypatch):
+    """#116 P6 (restated from the deferred-kinds test): a +15 % and a +10 %
+    `growth_percent` card move only the growth gain, to `food_net *
+    housing_percent * 100 * (100 + 25) // 10000` -- summed, then applied
+    once with one floor. Breaks if the kind gains a second consumer, loses
+    its one, or the percents are compounded."""
+    stage = Stage(monkeypatch)
+    before = stage.fingerprint()
+    assert before["growth gain"] == 7 * 100, "no effect: the v0.7 bucket"
+    stage.slot(monkeypatch, [{"kind": "growth_percent", "percent": 15}])
+    stage.slot(monkeypatch, [{"kind": "growth_percent", "percent": 10}], name="Second Card")
+    after = stage.fingerprint()
+    assert _moved(before, after) == {"growth gain"}
+    assert after["growth gain"] == 7 * 100 * 100 * 125 // 10000
+    assert stage.city.growth_bucket_gain(3, 25) == 3 * 25 * 100 * 125 // 10000
 
 
 def test_every_kind_names_its_one_consumer():
