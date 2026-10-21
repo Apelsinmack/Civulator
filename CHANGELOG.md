@@ -89,6 +89,116 @@ capital (+2 production) and for a city with a complete Industrial Zone.
 **Accepted gaps.** Science, gold and faith accumulate without a consumer
 until P2 and P5; nothing passes `percent_by_district` until P4.
 
+### The tech tree (#116 P2)
+
+**Rule change, effect NOT yet measured.** Spec: `docs/progression_design.md`
+§4, §6.2–§6.3, §13 and "v2 fixes". Civ 6 facts:
+`docs/civ6_progression_reference.md` §1 (techs) and §7 (buildings); the
+improvement yields from the Civilization Wiki pages Farm, Mine, Quarry,
+Pasture, Camp, Plantation and Fishing Boats (Civ6), read through the
+MediaWiki API.
+
+- **A tech tree.** 22 techs from Pottery to Gunpowder in `[techs.*]`, with
+  Civ 6's names, eras and Gathering Storm costs (Education and Military
+  Engineering 335, the per-tech pages' value) and this design's
+  prerequisites where a cut tech sat in between (design §4.2). Every tech
+  costs `cost * [research] tech_cost_percent // 100` whole science, 75 %
+  (design §12). The table sums to 4,065 science at Civ 6 cost, 3,043 at
+  75 % (design §4.2 states 4,015, an arithmetic slip). Four techs are
+  available at the start. `civulator/research_model.py` is the only
+  interpreter; it raises at load on an unknown key, a bad cost or era, a
+  prerequisite naming nothing, and a cyclic or unreachable graph.
+- **Research.** A player's science pool (tenths, P1) pays for one current
+  tech. Each own turn, after every city has accrued, the new **economy
+  phase** resolves it: with no current tech the engine picks the cheapest
+  available one, by scaled cost and then config order (design §13; no agent
+  chooses research until #99); when the pool holds 10 × the scaled cost the
+  tech completes, exactly that is paid and the overflow stays. At most one
+  tech completes per turn (Civ 6). `GameEnvironment.set_research(player,
+  tech)` chooses one, refused unless every prerequisite is known and the
+  tech is not; switching keeps the pool (one number, not per-tech
+  progress). New per-player stat `techs_researched`.
+- **Gates.** What a city may build depends on what its owner has
+  researched: a `requires_tech` column on the item's own table, checked by
+  `player_can_build` (`game/availability.py`) on every build path — the
+  build mask, `City.produce_unit` / `produce_building` (both now refuse,
+  returning False), `can_place_district`, and the new
+  `GameEnvironment.can_player_build_improvement_at` that Worker builds go
+  through. **No longer buildable from turn 1:** Archer (Archery), Spearman
+  (Bronze Working), Horseman (Horseback Riding), Swordsman (Iron Working;
+  #67 had admitted it ungated), Catapult (Engineering), Granary (Pottery)
+  and Walls (Masonry). The opening web is Warrior, Slinger and Settler.
+  Battering Ram (Masonry) and Siege Tower (Machinery) carry their gates and
+  stay deferred (#66). Districts: Campus (Writing), Holy Site (Astrology),
+  Encampment (Bronze Working), Commercial Hub (Currency), Harbor (Celestial
+  Navigation), Aqueduct (Engineering), Industrial Zone (Apprenticeship);
+  Theater Square, Entertainment Complex and Government Plaza stay ungated
+  until their civics (P4). Improvements: Mine and Quarry (Mining), Pasture
+  and Camp (Animal Husbandry), Plantation (Irrigation), Fishing Boats
+  (Celestial Navigation; Civ 6: Sailing, cut); the Farm is ungated. An
+  improvement may now be built only on a tile one of the builder's cities
+  owns. Captured cities keep whatever they hold.
+- **Buildings.** A building may require a complete district of a type in
+  its city (`requires_district`) and a building the city owns
+  (`requires_building`), checked with the tech by one predicate,
+  `city_can_build_building`. New, with Civ 6's costs and yields: Library
+  (90; Writing; Campus; +2 science), University (250; Education; Campus
+  and Library; +4 science, +1 housing), Shrine (70; Astrology; Holy Site;
+  +2 faith), Barracks (90; Bronze Working; Encampment; +1 production, +1
+  housing) and Medieval Walls (220; Castles; Walls; +30 defence, 60 with
+  the Walls). The **Workshop** takes Civ 6's cost and yield: 195
+  production (was 120), +3 production, Apprenticeship and an Industrial
+  Zone (it was unbuildable and inert). The **Monument** (50, culture 2)
+  becomes buildable: it had a cost and no build option (closes #73's gap).
+  `maintenance` (gold per turn: Workshop, Library, Shrine, Barracks 1;
+  University 2; Campus, Theater Square, Holy Site, Industrial Zone,
+  Encampment, Entertainment Complex 1) is parsed and stored in tenths;
+  nothing is deducted until P5.
+- **Removed.** `[buildings.Factory]` (Industrialization, beyond the tree;
+  it was inert) and `[improvements."Oil Well"]` (no tech in this span
+  unlocks it).
+- **District costs escalate.** `game_progress(player)` is now (techs known,
+  techs in the tree), so the #86 hook is live: a district placed with k of
+  the 22 techs known costs `base * (22 + 9k) // 22`, from 54 with none to
+  540 with the whole tree (Civ 6's curve); `fixed` districts never scale,
+  and the cost stays locked at placement.
+- **Improved tiles yield more.** `[improvements.*]` declares `food`,
+  `production` and `gold` in whole points, the Civ 6 GS base yields: Farm
+  +1 food; Mine, Quarry, Pasture +1 production; Camp +2 gold (the wiki: +1,
+  GS +2); Plantation +2 gold; Fishing Boats +1 food. (The design's
+  provisional Camp and Plantation values were +1 gold; the wiki says +2.)
+  Food and production enter `Tile.yields` — so the tiles a city chooses to
+  work, its food and production, border-claim ranking and the terrain
+  encoder channels — and gold enters `city_yield(city, "gold")` over the
+  centre and the worked tiles. Building an improvement bumps the terrain
+  epoch, as does a district clearing one. Later-tech bonuses (Apprenticeship
+  on Mines, Feudalism on Farms, …) are not modelled.
+- **Build options** appended, the #67 append-only contract: Monument,
+  Library, University, Shrine, Barracks, Medieval Walls, Workshop.
+- **Engine.** `Player.start_turn`: exploration → units → cities → economy
+  phase (research; P4 and P5 add their steps inside it) → city ranged
+  strike → queued units. Engine defaults live in `game/defaults.py`. Load
+  order: `research_model` first, then `unit_model`, `terrain_model` and
+  `district_model`, each validating its own gating columns (a
+  `requires_tech` / `requires_district` / `requires_building` naming
+  nothing raises); unknown keys in `[units.*]`, `[buildings.*]` and
+  `[improvements.*]` now raise. The smoke script draws production from the
+  build mask and logs techs researched; one seeded run (`python
+  scripts/smoke_random_selfplay.py --seed 4242`, duel, 250 rounds, random
+  valid actions, 1 game) researched 15 and 16 techs.
+
+**What agents see.** No encoder channel reads techs or research (#99,
+#111). The build mask hides unresearched options, so an archived build head
+(10 options, loaded at its own width) starts each game choosing among
+Warrior, Slinger and Settler only. At full width the build state has 7 more
+turns-to-complete channels. The terrain-aware encoders' tile-yield channels
+include improvement yields.
+
+**Accepted gaps.** `requires_civic` and `requires_government_tier` are
+parsed and pass until P4. Maintenance is stored, not paid, until P5.
+Workers stay deferred until P8, so tech-gated improvements, and their
+yields, appear in play only once P8 gives Workers a default.
+
 ---
 
 ## v0.7.0 — Borders and culture; city combat and the other post-0.6.2 rule changes (2026-10-11)
