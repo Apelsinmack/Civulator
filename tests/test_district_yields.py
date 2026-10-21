@@ -14,9 +14,11 @@ from civulator.game import districts as districts_mod
 from civulator.game import housing as housing_mod
 from civulator.game.city import City
 from civulator.game.culture import culture
-from civulator.game.districts import District, district_yields
+from civulator.game.districts import YIELD_NAMES, District, district_yields
 from civulator.game.environment import GameEnvironment
 from civulator.game.housing import housing
+from civulator.game.yields import city_yield
+from civulator.unit_model import POOL_YIELDS, YIELD_COLUMNS
 
 from test_districts import DISTRICTS, board, far_site, make_city, neighbours, placeable_type
 
@@ -38,6 +40,24 @@ def synthetic(monkeypatch):
     return reg
 
 
+def synthetic_per_yield(monkeypatch, amount=3):
+    """One probe per reportable yield ("Probe <yield>": `amount` per adjacent
+    Marker), a second gold probe, and the Marker itself."""
+    cfg = {
+        "population_per_district": 3, "cost_progress_factor": 9,
+        "removable_features": ["Woods"], "allowed_features": [],
+        "Marker": {"production_cost": 10},
+        "Second gold": {"production_cost": 10, "adjacency_yield": "gold",
+                        "adjacency": [{"amount": 2, "district": ["Marker"]}]},
+    }
+    for y in YIELD_NAMES:
+        cfg[f"Probe {y}"] = {"production_cost": 10, "adjacency_yield": y,
+                             "adjacency": [{"amount": amount, "district": ["Marker"]}]}
+    reg = district_model.parse_districts(cfg)
+    monkeypatch.setattr(districts_mod, "DISTRICTS", reg.districts)
+    return reg
+
+
 def put(env, city, name, pos, complete=True):
     """Fixture only: link a District by hand (synthetic types cannot go
     through place_district)."""
@@ -48,6 +68,44 @@ def put(env, city, name, pos, complete=True):
 
 
 # --- Production ------------------------------------------------------------------
+
+
+def test_district_completion_goes_through_complete_district(monkeypatch):
+    """The production branch finishes a district only through
+    GameEnvironment.complete_district (the one place a district finishes;
+    #116 P6 hangs one-shot wonder effects there). Breaks if process_turn
+    marks a district complete itself."""
+    t = placeable_type()
+    env = board()
+    city = make_city(env, (3, 4))
+    assert env.place_district(city, t, far_site(env, city))
+    calls = []
+    real = env.complete_district
+    monkeypatch.setattr(env, "complete_district",
+                        lambda c, d: (calls.append((c, d)), real(c, d)))
+    city.production = city.districts[0].cost
+    env.turn_counter += 1
+    city.process_turn(env)
+    assert calls == [(city, city.districts[0])]
+    assert city.districts[0].complete and city.current_production is None
+
+
+def test_complete_district_refuses_a_finished_or_foreign_district():
+    """complete_district raises for a district already complete or not the
+    city's, so nothing can finish twice (a one-shot effect would fire twice).
+    Breaks if the guard is dropped."""
+    t = placeable_type()
+    env = board()
+    city = make_city(env, (3, 4))
+    other = make_city(env, (3, 12), player_index=1)
+    assert env.place_district(city, t, far_site(env, city))
+    district = city.districts[0]
+    with pytest.raises(ValueError):
+        env.complete_district(other, district)
+    env.complete_district(city, district)
+    assert district.complete
+    with pytest.raises(ValueError):
+        env.complete_district(city, district)
 
 
 def test_district_is_paid_from_the_pool_and_completes_exactly_at_its_cost(monkeypatch):
@@ -142,17 +200,53 @@ def test_yields_count_only_complete_districts_and_follow_the_live_score(monkeypa
     assert all(v == 0 for k, v in district_yields(city).items() if k != "gold")
 
 
-def test_districts_do_not_change_culture_or_production():
-    """Completing districts leaves culture(city) and calculate_production
-    unchanged (reported, not consumed). Breaks if a yield leaks into either
-    consumer."""
-    t = placeable_type()
+def test_a_complete_district_raises_exactly_its_yield_and_an_incomplete_one_nothing(monkeypatch):
+    """INVERTED in #116 P1 (until then: "districts do not change culture or
+    production"). For each reportable yield, a complete district yielding it
+    raises city_yield of that yield by exactly its adjacency score -- x10 in
+    the tenths yields, whole points for production -- and leaves every other
+    yield alone; the consumers culture() and calculate_production see the
+    same change; an incomplete one changes nothing. Breaks if district
+    yields reach the wrong consumer, are double-counted, or count while
+    incomplete."""
+    synthetic_per_yield(monkeypatch, amount=3)
+    for y in YIELD_NAMES:
+        env = board()
+        city = make_city(env, (3, 4))
+        site = (3, 8)
+        probe = put(env, city, f"Probe {y}", site, complete=False)
+        put(env, city, "Marker", neighbours(env, site)[0])
+        assert district_yields(city)[y] == 0
+        before = {n: city_yield(city, n) for n in YIELD_COLUMNS}
+        consumers = (culture(city), city.calculate_production(env))
+        probe.complete = True
+        assert district_yields(city)[y] == 3
+        gain = 30 if y in POOL_YIELDS else 3
+        assert {n: city_yield(city, n) - before[n] for n in YIELD_COLUMNS} == {
+            n: (gain if n == y else 0) for n in YIELD_COLUMNS}, y
+        assert culture(city) - consumers[0] == (30 if y == "culture" else 0)
+        assert city.calculate_production(env) - consumers[1] == (3 if y == "production" else 0)
+
+
+def test_percent_by_district_scales_exactly_that_districts_contribution(monkeypatch):
+    """district_yields(city, percent_by_district) raises each named
+    district's score by its percent before summing, floored per district:
+    +100 doubles exactly that district's share, the other district's is
+    untouched, no mapping changes nothing. Breaks if the percent is applied
+    to the summed yield, to every district, or before the per-row floors."""
+    synthetic_per_yield(monkeypatch, amount=3)
     env = board()
     city = make_city(env, (3, 4))
-    assert env.place_district(city, t, far_site(env, city))
-    before = (culture(city), city.calculate_production(env))
-    city.districts[0].complete = True
-    assert (culture(city), city.calculate_production(env)) == before
+    site_a, site_b = (3, 8), (6, 8)
+    put(env, city, "Probe gold", site_a)
+    put(env, city, "Marker", neighbours(env, site_a)[0])
+    put(env, city, "Second gold", site_b)
+    put(env, city, "Marker", neighbours(env, site_b)[0])
+    assert district_yields(city)["gold"] == 3 + 2
+    assert district_yields(city, {})["gold"] == 3 + 2
+    assert district_yields(city, {"Probe gold": 100})["gold"] == 6 + 2
+    assert district_yields(city, {"Second gold": 100})["gold"] == 3 + 4
+    assert district_yields(city, {"Probe gold": 50})["gold"] == 4 + 2   # floor(4.5)
 
 
 # --- Housing (design section 6) --------------------------------------------------
