@@ -12,7 +12,8 @@ Validation (design §1.2 and "v3 fixes", config loading):
   improvements through terrain_model.IMPROVEMENT_NAMES, districts through
   this registry);
 - `amount` and `per` are positive ints; `adjacency_yield` is one of
-  ACCEPTED_YIELDS; housing values go through unit_model.to_tenths.
+  ACCEPTED_YIELDS; housing values and the optional flat yield columns
+  (unit_model.YIELD_COLUMNS, issue #116) go through unit_model.to_tenths.
 
 Imports only config / terrain_model / unit_model: no civulator.game.
 """
@@ -21,7 +22,7 @@ from dataclasses import dataclass
 
 from .config import CFG
 from . import terrain_model
-from .unit_model import to_tenths
+from .unit_model import YIELD_COLUMNS, to_tenths
 
 CITY_CENTER = "City Center"
 ANY_DISTRICT = "any"
@@ -45,6 +46,7 @@ _DISTRICT_KEYS = frozenset({
     "max_per_city", "max_per_player", "adjacency_yield", "adjacency", "on",
     "adjacent_to_city_center", "requires_adjacent",
     "housing", "water_housing_min", "water_housing_boost",
+    *YIELD_COLUMNS,
 })
 
 
@@ -83,6 +85,10 @@ class DistrictSpec:
     housing: int  # tenths
     water_housing_min: object  # tenths or None
     water_housing_boost: object  # tenths or None
+    # Flat per-turn yields of the complete district (issue #116): every name in
+    # unit_model.YIELD_COLUMNS -> int tenths, 0 when the column is absent.
+    # Read by game/yields.py city_yield; separate from the adjacency yield.
+    yield_columns: dict
 
 
 @dataclass(frozen=True)
@@ -231,6 +237,7 @@ def _parse_district(name, table, district_names):
         housing=_optional_tenths(table, "housing", where) or 0,
         water_housing_min=_optional_tenths(table, "water_housing_min", where),
         water_housing_boost=_optional_tenths(table, "water_housing_boost", where),
+        yield_columns={c: _optional_tenths(table, c, where) or 0 for c in YIELD_COLUMNS},
     )
 
 

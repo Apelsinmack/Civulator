@@ -44,6 +44,16 @@ class District:
     cost: int = 0
 
 
+def district_spec(district_type):
+    """The registry entry (`district_model.DistrictSpec`) of `district_type`.
+
+    The one accessor for readers of the registry outside district_model
+    (progression design, v2 fixes): it reads this module's `DISTRICTS` at call
+    time, so a synthetic registry patched in here is the one every reader sees.
+    """
+    return DISTRICTS[district_type]
+
+
 # --- Source matching (design §1.2) ------------------------------------------
 
 
@@ -105,17 +115,26 @@ def adjacency_score(district_type, coords, game_map):
 # --- Yields (design §5) --------------------------------------------------------
 
 
-def district_yields(city):
+def district_yields(city, percent_by_district=None):
     """Mapping yield name -> summed adjacency score over the city's COMPLETE
-    districts, for every reportable yield name (0 when none). Live, never
-    cached; reported only -- nothing consumes it yet (design §5)."""
+    districts, for every reportable yield name (0 when none), in whole points.
+    Live, never cached. The one conversion of adjacency into yields:
+    `city_yield` (game/yields.py) consumes it (#116), and `episode_stats`
+    reports it raw as `district_yield_<name>`.
+
+    `percent_by_district` (district type -> int percent, absent = 0) raises a
+    district's score by that percent before the sum, floored per district:
+    score * (100 + percent) // 100 (progression design, v2 fixes: the
+    summed `adjacency_percent` effects, applied once).
+    """
     game_map = city.player.game_env.map
+    percents = percent_by_district or {}
     result = dict.fromkeys(YIELD_NAMES, 0)
     for district in city.districts:
         spec = DISTRICTS[district.type]
         if district.complete and spec.adjacency_yield in result:
-            result[spec.adjacency_yield] += adjacency_score(
-                district.type, district.coordinates, game_map)
+            score = adjacency_score(district.type, district.coordinates, game_map)
+            result[spec.adjacency_yield] += score * (100 + percents.get(district.type, 0)) // 100
     return result
 
 

@@ -670,6 +670,24 @@ heal_per_turn = 20
 base = 1.0          # per city per turn (stand-in for the Civ 6 Palace)
 per_pop = 0.3       # per citizen (community-reported Civ 6 game-file value)
 
+# --- Science, gold, faith (issue #116 P1, docs/progression_design.md §2.1) ---
+# Same shape as [culture]: a city yields base + per_pop * population of each,
+# plus the `science` / `gold` / `faith` columns of its buildings and complete
+# districts and its districts' adjacency. All read by civulator/unit_model.py
+# only (exactly these two keys), stored as int tenths; consumed by
+# civulator/game/yields.py city_yield. Rule change in v0.8.0 (CHANGELOG).
+[science]
+base = 0.0          # Civ 6: no per-city science
+per_pop = 0.5       # Civ 6: each citizen +0.5 science
+
+[gold]
+base = 0.0          # citizens yield no gold (Civ 6); the Palace, districts
+per_pop = 0.0       # and buildings do
+
+[faith]
+base = 0.0
+per_pop = 0.0
+
 # --- Housing (issue #88, docs/housing_design.md s1) -------------------------
 # Water housing at the city centre (Civ 6 values) and the radius within which
 # a city's owned improvements add housing. Read only by civulator/game/housing.py
@@ -710,9 +728,15 @@ p = 1.3
 # strength for as long as it stands. Read only by civulator/unit_model.py;
 # City.BUILDING_COSTS and City.get_combat_strength are aliases of what it
 # interprets, never a second copy of these numbers.
+# Yield columns (optional, default 0, multiples of 0.1; #87 culture, #116 the
+# rest): `science`, `culture`, `gold`, `faith` per turn into the owner's pools,
+# `food` and `production` per turn into the city's own — all read by
+# civulator/game/yields.py city_yield, never by name.
 [buildings.Granary]
 production_cost = 60
 housing = 2         # optional column (default 0); Civ 6 Granary. A multiple of 0.1
+food = 1            # rule change v0.8.0 (#116 P1): Civ 6 Granary +1 Food
+                    # (docs/civ6_progression_reference.md §7)
 
 [buildings.Monument]
 production_cost = 50
@@ -735,6 +759,12 @@ production_cost = 240
 # never built (no production_cost, so City.produce_building refuses it).
 [buildings.Palace]
 housing = 1
+# Rule change v0.8.0 (#116 P1): the Civ 6 Palace's yields, +2 Science, +5 Gold,
+# +2 Production (docs/civ6_progression_reference.md §7). Its +1 Culture stays
+# in [culture] base, which every city already gets (design §0.3).
+science = 2
+gold = 5
+production = 2
 
 # --- Districts (issue #86, docs/districts_design.md) ------------------------
 # Civ 6 Gathering Storm values. Read only by civulator/district_model.py.
@@ -752,6 +782,10 @@ housing = 1
 #   on                   terrain mapping for the district's own tile; absent = land
 #   adjacent_to_city_center   true = required, false = forbidden, absent = either
 #   requires_adjacent    sources of which at least one must hold (§2)
+#   science, culture, gold, faith, food, production
+#                        optional flat per-turn yields of the complete district
+#                        (multiples of 0.1, default 0; #116, read by city_yield);
+#                        none declared today
 # Sources: terrain = {bases/relief/features/resources} (terrain_model `on`
 # form), improvement = [...], district = [...] | "any" ("City Center" names a
 # city centre; "any" = any district or centre), river_on_tile = true

@@ -21,7 +21,8 @@ Config schema (config.toml):
     ...
 
 This module is the only interpreter of `[units.*]` / `[combat]` / `[city]`
-health+defense / `[buildings.*]`: civulator/game/unit.py and
+health+defense / `[buildings.*]` / the per-city yield tables `[science]`,
+`[culture]`, `[gold]`, `[faith]` (issue #116): civulator/game/unit.py and
 civulator/game/city.py import
 from it and must not read those CFG tables directly, and no new hardcoded
 combat number should appear anywhere else (CLAUDE.md canonical-systems
@@ -119,12 +120,41 @@ def to_tenths(value, what):
     return int(tenths)
 
 
-# Culture sources (issue #87 s1): any table may declare an optional `culture`
-# column; today only [buildings.*]. Values are int tenths.
-BUILDING_CULTURE = {
-    name: to_tenths(table["culture"], f"[buildings.{name}] culture")
-    for name, table in _BUILDINGS_CFG.items()
-    if table.get("culture")
+# --- City yields (issue #116 P1, docs/progression_design.md §2.1) ---
+#
+# The six yield columns a [buildings.*] table may declare (district tables
+# declare the same columns, parsed by district_model). Every value is int
+# tenths, food and production included; civulator/game/yields.py (city_yield,
+# the one consumer) turns food and production into whole points.
+YIELD_COLUMNS = ("science", "culture", "gold", "faith", "food", "production")
+# The four yields with a player pool and a `[<name>] base / per_pop` table.
+POOL_YIELDS = ("science", "culture", "gold", "faith")
+
+
+def _building_column(column):
+    """name -> int tenths for every building declaring a nonzero `column`."""
+    return {
+        name: to_tenths(table[column], f"[buildings.{name}] {column}")
+        for name, table in _BUILDINGS_CFG.items()
+        if table.get(column)
+    }
+
+
+# Culture sources (issue #87 s1); the other five columns follow the same
+# pattern (#116). Absent column = 0.
+BUILDING_CULTURE = _building_column("culture")
+BUILDING_SCIENCE = _building_column("science")
+BUILDING_GOLD = _building_column("gold")
+BUILDING_FAITH = _building_column("faith")
+BUILDING_FOOD = _building_column("food")
+BUILDING_PRODUCTION = _building_column("production")
+BUILDING_YIELDS = {
+    "science": BUILDING_SCIENCE,
+    "culture": BUILDING_CULTURE,
+    "gold": BUILDING_GOLD,
+    "faith": BUILDING_FAITH,
+    "food": BUILDING_FOOD,
+    "production": BUILDING_PRODUCTION,
 }
 
 # Housing sources (issue #88 s1): same pattern; [improvements.*] housing is
@@ -171,9 +201,27 @@ def growth_percent(margin_tenths, bands=None):
             return percent
     return 0
 
-_CULTURE_CFG = CFG["culture"]
-CULTURE_BASE = to_tenths(_CULTURE_CFG["base"], "[culture] base")
-CULTURE_PER_POP = to_tenths(_CULTURE_CFG["per_pop"], "[culture] per_pop")
+
+def _pool_yield_table(name):
+    """(base, per_pop) of `[<name>]` in int tenths; exactly those two keys."""
+    table = CFG[name]
+    keys = {"base", "per_pop"}
+    if set(table) != keys:
+        raise ValueError(f"[{name}] must have exactly the keys {sorted(keys)}, got {sorted(table)}")
+    return (to_tenths(table["base"], f"[{name}] base"),
+            to_tenths(table["per_pop"], f"[{name}] per_pop"))
+
+
+# Per-city yield scalars (#87 culture; #116 science, gold, faith): a city
+# yields base + per_pop * population of each, before its sources.
+CULTURE_BASE, CULTURE_PER_POP = _pool_yield_table("culture")
+SCIENCE_BASE, SCIENCE_PER_POP = _pool_yield_table("science")
+GOLD_BASE, GOLD_PER_POP = _pool_yield_table("gold")
+FAITH_BASE, FAITH_PER_POP = _pool_yield_table("faith")
+YIELD_BASE = {"science": SCIENCE_BASE, "culture": CULTURE_BASE,
+              "gold": GOLD_BASE, "faith": FAITH_BASE}
+YIELD_PER_POP = {"science": SCIENCE_PER_POP, "culture": CULTURE_PER_POP,
+                 "gold": GOLD_PER_POP, "faith": FAITH_PER_POP}
 
 BUILDING_DEFENSE_BONUS = {
     name: table["defense_bonus"]

@@ -32,8 +32,9 @@ def synthetic(monkeypatch):
         "Flat": {"production_cost": 10, "housing": 1.5},
     }
     reg = district_model.parse_districts(cfg)
+    # Every reader outside district_model goes through districts.district_spec
+    # (#116), so patching the registry here reaches housing and yields too.
     monkeypatch.setattr(districts_mod, "DISTRICTS", reg.districts)
-    monkeypatch.setattr(housing_mod, "DISTRICTS", reg.districts)
     return reg
 
 

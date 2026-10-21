@@ -16,6 +16,7 @@ from . import territory
 from .culture import culture
 from .districts import district_yields
 from .housing import housing
+from .yields import city_yield
 from .unit import (
     Unit, WarriorUnit, SlingerUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
     HorsemanUnit, CatapultUnit, BatteringRamUnit, SiegeTowerUnit,
@@ -60,7 +61,8 @@ class City:
         self.worked_tiles = []  # List of (row, col) assigned to citizens
         # Culture (issue #87), all int tenths. border_culture is the city's
         # border pool; culture_this_round is what the border phase reads and
-        # zeroes; _culture_round stamps the round of the last accrual.
+        # zeroes; _culture_round stamps the round of the last yield-phase
+        # accrual (all four pool yields since #116).
         self.border_culture = 0
         self.culture_this_round = 0
         self._culture_round = None
@@ -190,31 +192,19 @@ class City:
         self.worked_tiles = [pos for _, _, pos in scored[:self.population]]
 
     def calculate_food(self, game_env):
-        """Calculate total food from city center + worked tiles."""
-        # City center (always worked, free)
-        center_tile = game_env.map.get_tile(self.coordinates)
-        total_food = center_tile.yields[0]
-
-        # Worked tiles
-        for pos in self.worked_tiles:
-            tile = game_env.map.get_tile(pos)
-            if tile:
-                total_food += tile.yields[0]
-
-        return total_food
+        """Food this turn, whole points: `city_yield(city, "food")` -- the
+        centre (always worked, free) plus worked tiles plus declared food
+        sources such as building columns (#116). `game_env` is the city's own
+        environment, which city_yield reads through `self.player`."""
+        return city_yield(self, "food")
 
     def calculate_production(self, game_env):
-        """Calculate total production from city center + worked tiles."""
-        center_tile = game_env.map.get_tile(self.coordinates)
-        total_prod = center_tile.yields[1]
-
-        for pos in self.worked_tiles:
-            tile = game_env.map.get_tile(pos)
-            if tile:
-                total_prod += tile.yields[1]
-
-        # Minimum 1 production per turn (so cities can always build, just slowly)
-        return max(1, total_prod)
+        """Production this turn, whole points: `city_yield(city,
+        "production")` -- centre plus worked tiles plus declared sources
+        (building and district columns, the adjacency of complete districts
+        yielding production; #116) -- with a floor of 1, so a city can always
+        build, slowly."""
+        return max(1, city_yield(self, "production"))
 
     def get_growth_threshold(self):
         """Food surplus needed to grow to next population level.
@@ -227,8 +217,8 @@ class City:
     def process_turn(self, game_env):
         """Process a game turn for this city.
 
-        Order: repair → collect food → consume → growth/starvation → culture →
-        collect production → build.
+        Order: repair → collect food → consume → growth/starvation → yields
+        (science, culture, gold, faith) → collect production → build.
         """
         # --- Repair phase (issue #84) ---
         # Civ 6: a city heals 20 HP per turn unless it is under siege. A
@@ -269,8 +259,8 @@ class City:
             self.population += 1
             self.assign_tiles(game_env)
 
-        # --- Culture phase (issue #87) ---
-        self._accrue_culture(game_env)
+        # --- Yield phase (issue #87 culture; #116 science, gold, faith) ---
+        self._accrue_yields(game_env)
 
         # --- Production phase ---
         self.production += self.calculate_production(game_env)
@@ -302,23 +292,39 @@ class City:
                     self.current_production = None
                 elif self.production >= district.cost:
                     self.production -= district.cost
-                    district.complete = True
-                    self.current_production = None
+                    game_env.complete_district(self, district)
 
-    def _accrue_culture(self, game_env):
-        """Add this turn's culture (int tenths) to the border pool, the
-        per-round counter and the owner's civic pool; at most once per round.
+    def _accrue_yields(self, game_env):
+        """The yield phase (#116 P1, progression design §2.2): add this
+        turn's science, culture, gold and faith (int tenths) to the owner's
+        pools and episode stats, at most once per round (the `_culture_round`
+        stamp). Culture also fills the city's border pool and per-round
+        counter (#87). A city captured after its old owner's turn therefore
+        accrues once per round, for whoever processed it first.
         """
         if self._culture_round == game_env.turn_counter:
             return
         self._culture_round = game_env.turn_counter
-        yield_tenths = culture(self)
-        self.border_culture += yield_tenths
-        self.culture_this_round += yield_tenths
-        self.player.culture += yield_tenths
-        stats = game_env.episode_stats[self.player.player_index]
-        stats["culture_produced"] += yield_tenths
-        # District yields are reported, not consumed (#86 s5); same guard.
+        player = self.player
+        stats = game_env.episode_stats[player.player_index]
+
+        culture_tenths = culture(self)
+        self.border_culture += culture_tenths
+        self.culture_this_round += culture_tenths
+        player.culture += culture_tenths
+        stats["culture_produced"] += culture_tenths
+
+        science_tenths = city_yield(self, "science")
+        gold_tenths = city_yield(self, "gold")
+        faith_tenths = city_yield(self, "faith")
+        player.science += science_tenths
+        player.gold += gold_tenths
+        player.faith += faith_tenths
+        stats["science_produced"] += science_tenths
+        stats["gold_produced"] += gold_tenths
+        stats["faith_produced"] += faith_tenths
+
+        # The raw adjacency score per yield (#86 s5), unscaled; same guard.
         for name, score in district_yields(self).items():
             stats[f"district_yield_{name}"] += score
 
