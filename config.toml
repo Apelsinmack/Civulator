@@ -518,8 +518,31 @@ city_score_weight = 10   # Turn-cap tiebreak: score = cities * this + units (#55
 #
 # NUM_UNIT_SLOTS/UNIT_SLOT and MOVEMENT_DOMAIN stay in civulator/game/unit.py
 # (not here) — see the comments on those tables for why.
+#
+# Columns of a [units.*] table (#116 P3, docs/progression_design.md §6; unknown
+# keys raise, civulator/unit_model.py UNIT_KEYS):
+#   max_movement, combat_strength, ranged_strength, range, production_cost
+#                    the five stat tables (#64)
+#   combat_class     REQUIRED. melee | anti_cavalry | ranged | light_cavalry |
+#                    heavy_cavalry | siege | support | civilian. The one class
+#                    registry: [combat] class_bonuses rows, the siege rules,
+#                    civilian capture and the encoder's class channel all read
+#                    it, so no combat rule names a unit.
+#   era              REQUIRED. One of [research]'s eras (informational for now).
+#   maintenance      REQUIRED. Gold per turn (a multiple of 0.1); deducted by
+#                    #116 P5.
+#   purchasable      optional, default ["gold"]. Resources that may buy it
+#                    ("gold", "faith"); consumed by #116 P5.
+#   upgrades_to      optional. The unit type this one upgrades into
+#                    (GameEnvironment.upgrade_unit, [gold] upgrade_* below).
+#   requires_tech / requires_civic   availability gates (#116 P2).
 # =====================================================================
 [units.Warrior]
+combat_class = "melee"
+era = "Ancient"
+maintenance = 0
+purchasable = ["gold"]
+upgrades_to = "Swordsman"
 max_movement = 2
 combat_strength = 20
 ranged_strength = 0
@@ -535,6 +558,11 @@ production_cost = 40
 # Read only by civulator/unit_model.py; checked through
 # civulator/game/availability.py player_can_build.
 [units.Slinger]
+combat_class = "ranged"
+era = "Ancient"
+maintenance = 0
+purchasable = ["gold"]
+upgrades_to = "Archer"
 max_movement = 2
 combat_strength = 5
 ranged_strength = 15
@@ -543,6 +571,11 @@ production_cost = 35
 
 [units.Archer]
 requires_tech = "Archery"
+combat_class = "ranged"
+era = "Ancient"
+maintenance = 1
+purchasable = ["gold"]
+upgrades_to = "Crossbowman"
 max_movement = 2
 combat_strength = 15
 ranged_strength = 25
@@ -551,6 +584,11 @@ production_cost = 60
 
 [units.Swordsman]
 requires_tech = "Iron Working"
+combat_class = "melee"
+era = "Classical"
+maintenance = 2
+purchasable = ["gold"]
+upgrades_to = "Man-At-Arms"
 max_movement = 2
 combat_strength = 35
 ranged_strength = 0
@@ -559,6 +597,11 @@ production_cost = 90
 
 [units.Spearman]
 requires_tech = "Bronze Working"
+combat_class = "anti_cavalry"
+era = "Ancient"
+maintenance = 1
+purchasable = ["gold"]
+upgrades_to = "Pikeman"
 max_movement = 2
 combat_strength = 25
 ranged_strength = 0
@@ -567,6 +610,11 @@ production_cost = 65
 
 [units.Horseman]
 requires_tech = "Horseback Riding"
+combat_class = "light_cavalry"
+era = "Classical"
+maintenance = 2
+purchasable = ["gold"]
+upgrades_to = "Knight"      # Claude's call: one cavalry line (Civ 6 has Courser)
 max_movement = 4
 combat_strength = 35
 ranged_strength = 0
@@ -574,6 +622,10 @@ range = 1
 production_cost = 80
 
 [units.Settler]
+combat_class = "civilian"
+era = "Ancient"
+maintenance = 0
+purchasable = ["gold"]
 max_movement = 2
 combat_strength = 0
 ranged_strength = 0
@@ -581,6 +633,10 @@ range = 0
 production_cost = 120
 
 [units.Worker]
+combat_class = "civilian"
+era = "Ancient"
+maintenance = 0
+purchasable = ["gold"]
 max_movement = 2
 combat_strength = 0
 ranged_strength = 0
@@ -589,16 +645,22 @@ production_cost = 50
 
 [units.Catapult]
 requires_tech = "Engineering"
+# combat_class = "siege" (#116 P3; was the boolean `siege_class`, issue #66):
+# the class is exempt from [combat] ranged_city_penalty -- breaking
+# fortifications is the siege class's entire identity in Civ 6, and the flat
+# penalty was being applied to the one class Civ 6 exempts -- and a siege unit
+# may fire only with at least 1 movement point left. The only interpreter is
+# civulator/unit_model.py (SIEGE_CLASS).
+combat_class = "siege"
+era = "Classical"
+maintenance = 2
+purchasable = ["gold"]
+upgrades_to = "Trebuchet"
 max_movement = 2
 combat_strength = 23
 ranged_strength = 35
 range = 2
 production_cost = 120
-# siege_class (issue #66): exempt from [combat] ranged_city_penalty. Breaking
-# fortifications is the siege class's entire identity in Civ 6, and the flat
-# penalty was being applied to the one class Civ 6 exempts. Optional key,
-# absent = false; the only interpreter is civulator/unit_model.py.
-siege_class = true
 
 # --- Siege support (issue #66) ----------------------------------------------
 # Stats only. Both units have occupied UNIT_SLOT 2 since the stacking design
@@ -613,6 +675,10 @@ siege_class = true
 # option that cannot pay off.
 [units.BatteringRam]
 requires_tech = "Masonry"
+combat_class = "support"
+era = "Ancient"
+maintenance = 1
+purchasable = ["gold"]
 max_movement = 2
 combat_strength = 0
 ranged_strength = 0
@@ -621,18 +687,139 @@ production_cost = 65
 
 [units.SiegeTower]
 requires_tech = "Machinery"
+combat_class = "support"
+era = "Classical"
+maintenance = 2
+purchasable = ["gold"]
 max_movement = 2
 combat_strength = 0
 ranged_strength = 0
 range = 0
 production_cost = 100
 
+# --- Medieval and Renaissance units, and the Trader (#116 P3) ----------------
+# Civ 6 Gathering Storm values (docs/civ6_progression_reference.md §6, §8.3);
+# docs/progression_design.md §6.2. Existing units keep their v0.7 numbers
+# (Horseman 35, Catapult 23) and are not retuned toward Civ 6.
+[units."Man-At-Arms"]
+requires_tech = "Apprenticeship"
+combat_class = "melee"
+era = "Medieval"
+maintenance = 3
+purchasable = ["gold"]
+upgrades_to = "Musketman"
+max_movement = 2
+combat_strength = 45
+ranged_strength = 0
+range = 1
+production_cost = 160
+
+[units.Pikeman]
+requires_tech = "Military Tactics"
+combat_class = "anti_cavalry"
+era = "Medieval"
+maintenance = 2
+purchasable = ["gold"]
+max_movement = 2
+combat_strength = 45
+ranged_strength = 0
+range = 1
+production_cost = 180
+
+[units.Crossbowman]
+requires_tech = "Machinery"
+combat_class = "ranged"
+era = "Medieval"
+maintenance = 3
+purchasable = ["gold"]
+max_movement = 2
+combat_strength = 30
+ranged_strength = 40
+range = 2
+production_cost = 180
+
+[units.Knight]
+requires_tech = "Stirrups"
+combat_class = "heavy_cavalry"
+era = "Medieval"
+maintenance = 4
+purchasable = ["gold"]
+max_movement = 4
+combat_strength = 50
+ranged_strength = 0
+range = 1
+production_cost = 220
+
+[units.Trebuchet]
+requires_tech = "Military Engineering"
+combat_class = "siege"
+era = "Medieval"
+maintenance = 3
+purchasable = ["gold"]
+max_movement = 2
+combat_strength = 35
+ranged_strength = 45
+range = 2
+production_cost = 200
+
+[units.Musketman]
+requires_tech = "Gunpowder"
+combat_class = "melee"
+era = "Renaissance"
+maintenance = 4
+purchasable = ["gold"]
+max_movement = 2
+combat_strength = 55
+ranged_strength = 0
+range = 1
+production_cost = 240
+
+# Trader: a civilian (slot 1, land) that makes and keeps one trade route
+# (#116 P5; docs/progression_design.md §7.4). Gated on the Foreign Trade CIVIC,
+# kept raw until P4 defines civics. Its table exists now, but it stays in
+# game/unit.py's DEFERRED_BUILD_UNITS until P5 gives it routes: a build option
+# that cannot pay off is the #67 failure.
+[units.Trader]
+requires_civic = "Foreign Trade"
+combat_class = "civilian"
+era = "Ancient"
+maintenance = 0
+purchasable = ["gold"]
+max_movement = 2
+combat_strength = 0
+ranged_strength = 0
+range = 0
+production_cost = 40
+
 # --- Combat formula constants (Civ6-inspired modifier stacking, #60/#63) ---
 [combat]
-anti_cavalry_bonus = 10          # Spearman vs Horseman, both directions (#63)
-melee_vs_spearman_bonus = 5      # Warrior/Swordsman vs Spearman, both directions (#63)
+# Class-pair modifiers (#116 P3; replaces anti_cavalry_bonus,
+# melee_vs_spearman_bonus and archer_vs_horseman_penalty, which named units).
+# One row = { unit, target, amount, strength }:
+#   unit, target  a combat_class OR a single unit type name (a row matches a
+#                 unit by its name or by its class; a name may not equal a class)
+#   amount        added to `unit`'s strength against `target` (negative = penalty)
+#   strength      "combat" -> read by Unit.get_combat_strength, in BOTH roles
+#                            (attacking and defending, #63: a Spearman standing
+#                            still still gets its bonus);
+#                 "ranged" -> read only by Unit.get_ranged_strength, i.e. by the
+#                            shooter against its target.
+# Rows apply in this order; the only interpreter is civulator/unit_model.py.
+# The three rows marked "v0.7" are the old constants, exactly as they were applied:
+# the archer penalty is shooter-only and by unit name, so the Slinger (a ranged
+# unit by class) keeps getting none. The Crossbowman rows and the two
+# heavy_cavalry rows are new in 0.8 (Civ 6: anti-cavalry +10 vs all cavalry;
+# the Knight is a mounted target of the same shooters).
+class_bonuses = [
+    { unit = "anti_cavalry", target = "light_cavalry", amount = 10, strength = "combat" },   # v0.7: Spearman vs Horseman (#63)
+    { unit = "melee", target = "anti_cavalry", amount = 5, strength = "combat" },            # v0.7: Warrior/Swordsman vs Spearman (#63)
+    { unit = "Archer", target = "light_cavalry", amount = -5, strength = "ranged" },         # v0.7: archer_vs_horseman_penalty
+    { unit = "anti_cavalry", target = "heavy_cavalry", amount = 10, strength = "combat" },
+    { unit = "Archer", target = "heavy_cavalry", amount = -5, strength = "ranged" },
+    { unit = "Crossbowman", target = "light_cavalry", amount = -5, strength = "ranged" },
+    { unit = "Crossbowman", target = "heavy_cavalry", amount = -5, strength = "ranged" },
+]
 ranged_city_penalty = 17         # flat ranged-strength penalty vs cities (subtracted)
-archer_vs_horseman_penalty = 5   # Archers less effective vs cavalry (subtracted)
 fortification_bonus = [3, 6]     # indexed by fortification level - 1 (level is 1 or 2)
 # Health penalty: coefficient * (100 - hp) / 100. One value shared by melee
 # (get_combat_strength) and ranged (get_ranged_strength) — do not fork it.
@@ -714,6 +901,13 @@ per_pop = 0.5       # Civ 6: each citizen +0.5 science
 [gold]
 base = 0.0          # citizens yield no gold (Civ 6); the Palace, districts
 per_pop = 0.0       # and buildings do
+# Unit upgrades (#116 P3; docs/progression_design.md §6.4): the gold price of
+# GameEnvironment.upgrade_unit is upgrade_per_production * (target production
+# cost - unit production cost) + upgrade_base, in whole gold. Civ 6 states no
+# formula; this one reproduces its single data point (Slinger -> Archer = 60
+# gold) and is the community's reading of the game files. Both whole numbers.
+upgrade_per_production = 2
+upgrade_base = 10
 
 [faith]
 base = 0.0

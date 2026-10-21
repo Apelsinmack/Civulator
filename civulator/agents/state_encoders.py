@@ -15,11 +15,29 @@ import numpy as np
 import torch
 
 from .. import hexmath
+from ..unit_model import COMBAT_CLASS
 
 
 def _clamp01(value):
     """Clamp a scalar (or numpy value) to [0, 1]."""
     return min(1.0, max(0.0, value))
+
+
+# Class channel per COMBAT CLASS (#116 P3). Units that share a battlefield
+# role share a channel -- the Swordsman rides in the Warrior's melee channel,
+# the Slinger (#67) in the Archer's ranged channel, the Knight in the
+# Horseman's cavalry channel -- because a new index would change the channel
+# count and invalidate every trained .pth. -1 means "no class channel":
+# civilians, and the siege support units (#66: combat strength 0, no attack of
+# their own). The five channels are EnhancedStateEncoder's own-unit class
+# one-hot (channels 0-4).
+CLASS_CHANNEL = {
+    "melee": 0, "anti_cavalry": 1, "ranged": 2,
+    "light_cavalry": 3, "heavy_cavalry": 3, "siege": 4,
+    "support": -1, "civilian": -1,
+}
+# Class channel per unit TYPE: unit_model.COMBAT_CLASS through CLASS_CHANNEL.
+UNIT_CLASS_INDEX = {name: CLASS_CHANNEL[cls] for name, cls in COMBAT_CLASS.items()}
 
 
 class StateEncoder(ABC):
@@ -127,20 +145,10 @@ class EnhancedStateEncoder(StateEncoder):
         pre-fog encoder (depth 25).
     """
 
-    # Class channel per unit type. Units that share a battlefield role share a
-    # channel — the Swordsman rides in the Warrior's melee channel and the
-    # Slinger (#67) in the Archer's ranged channel — because a new index would
-    # change the channel count and invalidate every trained .pth. -1 means "no
-    # class channel" (civilians).
-    CLASS_INDEX = {
-        "Warrior": 0, "Swordsman": 0, "Spearman": 1,
-        "Slinger": 2, "Archer": 2, "Horseman": 3, "Catapult": 4,
-        "Settler": -1, "Worker": -1,
-        # Siege support (#66): combat strength 0, no attack of their own, and
-        # no class channel — a new index would change the channel count and
-        # invalidate every trained .pth for units that cannot yet be built.
-        "BatteringRam": -1, "SiegeTower": -1,
-    }
+    # Class channel per unit TYPE, DERIVED from the unit's `combat_class`
+    # through CLASS_CHANNEL above (#116 P3) -- never edited by hand, so a new
+    # unit adds no channel and cannot be forgotten here.
+    CLASS_INDEX = UNIT_CLASS_INDEX
 
     MAX_MELEE_STR = 50.0
     MAX_RANGED_STR = 50.0
@@ -208,10 +216,16 @@ class EnhancedStateEncoder(StateEncoder):
         if cls_idx >= 0:
             state[ch_class + cls_idx, i, j] = 1.0
         state[ch_stats, i, j] = unit.health / 100.0
-        state[ch_stats + 1, i, j] = unit.get_base_combat_strength() / self.MAX_MELEE_STR
-        state[ch_stats + 2, i, j] = unit.get_base_ranged_strength() / self.MAX_RANGED_STR
-        state[ch_stats + 3, i, j] = unit.get_range() / self.MAX_RANGE
-        state[ch_stats + 4, i, j] = unit.movement_points / self.MAX_MOVEMENT
+        # Clamped at 1.0 (#116 P3, ACCEPTED GAP): the MAX_* constants stay as
+        # they are -- changing them would shift every trained .pth's inputs --
+        # so a unit stronger than the constant (Musketman 55 > 50) saturates
+        # its channel instead of leaving the [0, 1] range the networks were
+        # trained on. Knight (50) sits exactly on it. #111 revisits the input
+        # space.
+        state[ch_stats + 1, i, j] = _clamp01(unit.get_base_combat_strength() / self.MAX_MELEE_STR)
+        state[ch_stats + 2, i, j] = _clamp01(unit.get_base_ranged_strength() / self.MAX_RANGED_STR)
+        state[ch_stats + 3, i, j] = _clamp01(unit.get_range() / self.MAX_RANGE)
+        state[ch_stats + 4, i, j] = _clamp01(unit.movement_points / self.MAX_MOVEMENT)
         # Defense bonus
         fort_bonus = 0
         if unit.fortification == 1:

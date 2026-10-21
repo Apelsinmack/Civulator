@@ -13,6 +13,7 @@ from ..terrain_model import can_enter, improvement_on, matches
 from .player import Player
 from .city import City
 from .availability import player_can_build
+from .city import _create_unit
 from .defaults import default_research
 from .districts import (
     YIELD_NAMES as DISTRICT_YIELD_NAMES, District, can_place_district, district_cost,
@@ -24,6 +25,7 @@ from .territory import (
     run_border_phase,
 )
 from .unit import WarriorUnit, calculate_damage, movement_domain
+from .upgrades import can_upgrade, upgrade_cost, upgrade_target
 from ..config import CFG
 
 logger = logging.getLogger(__name__)
@@ -228,6 +230,7 @@ class GameEnvironment:
                 "faith_produced": 0,
                 "growth_slowed_turns": 0,  # city-turns, positive net, band < 100 % (#88)
                 "techs_researched": 0,  # completed techs (#116 P2)
+                "units_upgraded": 0,  # units upgraded into their next type (#116 P3)
                 # Summed adjacency score per yield, per city-round (#86 s5)
                 **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
             }
@@ -612,8 +615,9 @@ class GameEnvironment:
             reward += REWARDS["kill"]
             self.episode_stats[atk_idx]["kills"] += 1
             self.episode_stats[def_idx]["losses"] += 1
-            # Capture civilian units (Settler, Worker) instead of killing them
-            if defender.unit_type in ("Settler", "Worker") and not attacker_killed:
+            # Capture civilian units instead of killing them: the class
+            # `civilian` (Settler, Worker, Trader), never a list of names (#116 P3)
+            if defender.is_civilian() and not attacker_killed:
                 defender.player.remove_unit(defender)
                 defender.player = self.current_player
                 self.current_player.units.append(defender)
@@ -1147,16 +1151,20 @@ class GameEnvironment:
             return False
         return matches(on, tile.base_terrain, tile.relief, tile.feature)
 
+    def player_owns_tile(self, player, coordinates):
+        """Whether `coordinates` lies in the territory of one of `player`'s
+        cities (`Map.owner_city`): the one ownership test of the build and
+        upgrade rules (`can_player_build_improvement_at`, `upgrade_unit`)."""
+        owner_id = self.map.owner_id_at(coordinates)
+        return owner_id != NEUTRAL and self.city_by_id[owner_id].player is player
+
     def can_player_build_improvement_at(self, player, coordinates, improvement_type):
         """Whether `player` may build `improvement_type` on this tile now
         (#116 P2, progression design "v2 fixes"): the tile is owned by one of
         the player's cities (`Map.owner_city`), the player `player_can_build`
         it (its `requires_tech`), and the tile predicate holds."""
         tile = self.map.get_tile(coordinates)
-        if tile is None:
-            return False
-        owner_id = self.map.owner_id_at(tile.coordinates)
-        if owner_id == NEUTRAL or self.city_by_id[owner_id].player is not player:
+        if tile is None or not self.player_owns_tile(player, tile.coordinates):
             return False
         if not player_can_build(player, "improvement", improvement_type):
             return False
@@ -1216,6 +1224,44 @@ class GameEnvironment:
         maintenance and bankruptcy before it and route expiry and the Trader
         default after; P8 the Worker default last."""
         self.resolve_research(player)
+
+    # --- Upgrades (#116 P3, docs/progression_design.md §6.4) ---
+
+    def upgrade_unit(self, unit):
+        """Upgrade `unit` into its `upgrades_to` type, paying
+        `upgrade_cost(unit)` gold. Refused (False, nothing changed) unless
+        `can_upgrade` holds: an upgrade exists and its owner may build the
+        target (`player_can_build`), the unit stands on a tile of one of its
+        owner's cities, has all its movement and has not acted this turn, and
+        the treasury (int tenths) covers the price.
+
+        The unit OBJECT is replaced, through `_create_unit`, at the same index
+        of `player.units` and the same place in its tile's stack, so its slot
+        and every ordering that reads `player.units` ("oldest first") are
+        kept. Health carries over; the new unit has spent its movement, is
+        unfortified and counts as having acted (Civ 6: no upgrade-and-move in
+        one turn). `episode_stats[...]["units_upgraded"]` counts it.
+
+        No engine default and no agent action calls this yet: dormant until
+        #99, like `swap_tile` -- an ACCEPTED GAP recorded in the CHANGELOG.
+        The only way a unit changes type.
+        """
+        if not can_upgrade(self, unit):
+            return False
+        player = unit.player
+        cost = upgrade_cost(unit)
+        upgraded = _create_unit(upgrade_target(unit), player, unit.coordinates)
+        upgraded.health = unit.health
+        upgraded.movement_points = 0
+        upgraded.fortification = 0
+        upgraded.has_acted = True
+
+        player.units[player.units.index(unit)] = upgraded
+        stack = self.map.get_tile(unit.coordinates).units
+        stack[stack.index(unit)] = upgraded
+        player.gold -= 10 * cost  # the treasury is in tenths
+        self.episode_stats[player.player_index]["units_upgraded"] += 1
+        return True
 
     # --- Pathfinding wrappers ---
 

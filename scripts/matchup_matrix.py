@@ -128,6 +128,12 @@ call.
 Usage:
     python scripts/matchup_matrix.py
     python scripts/matchup_matrix.py --duels 500 --terrain flat,hills,woods --fortified --damaged
+    python scripts/matchup_matrix.py --units Warrior Slinger Archer Swordsman Spearman Horseman Catapult
+
+`--units` (#116 P3) names the unit types to measure, replacing the headline
+six. It is how the oracle of a combat-rule patch is run: the same unit list and
+the same `--seed` before and after must print the same report, on every
+pairing of units that existed before (docs/progression_design.md §6.1).
 """
 
 import argparse
@@ -140,37 +146,26 @@ import time
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, _PROJECT_ROOT)
 
+from civulator.game.city import UNIT_CLASSES
 from civulator.game.environment import GameEnvironment
-from civulator.game.unit import (
-    ArcherUnit,
-    CatapultUnit,
-    HorsemanUnit,
-    SlingerUnit,
-    SpearmanUnit,
-    SwordsmanUnit,
-    WarriorUnit,
-)
 from civulator.meta import build_manifest
-from civulator.unit_model import BASE_RANGED_STRENGTH, PRODUCTION_COST, RANGE_VALUES
+from civulator.unit_model import (
+    BASE_COMBAT_STRENGTH,
+    BASE_RANGED_STRENGTH,
+    PRODUCTION_COST,
+    RANGE_VALUES,
+)
 
 # --- Headline scope (issue #65) ---------------------------------------------
 
 # The #65 headline scope. The Slinger (#67) is deliberately NOT here: which
 # units the headline matrix measures is a scientific-scope decision, not a
-# consequence of a unit existing. It is in UNIT_CLASSES below, so
-# `--units Slinger ...` measures it today.
+# consequence of a unit existing. Every configured unit is in UNIT_CLASSES
+# (imported above from game/city.py, the one name -> subclass registry, #116
+# P3), so `--units Slinger ...` measures the Slinger and `--units Knight ...`
+# the Knight.
 COMBAT_UNITS = ["Warrior", "Archer", "Swordsman", "Spearman", "Horseman", "Catapult"]
 EXCLUDED_CIVILIANS = ["Settler", "Worker"]  # combat_strength 0 -- see module docstring
-
-UNIT_CLASSES = {
-    "Warrior": WarriorUnit,
-    "Slinger": SlingerUnit,
-    "Archer": ArcherUnit,
-    "Swordsman": SwordsmanUnit,
-    "Spearman": SpearmanUnit,
-    "Horseman": HorsemanUnit,
-    "Catapult": CatapultUnit,
-}
 
 # --- Scenario geometry (module docstring, "Melee pairs sit at...") ---------
 
@@ -396,14 +391,22 @@ def run_matrix(units=None, duels=DEFAULT_DUELS, seed=DEFAULT_SEED, terrain=("fla
     """Run the full harness and return the plain-dict result (JSON-ready
     apart from wrapping in a manifest, which the CLI adds).
 
-    `units` overrides the headline six -- intended for tests that want a
-    tiny, fast configuration; the real headline run always uses all six
-    COMBAT_UNITS (the CLI never exposes this override).
+    `units` overrides the headline six: tests use it for a tiny, fast
+    configuration and the CLI exposes it as `--units` (#116 P3); with no
+    override a run measures all six COMBAT_UNITS.
     """
     units = list(units) if units is not None else list(COMBAT_UNITS)
     unknown = [u for u in units if u not in UNIT_CLASSES]
     if unknown:
         raise ValueError(f"unknown unit type(s) for the matchup harness: {unknown}")
+    # A unit that cannot attack (a civilian, siege support) has no exchange to
+    # measure -- see the module docstring. Once every unit type became known to
+    # UNIT_CLASSES (#116 P3) this stopped being implied by "unknown".
+    cannot_attack = [u for u in units if not (BASE_COMBAT_STRENGTH[u] or BASE_RANGED_STRENGTH[u])]
+    if cannot_attack:
+        raise ValueError(
+            f"unit type(s) with no attack cannot be measured by the matchup harness: {cannot_attack}"
+        )
 
     env = GameEnvironment(BOARD_ROWS, BOARD_COLS, num_players=2, map_type="basic", seed=seed)
     _prepare_board(env)
@@ -520,6 +523,9 @@ def main():
                         help="Add one matrix with the defender at max fortification.")
     parser.add_argument("--damaged", action="store_true",
                         help="Add one matrix with both units starting at half HP.")
+    parser.add_argument("--units", nargs="+", metavar="UNIT", default=None,
+                        help="Unit types to measure instead of the headline six "
+                             f"(known: {', '.join(UNIT_CLASSES)}).")
     args = parser.parse_args()
 
     terrain_list = [t.strip() for t in args.terrain.split(",") if t.strip()]
@@ -533,7 +539,7 @@ def main():
 
     t0 = time.perf_counter()
     result = run_matrix(
-        duels=args.duels, seed=args.seed, terrain=terrain_list,
+        units=args.units, duels=args.duels, seed=args.seed, terrain=terrain_list,
         fortified=args.fortified, damaged=args.damaged,
     )
     elapsed = time.perf_counter() - t0

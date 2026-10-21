@@ -28,12 +28,16 @@ from ..torch_env import resolve_device
 #
 # Changing this list changes the BuildNetwork output width and therefore
 # invalidates previously saved build-agent weights. APPEND ONLY (#67): the
-# #116 P2 buildings follow the v0.7 list.
+# #116 P2 buildings follow the v0.7 list, and the #116 P3 units follow them
+# (the Trader is not here: it is in game/unit.py's DEFERRED_BUILD_UNITS until
+# P5 gives it routes).
 BUILD_OPTIONS = [
     "Warrior", "Spearman", "Archer", "Horseman", "Catapult",
     "Settler", "Granary", "Slinger", "Swordsman", "Walls",
     "Monument", "Library", "University", "Shrine", "Barracks",
     "Medieval Walls", "Workshop",
+    "Man-At-Arms", "Pikeman", "Crossbowman", "Knight", "Trebuchet",
+    "Musketman",
 ]
 NUM_BUILD_OPTIONS = len(BUILD_OPTIONS)
 

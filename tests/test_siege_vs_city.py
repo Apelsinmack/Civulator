@@ -85,14 +85,21 @@ def test_the_exemption_does_not_leak_into_attacks_on_units():
 
 
 def test_siege_class_membership_is_config_declared():
-    """CLAUDE.md: no hardcoded gameplay decisions in code. A second siege unit
-    must be a config line, not a name added to an `if`."""
+    """CLAUDE.md: no hardcoded gameplay decisions in code. A further siege unit
+    must be a config line, not a name added to an `if`. Since #116 P3 the line
+    is `combat_class = "siege"` (it was the boolean `siege_class`, which now
+    raises as an unknown key): the siege set is exactly the units declaring
+    that class, and the Catapult, which defined the class, is in it. Restated
+    from `== {"Catapult"}`, which pinned a set designed to grow (the
+    Trebuchet joined it in the same patch). Breaks if membership is decided
+    anywhere but the class column."""
     from civulator.config import CFG
 
-    assert unit_model.SIEGE_CLASS == {"Catapult"}
-    assert CFG["units"]["Catapult"]["siege_class"] is True
-    for name, table in CFG["units"].items():
-        assert table.get("siege_class", False) is (name in unit_model.SIEGE_CLASS)
+    declared = {name for name, table in CFG["units"].items() if table["combat_class"] == "siege"}
+    assert unit_model.SIEGE_CLASS == declared
+    assert "Catapult" in unit_model.SIEGE_CLASS
+    with pytest.raises(ValueError):
+        unit_model.parse_unit_columns({"Probe": {**CFG["units"]["Catapult"], "siege_class": True}})
 
 
 def test_is_siege_class_is_the_one_query():

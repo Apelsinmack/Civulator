@@ -17,7 +17,7 @@ Config schema (config.toml):
     production_cost = 40
 
     [combat]
-    anti_cavalry_bonus = 10
+    class_bonuses = [ { unit = "melee", target = "anti_cavalry", amount = 5, strength = "combat" }, ... ]
     ...
 
 This module is the only interpreter of `[units.*]` / `[combat]` / `[city]`
@@ -38,14 +38,26 @@ first; a `requires_district` names the district registry, which loads after
 this module, so `district_model` checks those names against itself.
 Unknown keys in a `[units.*]` or `[buildings.*]` table raise.
 
-tests/test_unit_config_identity.py is the bit-identity gate for #64: it
-pins every value below as a hardcoded literal, independent of this module
-and of config.toml, so this move is provably a refactor and not a balance
-change.
+Combat classes, upgrades and unit prices (#116 P3, progression design §6 and
+"v2 fixes"): every `[units.*]` table declares `combat_class` and `era` (both
+required) and `maintenance` (required; gold per turn, stored in tenths like
+`BUILDING_MAINTENANCE`); `purchasable` (default `["gold"]`) and `upgrades_to`
+are optional. `[combat] class_bonuses` is a list of class-pair rows replacing
+the three name-keyed constants (`anti_cavalry_bonus`,
+`melee_vs_spearman_bonus`, `archer_vs_horseman_penalty`): see
+`parse_class_bonuses`. `[gold] upgrade_per_production` / `upgrade_base` price
+an upgrade (`base_upgrade_cost`). This module is the only reader of all of it.
+
+tests/test_unit_config_identity.py is the bit-identity gate for #64 and #116
+P3: it pins every value below, and every existing unit pairing's combat and
+ranged strength, as hardcoded literals, independent of this module and of
+config.toml, so these moves are provably refactors and not balance changes.
 """
 
+from typing import NamedTuple
+
 from .config import CFG
-from .research_model import validate_tech_name
+from .research_model import ERAS, validate_tech_name
 
 _UNITS_CFG = CFG.get("units", {})
 _COMBAT_CFG = CFG.get("combat", {})
@@ -59,20 +71,14 @@ BASE_RANGED_STRENGTH = {name: table["ranged_strength"] for name, table in _UNITS
 RANGE_VALUES = {name: table["range"] for name, table in _UNITS_CFG.items()}
 PRODUCTION_COST = {name: table["production_cost"] for name, table in _UNITS_CFG.items()}
 
-# Unit types in the siege class (issue #66). Optional `siege_class` key in a
-# `[units.*]` table; absent means false. The siege class is exempt from
-# RANGED_CITY_PENALTY below — breaking fortifications is what the class is for.
-SIEGE_CLASS = frozenset(
-    name for name, table in _UNITS_CFG.items() if table.get("siege_class", False)
-)
-
 # --- Combat formula / modifier constants (get_combat_strength, get_ranged_strength,
 # calculate_damage, heal — game/unit.py) ---
 
-ANTI_CAVALRY_BONUS = _COMBAT_CFG["anti_cavalry_bonus"]
-MELEE_VS_SPEARMAN_BONUS = _COMBAT_CFG["melee_vs_spearman_bonus"]
+# The class-pair modifiers that used to live here as three name-keyed
+# constants are `CLASS_BONUSES` below (#116 P3); the siege class is
+# `SIEGE_CLASS` below, derived from `combat_class`. The siege class is exempt
+# from RANGED_CITY_PENALTY — breaking fortifications is what the class is for.
 RANGED_CITY_PENALTY = _COMBAT_CFG["ranged_city_penalty"]
-ARCHER_VS_HORSEMAN_PENALTY = _COMBAT_CFG["archer_vs_horseman_penalty"]
 FORTIFICATION_BONUS = _COMBAT_CFG["fortification_bonus"]  # index by fortification level - 1
 HP_PENALTY_COEFFICIENT = _COMBAT_CFG["hp_penalty_coefficient"]
 DAMAGE_BASE = _COMBAT_CFG["damage_base"]
@@ -212,10 +218,11 @@ def growth_percent(margin_tenths, bands=None):
     return 0
 
 
-def _pool_yield_table(name):
-    """(base, per_pop) of `[<name>]` in int tenths; exactly those two keys."""
+def _pool_yield_table(name, extra=()):
+    """(base, per_pop) of `[<name>]` in int tenths; exactly those two keys
+    plus the `extra` ones the caller reads itself (`[gold]`'s upgrade keys)."""
     table = CFG[name]
-    keys = {"base", "per_pop"}
+    keys = {"base", "per_pop", *extra}
     if set(table) != keys:
         raise ValueError(f"[{name}] must have exactly the keys {sorted(keys)}, got {sorted(table)}")
     return (to_tenths(table["base"], f"[{name}] base"),
@@ -226,7 +233,8 @@ def _pool_yield_table(name):
 # yields base + per_pop * population of each, before its sources.
 CULTURE_BASE, CULTURE_PER_POP = _pool_yield_table("culture")
 SCIENCE_BASE, SCIENCE_PER_POP = _pool_yield_table("science")
-GOLD_BASE, GOLD_PER_POP = _pool_yield_table("gold")
+GOLD_BASE, GOLD_PER_POP = _pool_yield_table(
+    "gold", extra=("upgrade_per_production", "upgrade_base"))
 FAITH_BASE, FAITH_PER_POP = _pool_yield_table("faith")
 YIELD_BASE = {"science": SCIENCE_BASE, "culture": CULTURE_BASE,
               "gold": GOLD_BASE, "faith": FAITH_BASE}
@@ -247,7 +255,8 @@ BUILDING_DEFENSE_BONUS = {
 # adding a column adds it here, as district_model's _DISTRICT_KEYS.
 UNIT_KEYS = frozenset({
     "max_movement", "combat_strength", "ranged_strength", "range",
-    "production_cost", "siege_class", "requires_tech", "requires_civic",
+    "production_cost", "requires_tech", "requires_civic",
+    "combat_class", "era", "maintenance", "purchasable", "upgrades_to",
 })
 BUILDING_KEYS = frozenset({
     "production_cost", "defense_bonus", "housing", *YIELD_COLUMNS,
@@ -330,10 +339,189 @@ def parse_building_gates(buildings_cfg):
     }
 
 
+# --- Combat classes, prices and upgrades (#116 P3, docs/progression_design.md §6) ---
+
+# The classes a unit may declare. `support` (siege support) and `civilian` have
+# no attack; the encoder gives both no class channel.
+COMBAT_CLASSES = ("melee", "anti_cavalry", "ranged", "light_cavalry",
+                  "heavy_cavalry", "siege", "support", "civilian")
+# The resources a unit or building may be bought with (consumed by #116 P5).
+PURCHASE_RESOURCES = ("gold", "faith")
+# Which strength a [combat] class_bonuses row modifies.
+STRENGTH_KINDS = ("combat", "ranged")
+_CLASS_BONUS_KEYS = frozenset({"unit", "target", "amount", "strength"})
+
+
+class ClassBonus(NamedTuple):
+    """One validated `[combat] class_bonuses` row. `unit` and `target` are a
+    combat class or a single unit type name."""
+    unit: str
+    target: str
+    amount: int
+    strength: str
+
+
+def _unit_name_or_class(value, unit_names, where):
+    if not isinstance(value, str) or value not in (*COMBAT_CLASSES, *unit_names):
+        raise ValueError(
+            f"{where}: {value!r} is neither a combat class {COMBAT_CLASSES} nor a unit type"
+        )
+    return value
+
+
+def parse_unit_columns(units_cfg):
+    """`[units.*]` class, era, price and upgrade columns -> a dict of maps:
+
+    - `combat_class`: name -> one of COMBAT_CLASSES (required on every unit);
+    - `era`: name -> one of research_model.ERAS (required);
+    - `maintenance`: name -> int tenths of gold per turn, nonzero entries only
+      (required on every unit, so a forgotten price is a load error and not a
+      silently free unit; >= 0);
+    - `purchasable`: name -> tuple of PURCHASE_RESOURCES (default `("gold",)`);
+    - `upgrades_to`: name -> the unit type it upgrades into, for the units
+      declaring one (a configured unit other than itself; chains may not loop).
+
+    A unit type may not share a name with a combat class: a `class_bonuses`
+    row names either, and a clash would be ambiguous.
+    """
+    _check_keys(units_cfg, UNIT_KEYS, "units")
+    combat_class, era, maintenance, purchasable, upgrades_to = {}, {}, {}, {}, {}
+    for name, table in units_cfg.items():
+        where = f"[units.{name}]"
+        if name in COMBAT_CLASSES:
+            raise ValueError(f"{where}: a unit type may not be named like a combat class")
+        for column in ("combat_class", "era", "maintenance"):
+            if column not in table:
+                raise ValueError(f"{where}: `{column}` is required")
+        if table["combat_class"] not in COMBAT_CLASSES:
+            raise ValueError(
+                f"{where}: combat_class {table['combat_class']!r} not in {COMBAT_CLASSES}")
+        combat_class[name] = table["combat_class"]
+        if table["era"] not in ERAS:
+            raise ValueError(f"{where}: era {table['era']!r} not in {ERAS}")
+        era[name] = table["era"]
+        tenths = to_tenths(table["maintenance"], f"{where} maintenance")
+        if tenths < 0:
+            raise ValueError(f"{where}: maintenance must be >= 0")
+        if tenths:
+            maintenance[name] = tenths
+        resources = table.get("purchasable", ["gold"])
+        if (not isinstance(resources, list)
+                or any(r not in PURCHASE_RESOURCES for r in resources)
+                or len(set(resources)) != len(resources)):
+            raise ValueError(
+                f"{where}: purchasable must be a list of distinct entries of {PURCHASE_RESOURCES}, "
+                f"got {resources!r}")
+        purchasable[name] = tuple(resources)
+    upgrades_to = _name_column(units_cfg, "upgrades_to", "units")
+    for name, target in upgrades_to.items():
+        if target not in units_cfg:
+            raise ValueError(f"[units.{name}] upgrades_to {target!r} is not a unit type")
+        seen = {name}
+        while target is not None:
+            if target in seen:
+                raise ValueError(f"[units.{name}] upgrades_to loops back through {target!r}")
+            seen.add(target)
+            target = upgrades_to.get(target)
+    return {"combat_class": combat_class, "era": era, "maintenance": maintenance,
+            "purchasable": purchasable, "upgrades_to": upgrades_to}
+
+
+def parse_class_bonuses(rows, unit_names):
+    """`[combat] class_bonuses` -> a tuple of ClassBonus, in config order.
+
+    Each row is exactly `{ unit, target, amount, strength }`: `unit` and
+    `target` name a combat class or a configured unit type, `amount` is an int
+    (negative = penalty), `strength` is one of STRENGTH_KINDS. A malformed row
+    raises, so a typo cannot silently drop a modifier.
+    """
+    if not isinstance(rows, list):
+        raise ValueError("[combat] class_bonuses must be a list of rows")
+    parsed = []
+    for index, row in enumerate(rows):
+        where = f"[combat] class_bonuses[{index}]"
+        if not isinstance(row, dict) or set(row) != _CLASS_BONUS_KEYS:
+            raise ValueError(f"{where} must have exactly the keys {sorted(_CLASS_BONUS_KEYS)}")
+        amount = row["amount"]
+        if isinstance(amount, bool) or not isinstance(amount, int):
+            raise ValueError(f"{where}: amount must be an int, got {amount!r}")
+        if row["strength"] not in STRENGTH_KINDS:
+            raise ValueError(f"{where}: strength {row['strength']!r} not in {STRENGTH_KINDS}")
+        parsed.append(ClassBonus(
+            unit=_unit_name_or_class(row["unit"], unit_names, f"{where} unit"),
+            target=_unit_name_or_class(row["target"], unit_names, f"{where} target"),
+            amount=amount,
+            strength=row["strength"],
+        ))
+    return tuple(parsed)
+
+
 # The unit types and buildings that exist (#116 P2): the one accessor for
 # "is this a configured unit / building", so availability never re-reads CFG.
 UNIT_NAMES = frozenset(_UNITS_CFG)
 BUILDING_NAMES = frozenset(_BUILDINGS_CFG)
+
+_UNIT_COLUMNS = parse_unit_columns(_UNITS_CFG)
+# The one class registry (#116 P3): unit type -> combat class. Every combat
+# rule that used to name units reads this instead.
+COMBAT_CLASS = _UNIT_COLUMNS["combat_class"]
+UNIT_ERA = _UNIT_COLUMNS["era"]
+# Gold per turn in int tenths (the treasury's unit), nonzero entries only,
+# like BUILDING_MAINTENANCE. Parsed and stored now; #116 P5 deducts it.
+UNIT_MAINTENANCE = _UNIT_COLUMNS["maintenance"]
+UNIT_PURCHASABLE = _UNIT_COLUMNS["purchasable"]
+UPGRADES_TO = _UNIT_COLUMNS["upgrades_to"]
+
+# Unit types in the siege class (issue #66): derived from `combat_class`, no
+# longer a boolean column of its own (#116 P3).
+SIEGE_CLASS = frozenset(name for name, cls in COMBAT_CLASS.items() if cls == "siege")
+
+# `[combat] class_bonuses` (see parse_class_bonuses and config.toml): the
+# class-pair modifiers `Unit.get_combat_strength` / `get_ranged_strength` read.
+CLASS_BONUSES = parse_class_bonuses(_COMBAT_CFG["class_bonuses"], UNIT_NAMES)
+
+
+def _matches(spec, unit_type):
+    """Whether a class_bonuses `unit`/`target` entry names `unit_type`, by its
+    own name or by its combat class. `COMBAT_CLASS` is read at call time."""
+    return spec == unit_type or spec == COMBAT_CLASS.get(unit_type)
+
+
+def class_bonus_amounts(strength, unit_type, target_type):
+    """The amounts, in config order, of every `strength` ("combat" or
+    "ranged") row of CLASS_BONUSES that applies to `unit_type` acting against
+    `target_type`. The caller adds them one by one, so the float arithmetic is
+    the same as applying the modifiers sequentially, as before #116 P3."""
+    return [
+        row.amount
+        for row in CLASS_BONUSES
+        if row.strength == strength
+        and _matches(row.unit, unit_type)
+        and _matches(row.target, target_type)
+    ]
+
+
+# --- Unit upgrades (#116 P3, docs/progression_design.md §6.4) ---
+
+UPGRADE_PER_PRODUCTION = CFG["gold"]["upgrade_per_production"]
+UPGRADE_BASE = CFG["gold"]["upgrade_base"]
+for _key, _value in (("upgrade_per_production", UPGRADE_PER_PRODUCTION),
+                     ("upgrade_base", UPGRADE_BASE)):
+    if isinstance(_value, bool) or not isinstance(_value, int) or _value < 0:
+        raise ValueError(f"[gold] {_key} must be a whole number >= 0, got {_value!r}")
+
+
+def base_upgrade_cost(unit_type):
+    """Whole gold to upgrade a `unit_type` into its `upgrades_to`, before any
+    effect: `upgrade_per_production * (target cost - unit cost) + upgrade_base`
+    (a target no dearer than the unit adds only the base). None when the unit
+    has no upgrade. Civ 6 states no formula; this reproduces its one data
+    point, Slinger -> Archer = 60 gold (35 -> 60 production)."""
+    target = UPGRADES_TO.get(unit_type)
+    if target is None:
+        return None
+    gap = max(0, PRODUCTION_COST[target] - PRODUCTION_COST[unit_type])
+    return UPGRADE_PER_PRODUCTION * gap + UPGRADE_BASE
 
 UNIT_REQUIRES_TECH, UNIT_REQUIRES_CIVIC = parse_unit_gates(_UNITS_CFG)
 _BUILDING_GATES = parse_building_gates(_BUILDINGS_CFG)

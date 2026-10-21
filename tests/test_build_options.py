@@ -35,6 +35,7 @@ from civulator.agents.build_agent import (
     get_valid_build_mask,
     options_for_width,
 )
+from civulator import unit_model
 from civulator.agents.state_encoders import EnhancedStateEncoder
 from civulator.game.availability import required_tech
 from civulator.game.city import City, _create_unit
@@ -245,9 +246,12 @@ def test_deferred_units_are_real_unit_types():
 
 
 def test_every_buildable_unit_has_an_encoder_class_channel():
-    civilian = {"Settler", "Worker"}
+    """Every buildable unit that fights is visible to the encoder. The
+    exemption is the class, not a list of names (#116 P3, restated from
+    `{"Settler", "Worker"}`): a civilian, whichever civilians exist, has no
+    class channel. Breaks if a buildable combat unit maps to no channel."""
     for option in BUILD_OPTIONS:
-        if option in City.BUILDING_COSTS or option in civilian:
+        if option in City.BUILDING_COSTS or unit_model.COMBAT_CLASS[option] == "civilian":
             continue
         assert EnhancedStateEncoder.CLASS_INDEX.get(option, -1) >= 0, (
             f"{option} is buildable but has no encoder class channel"

@@ -14,13 +14,30 @@ that compared config against itself would prove nothing. If a number here
 ever needs to change, that is a deliberate balance change (and must be
 called out as one, with CHANGELOG + measured effects per CLAUDE.md), never
 a side effect of a refactor.
+
+#116 P3 extends the gate to the class table. The three name-keyed modifier
+constants (`anti_cavalry_bonus`, `melee_vs_spearman_bonus`,
+`archer_vs_horseman_penalty`) became `[combat] class_bonuses` rows keyed on
+`combat_class`, and the old tests that pinned those constants are replaced by
+`EXPECTED_PAIR_STRENGTH` below: the literal combat and ranged strength of every
+ordered pairing of the seven units that existed before the patch (the Slinger
+included), copied from a run of the engine BEFORE the patch and
+cross-checked by hand (Warrior 20 + 5 vs Spearman = 25; Spearman 25 + 10 vs
+Horseman = 35; Archer 25 - 5 vs Horseman = 20; the Slinger no penalty). The
+other half of the gate is `scripts/matchup_matrix.py --units Warrior Slinger
+Archer Swordsman Spearman Horseman Catapult` with one seed, identical before and
+after (CHANGELOG, #116 P3).
 """
 
 import math
 
+import pytest
+
 from civulator.game.unit import Unit
-from civulator.game.city import City
+from civulator.game.city import City, _create_unit
 from civulator import unit_model
+
+from test_combat_range import make_flat_env
 
 
 # --- 1. The five per-unit-type data tables ---
@@ -134,16 +151,115 @@ def test_production_cost_table_unchanged():
 # --- 2-7. Combat formula / modifier constants ---
 
 
-def test_anti_cavalry_and_melee_vs_spearman_bonuses_unchanged():
-    """Item 2: +10 Spearman vs Horseman, +5 Warrior/Swordsman vs Spearman."""
-    assert unit_model.ANTI_CAVALRY_BONUS == 10
-    assert unit_model.MELEE_VS_SPEARMAN_BONUS == 5
+# Every ordered pairing of the seven pre-#116-P3 units, flat Plains, full
+# health, unfortified, nobody flanking. Value = (the attacker's combat strength
+# when it ATTACKS the defender, the same unit's combat strength when it
+# DEFENDS against it, the attacker's ranged strength against it). Combat
+# strength carries a class bonus in BOTH roles (#63) and never the ranged-only
+# archer penalty; ranged strength is the shooter's alone.
+EXPECTED_PAIR_STRENGTH = {
+    ("Warrior", "Warrior"): (20, 20, 0),
+    ("Warrior", "Slinger"): (20, 20, 0),
+    ("Warrior", "Archer"): (20, 20, 0),
+    ("Warrior", "Swordsman"): (20, 20, 0),
+    ("Warrior", "Spearman"): (25, 25, 0),
+    ("Warrior", "Horseman"): (20, 20, 0),
+    ("Warrior", "Catapult"): (20, 20, 0),
+    ("Slinger", "Warrior"): (5, 5, 15),
+    ("Slinger", "Slinger"): (5, 5, 15),
+    ("Slinger", "Archer"): (5, 5, 15),
+    ("Slinger", "Swordsman"): (5, 5, 15),
+    ("Slinger", "Spearman"): (5, 5, 15),
+    ("Slinger", "Horseman"): (5, 5, 15),
+    ("Slinger", "Catapult"): (5, 5, 15),
+    ("Archer", "Warrior"): (15, 15, 25),
+    ("Archer", "Slinger"): (15, 15, 25),
+    ("Archer", "Archer"): (15, 15, 25),
+    ("Archer", "Swordsman"): (15, 15, 25),
+    ("Archer", "Spearman"): (15, 15, 25),
+    ("Archer", "Horseman"): (15, 15, 20),
+    ("Archer", "Catapult"): (15, 15, 25),
+    ("Swordsman", "Warrior"): (35, 35, 0),
+    ("Swordsman", "Slinger"): (35, 35, 0),
+    ("Swordsman", "Archer"): (35, 35, 0),
+    ("Swordsman", "Swordsman"): (35, 35, 0),
+    ("Swordsman", "Spearman"): (40, 40, 0),
+    ("Swordsman", "Horseman"): (35, 35, 0),
+    ("Swordsman", "Catapult"): (35, 35, 0),
+    ("Spearman", "Warrior"): (25, 25, 0),
+    ("Spearman", "Slinger"): (25, 25, 0),
+    ("Spearman", "Archer"): (25, 25, 0),
+    ("Spearman", "Swordsman"): (25, 25, 0),
+    ("Spearman", "Spearman"): (25, 25, 0),
+    ("Spearman", "Horseman"): (35, 35, 0),
+    ("Spearman", "Catapult"): (25, 25, 0),
+    ("Horseman", "Warrior"): (35, 35, 0),
+    ("Horseman", "Slinger"): (35, 35, 0),
+    ("Horseman", "Archer"): (35, 35, 0),
+    ("Horseman", "Swordsman"): (35, 35, 0),
+    ("Horseman", "Spearman"): (35, 35, 0),
+    ("Horseman", "Horseman"): (35, 35, 0),
+    ("Horseman", "Catapult"): (35, 35, 0),
+    ("Catapult", "Warrior"): (23, 23, 35),
+    ("Catapult", "Slinger"): (23, 23, 35),
+    ("Catapult", "Archer"): (23, 23, 35),
+    ("Catapult", "Swordsman"): (23, 23, 35),
+    ("Catapult", "Spearman"): (23, 23, 35),
+    ("Catapult", "Horseman"): (23, 23, 35),
+    ("Catapult", "Catapult"): (23, 23, 35),
+}
+
+# Ranged strength against a CITY (the flat -17 for every ranged unit that is
+# not in the siege class; the Slinger's 15 - 17 floors at 0).
+EXPECTED_RANGED_VS_CITY = {
+    "Warrior": 0,
+    "Slinger": 0,
+    "Archer": 8,
+    "Swordsman": 0,
+    "Spearman": 0,
+    "Horseman": 0,
+    "Catapult": 35,
+}
 
 
-def test_ranged_modifiers_unchanged():
-    """Item 3: flat -17 vs cities, -5 Archer vs Horseman."""
+def _stand(env, unit_type, player_index, coordinates):
+    """A real unit of `unit_type` standing on the board for `player_index`."""
+    unit = _create_unit(unit_type, env.players[player_index], coordinates)
+    unit.player.units.append(unit)
+    env.add_unit_to_tile(unit, coordinates)
+    return unit
+
+
+@pytest.mark.parametrize("attacker_type,defender_type", sorted(EXPECTED_PAIR_STRENGTH))
+def test_every_pre_class_table_pairing_keeps_its_strengths(attacker_type, defender_type):
+    """The #116 P3 gate: the class table reproduces every v0.7 number. Pinned
+    per ordered pair, both roles, both strengths. Breaks if a class_bonuses
+    row, the combat_class of a pre-existing unit, or the modifier code changes
+    what any existing unit is worth against any other."""
+    env = make_flat_env()
+    attacker = _stand(env, attacker_type, 0, (3, 3))
+    defender = _stand(env, defender_type, 1, (3, 4))
+
+    attacking, defending, ranged = EXPECTED_PAIR_STRENGTH[(attacker_type, defender_type)]
+    assert attacker.get_combat_strength(True, defender) == attacking
+    assert attacker.get_combat_strength(False, defender) == defending
+    assert attacker.get_ranged_strength(defender) == ranged
+
+
+@pytest.mark.parametrize("unit_type", sorted(EXPECTED_RANGED_VS_CITY))
+def test_ranged_strength_against_a_city_keeps_its_siege_exemption(unit_type):
+    """The flat ranged-vs-city penalty (17) reaches every ranged unit except
+    the siege class, which is now declared by `combat_class = "siege"`. Breaks
+    if the Catapult loses its exemption or another unit gains one."""
+    env = make_flat_env()
+    city = env.create_city(env.players[1], (6, 12), "Enemy")
+    unit = _stand(env, unit_type, 0, (3, 3))
+    assert unit.get_ranged_strength(city, is_city=True) == EXPECTED_RANGED_VS_CITY[unit_type]
+
+
+def test_ranged_city_penalty_unchanged():
+    """Item 3: the flat -17 vs cities."""
     assert unit_model.RANGED_CITY_PENALTY == 17
-    assert unit_model.ARCHER_VS_HORSEMAN_PENALTY == 5
 
 
 def test_fortification_bonuses_unchanged():
