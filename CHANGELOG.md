@@ -689,6 +689,144 @@ the purchase). Unit and Trader prices do not rise with each purchase or
 with tech (Civ 6's progressive Settler, Builder and Trader costs are not
 modelled). Bankruptcy has no amenity penalty (no amenities, #96).
 
+### Wonders (#116 P6)
+
+**Rule change, effect NOT yet measured.** Spec: `docs/progression_design.md`
+§3 (the one-shot kinds and `growth_percent`), §5.4, §9 and "v2 fixes"
+(Wonders; District registry readers; Yields: the growth formula). Civ 6
+facts: `docs/civ6_progression_reference.md` §5 (the Civilization Wiki's
+wonder list and per-wonder pages, Gathering Storm). Erik's March notes
+(`civulator_notes-20260322.md`): keep wonders, soften the lost race.
+
+- **A wonder is a district.** The district registry gains a `kind` column,
+  `"district"` (default) or `"wonder"`. A wonder table declares `era` (one
+  of the tree's eras, new; a wonder column only), `counts_toward_limit =
+  false` (it takes no population slot), `cost_model = "fixed"` (Civ 6:
+  wonder costs never escalate) and `max_per_city = 1`, and no
+  `adjacency_yield`, `adjacency` or `discount_percent`; anything else raises
+  at load. So placing, paying for and completing a wonder is the district
+  path, unchanged: `can_place_district`, `place_district`,
+  `produce_district`, the production branch of `process_turn`, and
+  `complete_district`. Its yield and `housing` columns count in its city
+  once complete, like a district's; its `effects` hold in its city (scope
+  `"city"`, the district default) or, with `scope = "player"`, in every city
+  of its owner. A wonder is never a specialty district (Meritocracy,
+  Classical Republic, Insulae, Medina Quarter, the trade table,
+  `housing_if_districts` do not count it) and never counts toward the
+  district discount's A or B.
+- **World-unique: the race.** `can_place_district` refuses a wonder that
+  any player has completed (computed from the live board, every city in
+  id order; no registry). Copies placed but unfinished in other cities --
+  any player's, the completer's own other cities included -- are the race:
+  when one completes (in `complete_district`), every other copy is removed
+  (its tile is freed and worked again, `Map.district_epoch` bumps), its
+  city's production item is cleared if it was that wonder, and
+  `[wonders] consolation_percent = 50` % of the removed copy's LOCKED cost
+  (integer floor) is added to that city's production pool. Civ 6: "the
+  consolation is 50 % of the production invested"; the 50 % is the
+  design's call (§9.2) to keep attempting a wonder a gamble rather than a
+  trap. A city's production pool is one number that a switch keeps (§2.3),
+  so the losing city also keeps everything it had put toward the copy; the
+  refund comes on top, even for a copy that received no production
+  (flagged for review in the P6 report). The race is decided inside the
+  completing player's turn, so turn order decides a same-round tie
+  (**accepted**). New per-player stats `wonders_completed`,
+  `wonder_races_lost`.
+- **One-shot effects fire once, on completion.** Four effect kinds,
+  validated since P4, now fire in `GameEnvironment.complete_district` --
+  the one completion path, which raises on a second call -- and never on
+  capture or on load (no loader rebuilds districts): `free_units` (each
+  unit placed through `City.place_or_queue_unit`, queued when the city has
+  no room), `free_tech` / `free_civic` (the current tech or civic, or the
+  engine default's pick, completes at once at no cost, outside the
+  one-per-turn rule; the pools are untouched and the turn's own research
+  still resolves; `techs_researched` / `civics_researched` count it),
+  `free_population` (added to the city, or to every city of the owner with
+  `all_cities`, each re-assigning its tiles). A one-shot kind is accepted
+  only on a `kind = "wonder"` table and is never among the effects in
+  force. When a wonder grants a civic or changes its owner's policy slots,
+  the government and loadout defaults re-run at once, so a new slot is
+  filled (design §5.4).
+- **Growth percent.** The growth bucket is now `food_net * housing_percent
+  * growth_share * (100 + growth_percent) // 10000` hundredths (design v2;
+  `growth_share` is 100 until loyalty, P7): the summed `growth_percent`
+  effects in force, applied once. With none it is v0.7's `food_net *
+  housing_percent` exactly.
+- **New placement and adjacency vocabulary.** `requires_adjacent_all`
+  (every listed source must match a neighbour; `requires_adjacent` needs
+  any one); `river_on_tile = true` accepted as a tile test in both
+  requirement lists (a river along any edge of the tile, the edge shared
+  with the city centre included -- unlike the Aqueduct's
+  `river_edge_not_shared_with_center`); the adjacency source `wonder =
+  "any"`, which counts adjacent COMPLETE wonders. A wonder is no
+  `district = "any"` source, placed or complete (the city centre still is),
+  and a `district = [...]` list may name districts only. The Theater Square
+  gains Civ 6's `+2 per adjacent wonder` row (dropped in #86 because no
+  wonder existed).
+- **Wonder eras in production targets.** A `production_percent` target may
+  name `wonder_era = [...]`, AND-combined with `kind = "wonder"`, read from
+  the wonder's own `era`. Corvee is now +15 % toward Ancient and Classical
+  wonders and Gothic Architecture toward Ancient to Renaissance ones (every
+  era of the tree) -- Civ 6's scopes; this closes P4's gap ("Corvee targets
+  every wonder").
+- **The twelve wonders** (Civ 6 Gathering Storm costs; requirements moved
+  where a cut tech or civic held them; "flat" is spelled as the flat land
+  bases, since water is flat too; every placement also obeys the general
+  district rules -- owned tile within radius 3, no district, centre or
+  other city's centre next to it, no blocking feature, bonus resources
+  only):
+
+  | Wonder | Era · cost | Requires | Placement | Columns · effects | Civ 6 / source |
+  |---|---|---|---|---|---|
+  | Pyramids | Ancient 220 | Masonry | flat Desert or Plains | culture 2; 3 free Workers | Desert only; +1 Builder and a build charge (Erik: "quite a few builders") |
+  | Stonehenge | Ancient 180 | Astrology | flat land, adjacent to Stone | faith 4 | +2 faith and a Great Prophet (no prophets here) |
+  | Hanging Gardens | Ancient 180 | Irrigation | a river on an edge of its tile | housing 2; +15 % growth in every city of its owner | as Civ 6 |
+  | Temple of Artemis | Ancient 180 | Archery | adjacent to Cattle, Sheep or Deer | food 4, housing 3 | next to a Camp; its amenities are not modelled |
+  | Oracle | Classical 290 | State Workforce (civic) | hills | culture 2, faith 2; one free civic | Mysticism (cut), Ancient; a great-person discount with no object here |
+  | Statue of Zeus | Classical 400 | Military Training (civic) | flat land, adjacent to an Encampment | gold 3; 3 free Spearmen and 3 Archers; +50 % toward anti-cavalry units in every city of its owner | Civ 6 also grants a Battering Ram and needs a Barracks in the Encampment |
+  | Great Library | Classical 400 | Recorded History (civic) | flat land, adjacent to a Campus | science 3; one free tech | +2 science and boosts for every Ancient/Classical tech; needs a Library |
+  | Colossus | Classical 400 | Celestial Navigation | on Coast, adjacent to land AND to a Harbor | gold 3; +1 trade route capacity (owner); 1 free Trader | Shipbuilding (cut); its Great Admiral points are not modelled |
+  | Colosseum | Classical 400 | Games and Recreation (civic) | flat land, adjacent to an Entertainment Complex | culture 2; +2 loyalty to own city centres within 6 tiles (consumed from P7) | its amenities are not modelled |
+  | Alhambra | Medieval 710 | Castles | hills, adjacent to an Encampment | +1 military policy slot; +6 defence for its city | "the defences of a Fort"; its amenities and Great General points are not modelled |
+  | Angkor Wat | Medieval 710 | Medieval Faires (civic) | adjacent to an Aqueduct | faith 2; +1 population in every city of its owner when built; +1 housing in every city | as Civ 6 |
+  | Forbidden City | Renaissance 920 | Divine Right (civic) | flat land, adjacent to the city centre | culture 5; +1 wildcard policy slot | Printing (not in the tree) |
+
+  A placement district requirement (Encampment, Campus, Entertainment
+  Complex, Harbor, Aqueduct) is met by a placed district, finished or not
+  -- the framework's rule for every requirement (#86) -- and asks for no
+  building in it (Civ 6 asks for a Barracks, a Library, an Arena).
+- **Engine.** `GameEnvironment._remove_district(city, district)` is the one
+  district removal (frees the tile, leaves `city.districts`, bumps
+  `district_epoch`, re-runs `assign_tiles`); `remove_city` now uses it
+  too. `resolve_research` / `resolve_civic` share their completion step
+  with the free tech and civic (`_complete_tech` / `_complete_civic`).
+  `effects.CONSUMERS` names the consumers of `growth_percent`
+  (`City.growth_bucket_gain`) and the four one-shot kinds
+  (`GameEnvironment._one_shot_effects`); only `loyalty` stays deferred
+  (P7). The smoke script draws a district or wonder type among those its
+  owner can build, a tile through `can_place_district`, and reports per
+  player the wonders completed, the races lost and the wonders held; one
+  seeded run (`python scripts/smoke_random_selfplay.py --seed 4242`, duel,
+  250 rounds, random valid actions, 1 game) completed 1 and 3 wonders (the
+  Pyramids; Stonehenge, the Temple of Artemis and the Hanging Gardens), the
+  first player lost 1 race; 14 districts and wonders were placed and 9
+  stood complete at the end. Being a different random sequence from P5's
+  run, it opened no trade route; two further seeds (7 and 99, same
+  command) each had one player open routes (12 and 8).
+
+**What agents see.** Nothing new: no agent action and no engine default
+places a district or a wonder (#99), so wonders occur only where a script or
+a test places them; no encoder channel reads a wonder (#111). The build
+state's district branch still raises `NotImplementedError` naming #99.
+
+**Accepted gaps.** Civ 6's "completing a wonder claims two more tiles" is
+not implemented (borders grow only by culture, #87), and no wonder's amenity
+effect exists (no amenities, #96). A wonder cannot be bought (Civ 6 neither).
+Tourism, great-person points, great works and era score do not exist. A
+player may place copies of one wonder in several of its own cities (Civ 6:
+once one city has broken ground, no other city of that player may start
+it); the completing city removes them like any other copy.
+
 ---
 
 ## v0.7.0 — Borders and culture; city combat and the other post-0.6.2 rule changes (2026-10-11)
