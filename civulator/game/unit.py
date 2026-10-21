@@ -8,10 +8,9 @@ import numpy as np
 from ..config import CFG
 from ..terrain_model import can_enter
 from ..unit_model import (
-    ANTI_CAVALRY_BONUS,
-    ARCHER_VS_HORSEMAN_PENALTY,
     BASE_COMBAT_STRENGTH as _BASE_COMBAT_STRENGTH,
     BASE_RANGED_STRENGTH as _BASE_RANGED_STRENGTH,
+    COMBAT_CLASS as _COMBAT_CLASS,
     DAMAGE_BASE,
     DAMAGE_EXPONENT_COEFFICIENT,
     DAMAGE_ROLL_MAX,
@@ -22,12 +21,13 @@ from ..unit_model import (
     HEAL_NORMAL,
     HP_PENALTY_COEFFICIENT,
     MAX_MOVEMENT as _MAX_MOVEMENT,
-    MELEE_VS_SPEARMAN_BONUS,
     PRODUCTION_COST as _PRODUCTION_COST,
     RANGED_CITY_PENALTY,
     RANGE_VALUES as _RANGE_VALUES,
-    SIEGE_CLASS,
+    STRENGTH_COMBAT,
+    STRENGTH_RANGED,
     ZOC_FROM_RANGED,
+    class_bonus_amounts,
 )
 
 # Rivers cost this much extra to cross, per edge (design doc D23) — the single
@@ -58,6 +58,13 @@ UNIT_SLOT = {
     "Catapult": 0,     # military (siege weapon, not siege support)
     "BatteringRam": 2, # siege support (stacks with military)
     "SiegeTower": 2,   # siege support
+    "Man-At-Arms": 0,  # military (#116 P3)
+    "Pikeman": 0,
+    "Crossbowman": 0,
+    "Knight": 0,
+    "Trebuchet": 0,    # military, like the Catapult
+    "Musketman": 0,
+    "Trader": 1,       # civilian
     # Great people (slot 3) — future
 }
 
@@ -80,6 +87,13 @@ MOVEMENT_DOMAIN = {
     "Catapult": "land",
     "BatteringRam": "land",
     "SiegeTower": "land",
+    "Man-At-Arms": "land",
+    "Pikeman": "land",
+    "Crossbowman": "land",
+    "Knight": "land",
+    "Trebuchet": "land",
+    "Musketman": "land",
+    "Trader": "land",
 }
 
 
@@ -103,6 +117,11 @@ DEFERRED_BUILD_UNITS = {
     # adjacency rule.
     "BatteringRam",
     "SiegeTower",
+    # Trader (#116 P3): its table exists, but a Trader makes a trade route and
+    # routes arrive in P5 (docs/progression_design.md §7.4), so offering it
+    # today would be a build option that cannot pay off. P5 takes it out of
+    # here in the patch that gives it routes.
+    "Trader",
 }
 
 
@@ -146,6 +165,10 @@ class Unit:
     BASE_RANGED_STRENGTH = _BASE_RANGED_STRENGTH
     RANGE_VALUES = _RANGE_VALUES
     PRODUCTION_COST = _PRODUCTION_COST
+    # unit type -> combat class (#116 P3): the one class registry. Every rule
+    # that treats units by role reads it (class_bonuses rows, the siege
+    # rules, civilian capture, the encoder's class channel).
+    COMBAT_CLASS = _COMBAT_CLASS
 
     def __init__(self, player, coordinates, unit_type):
         self.player = player
@@ -166,6 +189,18 @@ class Unit:
     def slot(self):
         """Unit slot index for tile stacking rules."""
         return UNIT_SLOT.get(self.unit_type, 0)
+
+    @property
+    def combat_class(self):
+        """This unit's combat class (`[units.<Type>] combat_class`), or None
+        for a type with no table."""
+        return self.COMBAT_CLASS.get(self.unit_type)
+
+    def is_civilian(self):
+        """Whether this unit is a civilian: captured, not killed, when beaten
+        (`GameEnvironment._execute_attack`). Keyed on the class, so a Trader
+        is one without being named anywhere."""
+        return self.combat_class == "civilian"
 
     def get_max_movement(self):
         return self.MAX_MOVEMENT.get(self.unit_type, 2)
@@ -270,10 +305,15 @@ class Unit:
     def is_siege_class(self):
         """Whether this unit belongs to the siege class (issue #66).
 
-        Declared per unit type by `siege_class` in config.toml `[units.*]`, so
-        a second siege unit is a config line rather than a name in an `if`.
+        Declared per unit type by `combat_class = "siege"` in config.toml
+        `[units.*]` (#116 P3; it was a boolean `siege_class` column), so a
+        further siege unit is a config line rather than a name in an `if`.
+        The class decides both siege rules: exemption from the flat ranged
+        penalty against cities, and the movement the bombard needs (`attack`).
+        Read from the class registry at call time, with `is_civilian`: the two
+        queries whose whole job is to name a class.
         """
-        return self.unit_type in SIEGE_CLASS
+        return self.combat_class == "siege"
 
     def reset_movement(self):
         """Reset movement points at the start of a new turn.
@@ -344,12 +384,14 @@ class Unit:
         # getattr rather than assuming: before #7 made Walls buildable no
         # engine order ever aimed at a city, and this line raised
         # AttributeError the moment one did.
+        #
+        # The rows are `[combat] class_bonuses` with strength = "combat"
+        # (#116 P3): matched by unit name or combat class, never by a name
+        # written here. Ranged-strength rows are get_ranged_strength's.
         target_type = getattr(target, "unit_type", None)
         if target_type is not None:
-            if self.unit_type == "Spearman" and target_type == "Horseman":
-                strength += ANTI_CAVALRY_BONUS
-            if self.unit_type in ["Warrior", "Swordsman"] and target_type == "Spearman":
-                strength += MELEE_VS_SPEARMAN_BONUS
+            for amount in class_bonus_amounts(STRENGTH_COMBAT, self.unit_type, target_type):
+                strength += amount
 
         # Flanking (issue #59): the unit that is STRIKING gets a bonus per
         # neighbouring tile of its target that holds one of its own
@@ -419,10 +461,15 @@ class Unit:
         if is_city and not self.is_siege_class():
             strength -= RANGED_CITY_PENALTY
 
-        # getattr, not target.unit_type: the target may be a City (see the
-        # note in get_combat_strength).
-        if getattr(target, "unit_type", None) == "Horseman" and self.unit_type == "Archer":
-            strength -= ARCHER_VS_HORSEMAN_PENALTY  # Archers less effective vs cavalry
+        # Class-pair modifiers of the SHOOTER (`[combat] class_bonuses` rows
+        # with strength = "ranged", #116 P3): a row applies to this unit as the
+        # one firing, never to a defender -- the archer penalty vs cavalry is
+        # exactly that. getattr, not target.unit_type: the target may be a City
+        # (see the note in get_combat_strength).
+        target_type = getattr(target, "unit_type", None)
+        if target_type is not None:
+            for amount in class_bonus_amounts(STRENGTH_RANGED, self.unit_type, target_type):
+                strength += amount
 
         return max(0, strength)
 
@@ -557,7 +604,10 @@ class Unit:
         if self.movement_points < 0.25:
             return 0, 0, False, False
 
-        if is_ranged and self.unit_type == "Catapult" and self.movement_points < 1:
+        # The siege class may fire only with a full movement point left (Civ 6:
+        # a Catapult cannot attack after moving). Keyed on the class (#116 P3),
+        # so the Trebuchet obeys it without being named.
+        if is_ranged and self.is_siege_class() and self.movement_points < 1:
             return 0, 0, False, False
 
         # Calculate strengths
@@ -689,6 +739,56 @@ class CatapultUnit(RangedUnit):
         super().__init__(player, coordinates, "Catapult")
 
 
+# --- Medieval and Renaissance units, and the Trader (#116 P3) ---
+# Each is its table in config.toml plus this subclass; the behaviour that
+# distinguishes a class (class bonuses, the siege rules, civilian capture)
+# lives in the class registry, not here.
+
+
+class ManAtArmsUnit(Unit):
+    """Medieval melee unit (Civ 6: Apprenticeship); upgrades from the Swordsman."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Man-At-Arms")
+
+
+class PikemanUnit(Unit):
+    """Medieval anti-cavalry unit (Civ 6: Military Tactics)."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Pikeman")
+
+
+class CrossbowmanUnit(RangedUnit):
+    """Medieval ranged unit (Civ 6: Machinery): strength 40, range 2."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Crossbowman")
+
+
+class KnightUnit(Unit):
+    """Medieval heavy cavalry (Civ 6: Stirrups): strength 50, movement 4."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Knight")
+
+
+class TrebuchetUnit(RangedUnit):
+    """Medieval siege unit, the Catapult's successor: the same siege-class
+    rules (full-strength bombard against cities, fires only with movement
+    left), by class and not by name."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Trebuchet")
+
+
+class MusketmanUnit(Unit):
+    """Renaissance melee unit (Civ 6: Gunpowder); the top of the Warrior line."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Musketman")
+
+
 class SiegeSupportUnit(Unit):
     """A support unit that occupies UNIT_SLOT 2 and fights with nobody.
 
@@ -737,6 +837,15 @@ class SettlerUnit(Unit):
         game_env.delete_unit(self)
 
         return city
+
+
+class TraderUnit(Unit):
+    """Civilian that makes and keeps a trade route (#116 P5). Its table and
+    class exist now so a route-less Trader is already captured, not killed,
+    and encoded; it cannot be built until P5 (DEFERRED_BUILD_UNITS)."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Trader")
 
 
 class WorkerUnit(Unit):

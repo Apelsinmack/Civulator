@@ -201,6 +201,143 @@ parsed and pass until P4. Maintenance is stored, not paid, until P5.
 Workers stay deferred until P8, so tech-gated improvements, and their
 yields, appear in play only once P8 gives Workers a default.
 
+### Units, combat classes and upgrades (#116 P3)
+
+**Rule change, effect NOT yet measured.** Spec: `docs/progression_design.md`
+§6.1–§6.4 and "v2 fixes" ("Combat classes and the bit-identity gate",
+"Upgrades and bankruptcy"). Civ 6 facts: `docs/civ6_progression_reference.md`
+§6 (unit stats), §8.3 (maintenance) and §8.5 (upgrades); the Gathering Storm
+values where the wiki splits them (Pikeman 180, Knight 220).
+
+- **Every unit has a combat class and an era.** `combat_class` and `era` are
+  required columns of every `[units.*]` table, read by `civulator/unit_model.py`
+  (`COMBAT_CLASS`, `UNIT_ERA`): Warrior melee (Ancient); Slinger and Archer
+  ranged (Ancient); Spearman anti-cavalry (Ancient); Horseman light cavalry
+  (Classical); Swordsman melee (Classical); Catapult siege (Classical);
+  Battering Ram support (Ancient); Siege Tower support (Classical); Settler
+  and Worker civilian (Ancient). The boolean `siege_class` is gone (it now
+  raises as an unknown key): `SIEGE_CLASS` is the set of units whose class is
+  `siege` (the Catapult, and now the Trebuchet).
+- **Class bonuses are a table.** `[combat] class_bonuses` replaces the three
+  name-keyed constants `anti_cavalry_bonus`, `melee_vs_spearman_bonus` and
+  `archer_vs_horseman_penalty`. A row is `{ unit, target, amount, strength }`:
+  `unit` and `target` name a class or a single unit type (a row matches a unit
+  by its name or its class), `amount` is an int, `strength` is `"combat"` or
+  `"ranged"`. `Unit.get_combat_strength` reads the combat rows in BOTH roles,
+  as today's +10 and +5 are applied (#63); `Unit.get_ranged_strength` reads
+  the ranged rows for the shooter only. Today's three rules are three rows,
+  written as `unit.py` applied them: anti-cavalry +10 vs light cavalry, melee
+  +5 vs anti-cavalry, and the archer penalty -5 vs light cavalry as a ranged
+  row for the unit named `Archer` (it is the shooter's alone and the Slinger,
+  a ranged unit by class, has never had it). New rows: anti-cavalry +10 vs
+  heavy cavalry (Civ 6), Archer -5 vs heavy cavalry (the Knight is a mounted
+  target of the same shooters), and **Claude's call:** the Crossbowman takes
+  the archer penalty against both cavalry classes, as the Archer it replaces
+  does. No combat rule names a unit or a class any more: the siege "fires
+  only with a movement point left" rule, civilian capture, `is_siege_class`
+  and the class bonuses all read the class registry.
+- **Every existing number is bit-identical.** The oracle, run before the
+  patch (at 7622a6b) and after, with one seed: `python scripts/matchup_matrix.py
+  --seed 652026 --terrain flat,hills,woods --fortified --damaged --units
+  Warrior Slinger Archer Swordsman Spearman Horseman Catapult` (`--units` is
+  new; 200 duels per ordered pairing, five conditions, 7 × 7 pairings = 245
+  cells) printed the same report and, in the machine-readable result, the
+  same float to the last digit in every cell; the default six-unit run
+  printed the same report as well. `tests/test_unit_config_identity.py` pins
+  the gate in the repo: the combat and ranged strength of every ordered
+  pairing of the seven units, both roles, as literals copied from the engine
+  before the patch (the Slinger included), in place of the three constants it
+  pinned, plus the ranged-vs-city strength of each. A class-keyed shortcut
+  (`ranged` vs cavalry in place of the named Archer rows) fails it on the
+  Slinger.
+- **Six new units, a Trader, and their classes.** Civ 6 Gathering Storm
+  numbers; each is a `[units.*]` table, a subclass, a slot, a movement domain
+  and a build option (`BUILD_OPTIONS` appended, in this order). Man-At-Arms
+  (melee, Medieval, 160 production, strength 45, movement 2, Apprenticeship,
+  upkeep 3), Pikeman (anti-cavalry, Medieval, 180, 45, Military Tactics, 2),
+  Crossbowman (ranged, Medieval, 180, strength 30, ranged 40, range 2,
+  Machinery, 3), Knight (heavy cavalry, Medieval, 220, 50, movement 4,
+  Stirrups, 4), Trebuchet (siege, Medieval, 200, strength 35, ranged 45,
+  range 2, Military Engineering, 3), Musketman (melee, Renaissance, 240, 55,
+  Gunpowder, 4). Existing units keep their v0.7 numbers (Horseman 35, Catapult
+  23). The class bonuses reach them by class: Man-At-Arms and Musketman get
+  the melee +5 against Spearman and Pikeman, the Pikeman the anti-cavalry +10,
+  the Trebuchet the siege rules (full-strength bombard against cities, fires
+  only with a movement point left).
+- **The Trader exists but is not buildable.** A civilian (40 production,
+  movement 2, slot 1, land, upkeep 0, `requires_civic = "Foreign Trade"`, kept
+  raw until P4): its table, class and subclass exist so that a Trader is
+  captured and not killed (civilian capture is keyed on the class), but it
+  stays in `DEFERRED_BUILD_UNITS` until P5 gives it trade routes — offering it
+  now would be a build option that cannot pay off (#67).
+- **Upkeep and purchasability are columns.** `maintenance` (required on every
+  unit; gold per turn, stored in tenths like the building column: Warrior,
+  Slinger, Settler, Worker, Trader 0; Archer, Spearman, Battering Ram 1;
+  Horseman, Swordsman, Catapult, Siege Tower, Pikeman 2; Man-At-Arms,
+  Crossbowman, Trebuchet 3; Knight, Musketman 4 — Civ 6 GS) and `purchasable`
+  (default `["gold"]`) are parsed into `UNIT_MAINTENANCE` and
+  `UNIT_PURCHASABLE`. Nothing reads them until P5.
+- **Upgrade chains and prices.** `upgrades_to` names the next unit: Warrior →
+  Swordsman, Slinger → Archer, Archer → Crossbowman, Spearman → Pikeman,
+  Horseman → Knight (Claude's call: one cavalry line; Civ 6 has the Courser),
+  Swordsman → Man-At-Arms, Man-At-Arms → Musketman, Catapult → Trebuchet. A
+  name that is no unit, or a chain that loops, raises at load. The price is
+  `[gold] upgrade_per_production * (target production − unit production) +
+  [gold] upgrade_base` whole gold, with 2 and 10: the wiki states no formula;
+  this one reproduces its single data point (Slinger → Archer = 60 gold) and
+  is the community's reading of the game files. Prices: Warrior → Swordsman
+  110, Slinger → Archer 60, Archer → Crossbowman 250, Spearman → Pikeman 240,
+  Horseman → Knight 290, Swordsman → Man-At-Arms 150, Man-At-Arms →
+  Musketman 170, Catapult → Trebuchet 170. `upgrade_cost` (`game/upgrades.py`)
+  has a hook for P4's `upgrade_cost_percent` effects (summed, then applied
+  once, floored; 0 until then).
+- **`GameEnvironment.upgrade_unit(unit)`** is refused (False, nothing
+  changes) unless the unit has an `upgrades_to`, its owner may build the
+  target (`player_can_build`, so the tech gate holds), it stands on a tile of
+  one of its owner's cities, it has all its movement and has not acted this
+  turn, and the treasury covers the price. It then replaces the unit through
+  `_create_unit` at the same index of `player.units` and the same place in
+  its tile's stack: health carries over, movement is spent, fortification
+  resets, the unit counts as having acted, the gold is paid. New per-player
+  stat `units_upgraded`. `GameEnvironment.player_owns_tile` is the one
+  ownership test (the improvement rule now calls it too). Civ 6's strategic-
+  resource cost of an upgrade is not modelled (there are no strategic
+  resources here).
+- **One registry of unit classes.** `UNIT_CLASSES` (type name → subclass)
+  lives in `game/city.py` beside `_create_unit`; the matchup harness and the
+  order recorder import it instead of keeping copies. **Two behaviour
+  changes that are not about balance:** `_create_unit` now raises on an
+  unknown type (it fell back to the bare `Unit`, which strips a shooter of its
+  attack), and the recorder raises on a scenario unit of an unknown type
+  (it fell back to a Warrior without a word).
+- **Encoder.** `CLASS_INDEX` is derived from `combat_class` through
+  `CLASS_CHANNEL` in `agents/state_encoders.py` (melee 0, anti-cavalry 1,
+  ranged 2, light and heavy cavalry 3, siege 4, support and civilian none):
+  it reproduces every existing unit's channel, and a new unit adds none, so no
+  encoder's depth changes (a test pins the depth of every encoder that
+  existed). The unit-stat channels are clamped at 1.0, because the Musketman's
+  strength (55) exceeds `MAX_MELEE_STR` (50) and the Knight's (50) sits on
+  it. **ACCEPTED GAP:** the constants stay, so those two units saturate the
+  melee-strength channel; changing them would shift every trained network's
+  inputs. #111 revisits the input space.
+- **Matchup harness.** `scripts/matchup_matrix.py --units ...` measures the
+  named unit types instead of the headline six (the default is unchanged), and
+  refuses a unit that cannot attack.
+
+**What agents see.** `BUILD_OPTIONS` grows by six (23 in all): at full width
+the build head has six more outputs and the build state six more
+turns-to-complete channels; an archived narrower head is loaded at its own
+width and does not see them. The build mask offers each new unit once its
+owner knows its tech. The combat network's input does not change: the new
+units share the existing class channels. Nothing in the action space or the
+encoders gives an agent an upgrade, a price or upkeep.
+
+**Accepted gaps.** Upgrades have no engine default and no agent action:
+`upgrade_unit` is dormant until #99, like `swap_tile`, so no unit changes type
+in play yet. Maintenance and `purchasable` are stored, not used, until P5. The
+upgrade-cost effect hook is 0 until P4. The Trader cannot be built until P5.
+The Musketman and Knight saturate the strength channel (above).
+
 ---
 
 ## v0.7.0 — Borders and culture; city combat and the other post-0.6.2 rule changes (2026-10-11)

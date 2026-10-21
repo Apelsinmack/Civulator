@@ -27,31 +27,13 @@ import torch
 
 from ..agents.networks import get_valid_moves_mask, get_valid_select_mask
 from ..agents.state_encoders import EnhancedStateEncoder
+from ..game.city import UNIT_CLASSES
 from ..game.environment import GameEnvironment
-from ..game.unit import (
-    NUM_UNIT_SLOTS,
-    ArcherUnit,
-    CatapultUnit,
-    HorsemanUnit,
-    SlingerUnit,
-    SpearmanUnit,
-    SwordsmanUnit,
-    WarriorUnit,
-)
+from ..game.unit import NUM_UNIT_SLOTS
 from ..meta import VersionGateError, build_manifest, check_version
 
 # The recorded human is always players[0] (scenario "team": 1).
 HUMAN_PLAYER_INDEX = 0
-
-UNIT_CLASSES = {
-    "Warrior": WarriorUnit,
-    "Slinger": SlingerUnit,
-    "Archer": ArcherUnit,
-    "Swordsman": SwordsmanUnit,
-    "Spearman": SpearmanUnit,
-    "Horseman": HorsemanUnit,
-    "Catapult": CatapultUnit,
-}
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 DEFAULT_DEMO_DIR = os.path.join(_REPO_ROOT, "demonstrations")
@@ -222,7 +204,17 @@ def _place_unit(env, entry):
     """Place one scenario unit through the environment's public helpers."""
     row, col = entry_coords(entry)
     player = env.players[int(entry.get("team", 1)) - 1]
-    unit_cls = UNIT_CLASSES.get(entry.get("type", "Warrior"), WarriorUnit)
+    # The scenario's unit type resolves through game/city.py's UNIT_CLASSES; a
+    # type it does not know raises. (It used to fall back to a Warrior without
+    # a word, which turned a typo or a newer unit into the wrong unit on the
+    # board.) An entry with no "type" is a Warrior, as the painter writes it.
+    unit_type = entry.get("type", "Warrior")
+    if unit_type not in UNIT_CLASSES:
+        raise ValueError(
+            f"scenario unit entry has unknown type {unit_type!r}: not a unit type "
+            f"the engine knows ({', '.join(UNIT_CLASSES)})"
+        )
+    unit_cls = UNIT_CLASSES[unit_type]
 
     unit = unit_cls(player, (row, col))
     unit.health = float(entry.get("hp", 100))

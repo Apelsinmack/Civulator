@@ -21,7 +21,8 @@ from .yields import city_yield
 from .unit import (
     Unit, WarriorUnit, SlingerUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
     HorsemanUnit, CatapultUnit, BatteringRamUnit, SiegeTowerUnit,
-    SettlerUnit, WorkerUnit, movement_domain,
+    ManAtArmsUnit, PikemanUnit, CrossbowmanUnit, KnightUnit, TrebuchetUnit,
+    MusketmanUnit, TraderUnit, SettlerUnit, WorkerUnit, movement_domain,
 )
 
 
@@ -398,22 +399,45 @@ class City:
         self.assign_tiles(game_env)
 
 
+# Unit type name -> its Unit subclass (#116 P3): the one exported registry of
+# "which class does this type instantiate". `_create_unit` builds from it, and
+# so do scripts/matchup_matrix.py and civulator/tools/recording.py -- a unit
+# type is added here once, beside its [units.*] table (CLAUDE.md, Unit system
+# row), never in a second dict. tests/test_combat_classes.py asserts it covers
+# every configured unit type and nothing else.
+UNIT_CLASSES = {
+    "Warrior": WarriorUnit,
+    "Slinger": SlingerUnit,
+    "Archer": ArcherUnit,
+    "Swordsman": SwordsmanUnit,
+    "Spearman": SpearmanUnit,
+    "Horseman": HorsemanUnit,
+    "Catapult": CatapultUnit,
+    "BatteringRam": BatteringRamUnit,
+    "SiegeTower": SiegeTowerUnit,
+    "Man-At-Arms": ManAtArmsUnit,
+    "Pikeman": PikemanUnit,
+    "Crossbowman": CrossbowmanUnit,
+    "Knight": KnightUnit,
+    "Trebuchet": TrebuchetUnit,
+    "Musketman": MusketmanUnit,
+    "Trader": TraderUnit,
+    "Settler": SettlerUnit,
+    "Worker": WorkerUnit,
+}
+
+
 def _create_unit(unit_type, player, coordinates):
-    """Factory function to create the appropriate unit subclass."""
-    unit_classes = {
-        "Warrior": WarriorUnit,
-        "Slinger": SlingerUnit,
-        "Archer": ArcherUnit,
-        "Swordsman": SwordsmanUnit,
-        "Spearman": SpearmanUnit,
-        "Horseman": HorsemanUnit,
-        "Catapult": CatapultUnit,
-        "BatteringRam": BatteringRamUnit,
-        "SiegeTower": SiegeTowerUnit,
-        "Settler": SettlerUnit,
-        "Worker": WorkerUnit,
-    }
-    cls = unit_classes.get(unit_type, Unit)
-    if cls == Unit:
-        return Unit(player, coordinates, unit_type)
+    """Factory function to create the appropriate unit subclass.
+
+    A type with no entry in UNIT_CLASSES raises: a silent fall-back to the
+    bare `Unit` would strip a ranged unit of its ranged attack and a siege
+    unit of its rules, and look like a working unit.
+    """
+    try:
+        cls = UNIT_CLASSES[unit_type]
+    except KeyError:
+        raise ValueError(
+            f"unknown unit type {unit_type!r}: not in UNIT_CLASSES (game/city.py)"
+        ) from None
     return cls(player, coordinates)
