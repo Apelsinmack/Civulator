@@ -1,6 +1,6 @@
 # Progression (#116): science, civics, gold, faith, wonders, loyalty, winning — design
 
-> **Status: v1 draft (2026-10-21).** Written by Claude as lead game designer on
+> **Status: v1 complete, critique pending (2026-10-21).** Written by Claude as lead game designer on
 > Erik's delegation ("you are now the lead game designer, and I want you to
 > implement these systems; you have to make all the decisions of where to
 > stop", chat 2026-10-21). Erik's brief is in #116; the earlier sketches are
@@ -55,6 +55,8 @@ the day it merges**, not dormant until #99.
 | #58 / #92: **culture pressure** — enough culture makes enemy cities defect | **Loyalty** (§8), a per-city pressure model driven by population and distance, not by culture | Erik asked for loyalty from the ground up, Civ 6-inspired (2026-10-21). Culture keeps its two consumers (borders, civics); loyalty is the non-military way to take a city. |
 | #90: "every current unit is tier 0 except Archer, tier 2" | Slinger → Archer → Crossbowman is one chain; Archer is simply the Classical ranged unit | follows from the first row |
 | #58: Campus science "buys +x% upgrades to yields" | Science buys **techs**; the +% to yields are **policy cards** unlocked by civics (Natural Philosophy +100 % Campus adjacency, etc.) | keeps science and culture distinct trees, as Erik's March notes left open and his 2026-10-21 brief assumes |
+| #67 (CHANGELOG): the Swordsman admitted ungated "as the natural answer to Spearman dominance"; Horseman and Catapult buildable from turn 1 | Swordsman, Horseman and Catapult are **tech-gated** (Iron Working, Horseback Riding, Engineering) | a tech tree with the three strongest early units outside it would be decoration; the Ancient counter-web is Warrior / Slinger / Archer / Spearman until the first Classical tech, as in Civ 6. The #60 Spearman question is re-measured after this block (`matchup_matrix`, the ladder) |
+| #88: the Palace is a housing-only marker | the Palace gets its Civ 6 yields (science 2, gold 5, production 2) and +1 loyalty per citizen | the capital needs its yields for the trees to start and its loyalty for §8; culture keeps the v0.7 per-city base rather than moving to the Palace (no retune) |
 
 ---
 
@@ -198,10 +200,20 @@ Kinds — **closed set**; each has exactly one consumer:
 | `free_units` | `[{ unit = "Worker", count = 3 }]` | wonders | **one-shot** on completion, placed through `complete_unit_production` |
 | `free_tech` / `free_civic` | `count` | wonders | one-shot on completion: completes the current research/civic (or the auto-pick) at no cost |
 | `free_population` | `amount`, `all_cities = true` | wonders | one-shot on completion |
+| `housing_if_districts` | `amount`, `min_districts` (0 = every city) | governments, policies, wonders | `housing(city)` |
+| `housing_with_building` | `building`, `amount` | governments | `housing(city)` |
+| `route_yield` | `gold/culture/science/food/production = N`, optional `international_only = true` | policies | the route term of `city_yield` (§7.4) |
+| `city_ranged_strength` | `amount` | policies | `City.get_ranged_strength` |
 
-`housing`, `culture`, `science`, `gold`, `faith` on a building, district or
-wonder stay **columns** (the #87/#88 pattern), not effects; the loader
-rejects a `city_yield` effect on a building so there is one way to say it.
+`city_yield` takes one optional `per_district = true` (Meritocracy: the
+amount is multiplied by the city's complete specialty districts).
+
+`housing`, `culture`, `science`, `gold`, `faith`, and now `food` and
+`production`, on a building, district or wonder stay **columns** (the
+#87/#88 pattern), not effects; the loader rejects a `city_yield` effect on a
+building so there is one way to say it. `food` / `production` columns are
+read by `calculate_food` / `calculate_production` (Palace +2 production,
+Granary +1 food, Workshop +3 production, Barracks +1, Lighthouse +1 food).
 
 One-shot effects fire inside `GameEnvironment` when the wonder completes
 (§9.3), never on load or capture.
@@ -240,8 +252,44 @@ Civ 6 names, costs and eras; **our own prerequisites**, drawn so that 2–4
 techs are available at any time and every path reaches the end. Costs are
 scaled by `[research] tech_cost_percent` (§12).
 
-*(tree table — §4.2 is completed from the Civ 6 digest; see the v1 table
-below once filled)*
+Cut from Civ 6's span: Sailing, Wheel, Shipbuilding, Mathematics,
+Construction, Buttress (no naval, no Water Mill, no Petra, no Terracotta Army)
+and every Renaissance tech but Gunpowder. 22 techs remain; Civ 6 has 33 in
+the same span. Prerequisites differ from Civ 6 only where a cut tech sat in
+between.
+
+| Tech | Era | Cost | Requires | Unlocks here |
+|---|---|---|---|---|
+| Pottery | Ancient | 25 | — | Granary |
+| Animal Husbandry | Ancient | 25 | — | Pasture, Camp |
+| Mining | Ancient | 25 | — | Mine, Quarry |
+| Astrology | Ancient | 50 | — | Holy Site, Shrine, Stonehenge |
+| Irrigation | Ancient | 50 | Pottery | Plantation, Hanging Gardens |
+| Writing | Ancient | 50 | Pottery | Campus, Library |
+| Archery | Ancient | 50 | Animal Husbandry | Archer, Temple of Artemis |
+| Masonry | Ancient | 80 | Mining | Walls, Battering Ram (still deferred, #66), Pyramids |
+| Bronze Working | Ancient | 80 | Mining | Spearman, Encampment, Barracks |
+| Celestial Navigation | Classical | 120 | Astrology | Harbor, Lighthouse, Fishing Boats, Colossus (Civ 6: Shipbuilding) |
+| Currency | Classical | 120 | Writing | Commercial Hub, Market |
+| Horseback Riding | Classical | 120 | Archery | Horseman (**now gated**; it was buildable from turn 1) |
+| Iron Working | Classical | 120 | Bronze Working | Swordsman (now gated; #67 admitted it ungated) |
+| Engineering | Classical | 200 | Masonry (Civ 6: Wheel) | Catapult (now gated), Aqueduct |
+| Military Tactics | Medieval | 300 | Bronze Working, Currency (Civ 6: Mathematics) | Pikeman |
+| Apprenticeship | Medieval | 300 | Currency, Horseback Riding | Industrial Zone, Workshop, Man-At-Arms |
+| Machinery | Medieval | 300 | Iron Working, Engineering | Crossbowman, Siege Tower (deferred) |
+| Education | Medieval | 335 | Apprenticeship (Civ 6: + Mathematics) | University |
+| Military Engineering | Medieval | 335 | Engineering (Civ 6: Construction) | Trebuchet |
+| Stirrups | Medieval | 390 | Horseback Riding, Apprenticeship | Knight |
+| Castles | Medieval | 390 | Military Engineering (Civ 6: Construction) | Medieval Walls, Alhambra |
+| Gunpowder | Renaissance | 600 | Apprenticeship, Stirrups, Military Engineering | Musketman |
+
+Four techs are available at the start; the lattice keeps 2–4 open until
+Gunpowder, which closes it. The sum is 4,015 science at Civ 6 costs (§12).
+
+Improvements (Mine, Pasture, …) are live content only once Workers build
+them — P8 (§15) gives idle Workers an engine default so a tech that unlocks
+an improvement is not a dead node. The Oil Well improvement, which no tech
+in this span could unlock, is removed from config.
 
 ### 4.3 Resolution
 
@@ -276,7 +324,36 @@ Military Tradition, closing #59's "gate it behind culture eventually").
 Resolution mirrors §4.3 on `Player.culture` with `civic_cost_percent`;
 `set_civic`; `episode_stats["civics_researched"]`.
 
-*(civics table — completed from the digest)*
+Cut from Civ 6's span: Mysticism (its only content for us, the Oracle, moves
+to State Workforce), Naval Tradition, Medieval Faires' envoy card, every
+Renaissance civic (Exploration's Merchant Republic and Reformed Church's
+Theocracy go: Theocracy moves to Divine Right so that one node offers two
+Tier-2 governments), every diplomatic card (no city-states) and every
+great-person card. 19 civics remain; Civ 6 has 24 in the span.
+
+| Civic | Era | Cost (GS) | Requires | Unlocks here |
+|---|---|---|---|---|
+| Code of Laws | Ancient | 20 | — | Chiefdom; God King, Urban Planning |
+| Craftsmanship | Ancient | 40 | Code of Laws | Ilkum, Agoge |
+| Foreign Trade | Ancient | 40 | Code of Laws | Trader, +1 route capacity; Caravansaries |
+| Military Tradition | Ancient | 50 | Craftsmanship | **flanking** (`enables`); Maneuver |
+| State Workforce | Ancient | 70 | Craftsmanship | Government Plaza; Conscription, Corvee; Oracle (Civ 6: Mysticism) |
+| Early Empire | Ancient | 70 | Foreign Trade | Colonization, Limitanei |
+| Games and Recreation | Classical | 110 | State Workforce | Entertainment Complex; Insulae; Colosseum |
+| Political Philosophy | Classical | 110 | State Workforce, Early Empire | Autocracy, Classical Republic, Oligarchy |
+| Drama and Poetry | Classical | 110 | Early Empire | Theater Square, Amphitheater |
+| Military Training | Classical | 120 | Military Tradition (Civ 6: + Games and Recreation) | Veterancy; Statue of Zeus |
+| Theology | Classical | 120 | Drama and Poetry (Civ 6: + Mysticism) | Temple; Scripture |
+| Defensive Tactics | Classical | 175 | Games and Recreation, Political Philosophy | Bastions, Limes |
+| Recorded History | Classical | 175 | Drama and Poetry, Political Philosophy | Natural Philosophy; Great Library |
+| Feudalism | Medieval | 300 | Defensive Tactics | Feudal Contract |
+| Civil Service | Medieval | 300 | Defensive Tactics, Recorded History | Meritocracy (the vanilla card) |
+| Mercenaries | Medieval | 340 | Feudalism, Military Training | Professional Army, Trade Confederation |
+| Divine Right | Medieval | 340 | Civil Service, Theology | Monarchy, Theocracy (Civ 6: Reformed Church); Chivalry, Gothic Architecture; Forbidden City (Civ 6: Printing) |
+| Medieval Faires | Medieval | 420 | Feudalism | Aesthetics, Medina Quarter; Angkor Wat |
+| Guilds | Medieval | 420 | Feudalism, Civil Service | Craftsmen, Town Charters |
+
+The sum is 3,100 culture at GS costs (§12).
 
 ### 5.2 Governments
 
@@ -285,6 +362,21 @@ Resolution mirrors §4.3 on `Player.culture` with `civic_cost_percent`;
 (None until Code of Laws). `set_government(player, name)` is refused unless
 the civic is known. No switching penalty (Claude's call: Civ 6's anarchy turn
 exists for humans; an agent changing government every turn gains nothing).
+Civ 6's **diplomatic** slots become wildcard slots here (no diplomatic
+cards exist); legacy bonuses are dropped.
+
+| Government | Tier | Civic | Slots M / E / W | Inherent bonus (effects) |
+|---|---|---|---|---|
+| Chiefdom | 0 | Code of Laws | 1 / 1 / 0 | none |
+| Autocracy | 1 | Political Philosophy | 1 / 1 / 2 | `city_yield` +1 food, production, science, culture, gold, faith, `capital_only`; `production_percent` wonders +10 |
+| Classical Republic | 1 | Political Philosophy | 0 / 2 / 2 | `housing_if_districts` +1 in every city with ≥ 1 specialty district |
+| Oligarchy | 1 | Political Philosophy | 2 / 1 / 1 | `combat_strength` +4 for `melee` and `anti_cavalry` |
+| Monarchy | 2 | Divine Right | 2 / 1 / 3 | `housing_with_building` +1 per Walls and per Medieval Walls; `production_percent` +50 toward Walls and Medieval Walls |
+| Theocracy | 2 | Divine Right | 2 / 2 / 2 | `faith_purchase` land military (Civ 6 vanilla; GS moved it to the Grand Master's Chapel, which also grants it here); `purchase_percent` faith −15 |
+
+Two new effect kinds for the housing cards and governments, both consumed
+by `housing(city)`: `housing_if_districts` (`amount`, `min_districts`) and
+`housing_with_building` (`building`, `amount`). They are added to §3's table.
 
 ### 5.3 Policy cards
 
@@ -293,6 +385,43 @@ exists for humans; an agent changing government every turn gains nothing).
 `Player.policies` is the list of **slotted** cards. A loadout is legal when
 every card is unlocked and not obsolete, distinct, and fits its slot type or
 a wildcard slot; `set_policies(player, names)` is refused otherwise.
+
+Civ 6's cards, kept where their effect has a consumer here (Military =
+M, Economic = E):
+
+| Card | T | Civic | Effect (kind) | Obsolete with |
+|---|---|---|---|---|
+| God King | E | Code of Laws | `city_yield` +1 faith, +1 gold, `capital_only` | Theology |
+| Urban Planning | E | Code of Laws | `city_yield` +1 production | — |
+| Ilkum | E | Craftsmanship | `production_percent` +30, `unit = "Worker"` | — |
+| Agoge | M | Craftsmanship | `production_percent` +50, classes melee/ranged/anti_cavalry, eras Ancient+Classical | Feudalism |
+| Caravansaries | E | Foreign Trade | `route_yield` +2 gold per route (one more kind: consumed by the route term of `city_yield`) | — |
+| Maneuver | M | Military Tradition | `production_percent` +50, classes light/heavy cavalry, eras Ancient+Classical | Divine Right |
+| Conscription | M | State Workforce | `unit_maintenance_delta` −1 | — |
+| Corvee | E | State Workforce | `production_percent` +15, `kind = "wonder"`, eras Ancient+Classical | Divine Right |
+| Colonization | E | Early Empire | `production_percent` +50, `unit = "Settler"` | — |
+| Limitanei | M | Early Empire | `loyalty` +2, `requires_garrison` | — |
+| Insulae | E | Games and Recreation | `housing_if_districts` +1, `min_districts = 2` | Medieval Faires |
+| Veterancy | M | Military Training | `production_percent` +30 toward Encampment and Harbor districts and their buildings | — |
+| Scripture | E | Theology | `adjacency_percent` +100, Holy Site | — |
+| Bastions | M | Defensive Tactics | `combat_strength` +6 `city`; `city_ranged_strength` +5 (one more attribute of the same kind) | — |
+| Limes | M | Defensive Tactics | `production_percent` +100 toward Walls and Medieval Walls | — |
+| Natural Philosophy | E | Recorded History | `adjacency_percent` +100, Campus | — |
+| Feudal Contract | M | Feudalism | `production_percent` +50, classes melee/ranged/anti_cavalry, eras Ancient–Renaissance | — |
+| Meritocracy | E | Civil Service | `city_yield` +1 culture per specialty district (attribute `per_district = true`) | — |
+| Professional Army | M | Mercenaries | `upgrade_cost_percent` −50 | — |
+| Trade Confederation | E | Mercenaries | `route_yield` +1 culture, +1 science per international route | — |
+| Aesthetics | E | Medieval Faires | `adjacency_percent` +100, Theater Square | — |
+| Medina Quarter | E | Medieval Faires | `housing_if_districts` +2, `min_districts = 3` | — |
+| Craftsmen | E | Guilds | `adjacency_percent` +100, Industrial Zone | — |
+| Town Charters | E | Guilds | `adjacency_percent` +100, Commercial Hub | — |
+| Chivalry | M | Divine Right | `production_percent` +50, classes light/heavy cavalry, all eras | — |
+| Gothic Architecture | E | Divine Right | `production_percent` +15, `kind = "wonder"`, all eras | — |
+
+Dropped: Survey, Discipline (barbarians), Maritime Industries, Strategos,
+Land Surveyors (tile purchase), Serfdom (charges), Retainers and Civil
+Prestige (amenities, governors), Raid (pillage), Equestrian Orders
+(resources), the diplomatic and great-person cards.
 
 ### 5.4 Slots
 
@@ -333,10 +462,73 @@ new unit adds no channel.
 
 ### 6.2 New units and buildings
 
-*(tables — completed from the digest: Pikeman, Crossbowman, Man-At-Arms,
-Knight, Trebuchet, Musketman, Trader; Library, University, Market,
-Lighthouse, Shrine, Temple, Amphitheater, Barracks, Medieval Walls, Monument
-into BUILD_OPTIONS; Granary and Workshop effects; Factory removed)*
+**Units.** Civ 6 GS stats; existing units keep their v0.7 numbers
+(Horseman 35 not 36, Catapult 23 not 25 — not retuned). `maintenance` is gold
+per turn; `era` and `combat_class` are new columns on every unit.
+
+| Unit | Class | Era | Cost | CS / RS / range / move | Tech | Maint. | Upgrades to |
+|---|---|---|---|---|---|---|---|
+| Warrior | melee | Ancient | 40 | 20 / — / — / 2 | — | 0 | Swordsman |
+| Slinger | ranged | Ancient | 35 | 5 / 15 / 1 / 2 | — | 0 | Archer |
+| Archer | ranged | Ancient | 60 | 15 / 25 / 2 / 2 | Archery | 1 | Crossbowman |
+| Spearman | anti_cavalry | Ancient | 65 | 25 / — / — / 2 | Bronze Working | 1 | Pikeman |
+| Horseman | light_cavalry | Classical | 80 | 35 / — / — / 4 | Horseback Riding | 2 | Knight (Claude's call: one cavalry line; Civ 6 has Courser) |
+| Swordsman | melee | Classical | 90 | 35 / — / — / 2 | Iron Working | 2 | Man-At-Arms |
+| Catapult | siege | Classical | 120 | 23 / 35 / 2 / 2 | Engineering | 2 | Trebuchet |
+| Battering Ram, Siege Tower | support | Ancient, Classical | 65, 100 | 0 | Masonry, Machinery | 1, 2 | — (deferred, #66) |
+| **Man-At-Arms** | melee | Medieval | 160 | 45 / — / — / 2 | Apprenticeship | 3 | Musketman |
+| **Pikeman** | anti_cavalry | Medieval | 180 | 45 / — / — / 2 | Military Tactics | 2 | — |
+| **Crossbowman** | ranged | Medieval | 180 | 30 / 40 / 2 / 2 | Machinery | 3 | — |
+| **Knight** | heavy_cavalry | Medieval | 220 | 50 / — / — / 4 | Stirrups | 4 | — |
+| **Trebuchet** | siege | Medieval | 200 | 35 / 45 / 2 / 2 | Military Engineering | 3 | — |
+| **Musketman** | melee | Renaissance | 240 | 55 / — / — / 2 | Gunpowder | 4 | — |
+| Settler, Worker | civilian | Ancient | 120, 50 | 0 | — | 0 | — |
+| **Trader** | civilian | Ancient | 40 | 0 / 2 move | Foreign Trade (civic) | 0 | — |
+
+Class bonuses (`[combat] class_bonuses`, both roles, #63): anti_cavalry vs
+light_cavalry +10 (today's Spearman vs Horseman), anti_cavalry vs
+heavy_cavalry +10 (Civ 6), melee vs anti_cavalry +5 (today's Warrior/
+Swordsman vs Spearman), ranged vs light_cavalry −5 and vs heavy_cavalry −5
+(today's archer-vs-horseman penalty, extended to the Knight — Claude's
+call). A row may name `unit_class` or a single `unit` on either side, so the
+implementer can express today's rule exactly as it is applied today (e.g. if
+the archer penalty applies to the Archer only, not the Slinger) — the
+bit-identity gate decides, not this table.
+
+**Buildings.** Civ 6 GS; `maintenance` 0 where the wiki is silent.
+`purchasable` per §7.3.
+
+| Building | Cost | Maint. | Requires | Columns / effects |
+|---|---|---|---|---|
+| Monument (exists, 50) | 50 | 0 | — | culture 2 (v0.7), `loyalty` +1; **enters BUILD_OPTIONS** (closes #73's gap) |
+| Granary (exists, 60) | 60 | 0 | Pottery | housing 2 (v0.7), food 1 (#98) |
+| Walls (exists, 100) | 100 | 0 | Masonry | defense_bonus 30 (v0.7); not purchasable |
+| Palace (granted) | — | 0 | — | housing 1 (v0.7), science 2, gold 5, production 2, `loyalty` +1 per citizen |
+| Workshop (exists, 120, inert) | 195 | 1 | Apprenticeship; Industrial Zone | production 3 (#98; cost raised to Civ 6's — it was unbuildable and inert) |
+| Factory (exists, inert) | removed | | | beyond the tree (Industrialization) |
+| **Library** | 90 | 1 | Writing; Campus | science 2 |
+| **University** | 250 | 2 | Education; Campus, Library | science 4, housing 1 |
+| **Market** | 120 | 0 | Currency; Commercial Hub | gold 3, `trade_route_capacity` 1 |
+| **Lighthouse** | 120 | 0 | Celestial Navigation; Harbor | food 1, gold 1, housing 1, `trade_route_capacity` 1 |
+| **Shrine** | 70 | 1 | Astrology; Holy Site | faith 2; faith-purchasable |
+| **Temple** | 120 | 2 | Theology; Holy Site, Shrine | faith 4; faith-purchasable |
+| **Amphitheater** | 150 | 1 | Drama and Poetry; Theater Square | culture 2 |
+| **Barracks** | 90 | 1 | Bronze Working; Encampment | production 1, housing 1 |
+| **Medieval Walls** | 220 | 0 | Castles; Walls | defense_bonus 30 (total 60); not purchasable |
+| **Ancestral Hall** | 150 | 1 | a Tier-1 government; Government Plaza | `production_percent` +50 Settler, `scope = "city"`; not purchasable |
+| **Grand Master's Chapel** | 290 | 2 | a Tier-2 government; Government Plaza, Ancestral Hall | faith 5, `faith_purchase` land military; not purchasable |
+
+A building's `requires_government_tier` is one more gate read by
+`city_can_build_building`. Trade-route capacity from Market and Lighthouse
+counts **once per city** (Civ 6; `route_capacity` takes the max per city,
+not the sum). Districts gain `requires_tech` / `requires_civic` (Campus:
+Writing; Holy Site: Astrology; Encampment: Bronze Working; Commercial Hub:
+Currency; Harbor: Celestial Navigation; Aqueduct: Engineering; Industrial
+Zone: Apprenticeship; Theater Square: Drama and Poetry; Entertainment
+Complex: Games and Recreation; Government Plaza: State Workforce) and a
+`maintenance` column (Campus, Theater Square, Holy Site, Industrial Zone,
+Encampment, Entertainment Complex 1; Commercial Hub, Harbor, Aqueduct,
+Government Plaza 0 — Civ 6: the gold districts pay for themselves).
 
 A building may declare `requires_district = "Campus"` (a complete district of
 that type in the city) and `requires_building = "Shrine"`; `produce_building`,
@@ -355,9 +547,12 @@ Trader's capacity test (§7.4). Districts and wonders stay out (#99).
 `upgrades_to = "Swordsman"` on `[units.Warrior]` etc. `GameEnvironment.
 upgrade_unit(unit)`: refused unless the target is `player_can_build`, the
 unit stands on a tile its owner owns, has full movement and has not attacked;
-costs `upgrade_cost(unit)` gold (§7.3, Civ 6's formula scaled by
-`upgrade_cost_percent` effects); the unit becomes the target type at the
-same health, movement spent. No engine default (§13): dormant until #99,
+costs `upgrade_cost(unit)` = `[gold] upgrade_per_production (2) *
+(target cost − unit cost) + upgrade_base (10)` gold, scaled by
+`upgrade_cost_percent` effects (the wiki states no formula; this one
+reproduces its single data point, Slinger → Archer = 60, and is the
+community's reading of the game files); the unit becomes the target type at
+the same health, movement spent. No engine default (§13): dormant until #99,
 like `swap_tile` — **ACCEPTED GAP**, recorded in the CHANGELOG.
 
 ---
@@ -372,7 +567,7 @@ At the start of the owner's turn, after the cities have accrued:
 ```
 treasury += 0                      # yields were added by the cities
 treasury -= 10 * (sum unit maintenance (+ unit_maintenance_delta effects, floored at 0 per unit)
-                  + sum building maintenance)
+                  + sum building maintenance + sum complete-district maintenance)
 ```
 
 ### 7.2 Bankruptcy
@@ -388,10 +583,14 @@ shrinks (Erik's reason for the whole economy, #91). `episode_stats
 ### 7.3 Purchasing
 
 `purchasable = ["gold"]` / `["gold", "faith"]` / `[]` on each unit and
-building table (districts and wonders are never purchasable, Civ 6).
+building table (districts and wonders are never purchasable, Civ 6; nor
+are Walls, Medieval Walls and the Government Plaza buildings). Default:
+every unit and building `["gold"]`; Shrine and Temple `["gold", "faith"]`;
+land military units gain `"faith"` through `faith_purchase` (§3).
 `purchase_cost(player, kind, name, resource)` =
-`production_cost * [gold] purchase_multiplier` (or `[faith]`), scaled by
-`purchase_percent` effects; `GameEnvironment.purchase(city, kind, name,
+`production_cost * [gold] purchase_multiplier (4)` (Civ 6: gold is 4×
+production) or `* [faith] purchase_multiplier (2)` (Civ 6: faith is 2×),
+scaled by `purchase_percent` effects; `GameEnvironment.purchase(city, kind, name,
 resource)`: refused unless affordable, purchasable with that resource,
 `player_can_build`, `city_can_build_building`, and — for faith — the
 category is unlocked by a `faith_purchase` effect when the item's table says
@@ -407,19 +606,40 @@ Civ 6's trade, reduced to what matters: a **Trader** (civilian unit, slot 1,
 GameEnvironment.establish_trade_route(trader, destination_city)` consumes
 the unit and records a `TradeRoute(origin_city_id, destination_city_id,
 player_index, turns_left)` on the player. Refused unless the destination is
-another city within `[trade] range` hexes (canonical wrap distance from the
-origin), and `len(routes) < route_capacity(player)` =
-`[trade] base_capacity` + `trade_route_capacity` effects.
+another city within `[trade] range` (15, Civ 6's land range) hexes
+(canonical wrap distance from the origin), at most one route between any
+two cities, and `len(routes) < route_capacity(player)` = the Foreign Trade
+civic's `trade_route_capacity` 1 + one per city holding a Market or a
+Lighthouse (max, not sum, per city — Civ 6) + wonder effects (Colossus).
 
-Yields, per turn, to the **origin city** (a term of `city_yield`, §2.1):
+Yields, per turn, to the **origin city** (a term of `city_yield`, §2.1), are
+Civ 6's **destination-district rule**: every complete district at the
+destination, the city centre included, adds a fixed amount, from two config
+tables `[trade.domestic.<District>]` and `[trade.international.<District>]`
+(a district absent from a table adds nothing; a name that is not a district
+raises):
 
-| route | origin gets | destination owner gets |
+| District at destination | Domestic route (same owner) | International route |
 |---|---|---|
-| domestic (same owner) | `[trade] domestic_food` + `domestic_production`, plus `per_district_food` per complete specialty district at the destination | — |
-| international | `[trade] international_gold`, plus `per_district_gold` per complete specialty district at the destination | `[trade] destination_gold` |
+| City Center | 1 food, 1 production | 3 gold |
+| Campus | 1 food | 1 science |
+| Holy Site | 1 food | 1 faith |
+| Theater Square | 1 food | 1 culture |
+| Entertainment Complex | 1 food | 1 food |
+| Encampment, Industrial Zone | 1 production | 1 production |
+| Commercial Hub, Harbor | 1 production | 3 gold |
+| Government Plaza | 1 food, 1 production | 2 gold |
 
-A route lasts `[trade] duration_turns`; when it ends, a Trader reappears at
-the origin (through `complete_unit_production`) and idles. An idle Trader is
+plus every `route_yield` effect in force (Caravansaries +2 gold per route;
+Trade Confederation +1 culture +1 science per international route). The
+destination's owner gets nothing (Civ 6). Food and production from routes
+are the first non-tile source of either: `calculate_food` /
+`calculate_production` read the route term through `city_yield(city,
+"food")` / `"production"`.
+
+A route lasts `[trade] duration_turns` (21, Civ 6's minimum; no round-trip
+arithmetic, no era extension); when it ends, a Trader reappears at the
+origin (through `complete_unit_production`) and idles. An idle Trader is
 **auto-sent** by the engine default (§13) so trade stays live without an
 agent. Routes end when either city is captured or destroyed (the Trader
 returns to the origin if it still belongs to the player; otherwise it is
@@ -445,37 +665,41 @@ new city; `captured = 50` for a city taken by force or by a flip (Claude's
 call: a conquest must be consolidated, which is what gives Limitanei,
 garrisons and the Colosseum a job). Travels with the city.
 
-### 8.2 Pressure (the Civ 6 shape, our numbers)
+### 8.2 Pressure (Civ 6's formula, in integers)
 
 For a city C and a player P, the **pressure** P exerts on C is the sum over
 P's cities c within `[loyalty] range` (9, Civ 6) of
 
 ```
-population(c) * (range + 1 - distance(c, C))        # canonical wrap distance
+population(c) * (10 - distance(c, C))        # canonical wrap distance; Civ 6: -10 % per tile
 ```
 
 C itself counts for its owner (distance 0, the heaviest weight). No age
 multiplier: there are no eras of fortune here.
 
-Per round, with `own` = the owner's pressure and `foreign` = the **largest**
-single other player's pressure (Claude's call: Civ 6 sums all foreign
-pressure; taking the largest means two weak neighbours cannot flip a city
-between them that neither could take, and names the flip target in §8.5):
+Per round, with `own` = the owner's pressure and `foreign` = the sum of
+every other player's pressure (Civ 6):
 
 ```
-drift   = clamp( [loyalty] pressure_scale * (own - foreign) // max(own + foreign, 1),
-                 -[loyalty] max_drift, +max_drift )          # pressure_scale 10, max_drift 10
+drift   = clamp( 20 * (own - foreign) // (2 * min(own, foreign) + 1), -20, +20 )
+          # Civ 6: 10 * (own - foreign) / (min(own, foreign) + 0.5), capped at ±20
 sources = [loyalty] garrison (2) if a combat unit of the owner stands on the centre
-        + sum of `loyalty` effects in force for the city (§3): Monument +1; Colosseum +2
-          to every own city within 6; Limitanei +2 with a garrison; Retainers …
+          (Claude's call: Civ 6 has no inherent garrison term, only Limitanei; here a
+          garrison is the one lever a player has on turn one)
+        + sum of `loyalty` effects in force for the city (§3): Monument +1; Palace +1 per
+          citizen (`per_population = true`); Colosseum +2 to every own city within 6;
+          Limitanei +2 with a garrison; Government Plaza +8 (a `loyalty` column on the
+          district, read like a building's)
 delta   = drift + sources
 ```
 
-A city alone (foreign 0) drifts up by `max_drift` and sits at 100. Example,
-Duel map: a pop-1 city five tiles from a pop-6 enemy capital: own 10,
-foreign 30 → drift −5; a garrison and a Monument make it −2; it flips in
-roughly 25 rounds unless it grows or the neighbour shrinks. That is the
-intended cost of forward settling.
+The wiki's worked example (own 31, foreign 45 → −4.4) gives −4 here. A city
+alone (foreign 0) drifts up by 20 and sits at 100. Example, Duel map: a pop-1
+city five tiles from a pop-6 enemy capital, no other cities in range: own
+10, foreign 30 → drift −19; a garrison and a Monument make it −16; it flips
+in about six rounds. Civ 6's curve is steep near parity, and that is the
+intended cost of forward settling: a city planted in a bigger neighbour's
+shadow is held by population, not by a flag.
 
 ### 8.3 Phase
 
@@ -490,33 +714,34 @@ Integers only, no RNG.
 `[loyalty] bands = [[min, yield_percent, can_grow], ...]`, first match wins,
 same shape as housing's growth bands:
 
-| loyalty | yields (science, culture, gold, faith, production) | growth |
+| loyalty | yields (science, culture, gold, faith, production) | growth (share of surplus) |
 |---|---|---|
-| 76–100 | 100 % | yes |
-| 51–75 | 75 % | yes |
-| 26–50 | 50 % | yes |
-| 1–25 | 25 % | no |
+| 76–100 (Loyal) | 100 % | 100 % |
+| 51–75 (Wavering) | 75 % | 75 % |
+| 26–50 (Disloyal) | 50 % | 25 % |
+| 1–25 (Unrest) | 0 % | 0 % |
 
-`loyalty_percent(city)` is read by `city_yield` (§2.1) and
-`calculate_production`; the growth flag by `process_turn`. Food is not
+Civ 6's bands exactly. `loyalty_percent(city)` is read by `city_yield`
+(§2.1) and `calculate_production` (which keeps its floor of 1); the growth
+share multiplies the housing band's percent in `process_turn`. Food is not
 scaled (starvation is a separate punishment).
 
 ### 8.5 Revolt
 
 At phase end a city at loyalty 0 **flips to the player exerting the largest
-foreign pressure** (there always is one: own pressure alone never reaches
-0). The flip is `GameEnvironment._flip_city(city, new_player)`: the old
-owner's units on the centre tile are deleted (counted as its `losses`),
-`City.set_owner` moves the city, its tiles, districts and wonders exactly as
-a capture does, loyalty resets to `captured`, `episode_stats` records
-`cities_flipped_out` / `cities_flipped_in`. `_capture_city` is untouched:
-capture and flip are two doors, `set_owner` is the one room behind both.
+foreign pressure** (ties by player index; there always is one: own pressure
+alone never reaches 0). Civ 6 makes it a Free City first and lets it petition
+to join; there is no neutral owner here, so the flip is direct — the
+non-military conquest #58 asked for. The flip is
+`GameEnvironment._flip_city(city, new_player)`: the old owner's units on the
+centre tile are deleted (counted as its `losses`), `City.set_owner` moves
+the city, its tiles, districts and wonders exactly as a capture does,
+loyalty resets to `captured`, `episode_stats` records `cities_flipped_out` /
+`cities_flipped_in`. `_capture_city` is untouched: capture and flip are two
+doors, `set_owner` is the one room behind both.
 
-The city holding a player's **Palace never flips** (loyalty is tracked but
-the band floor is 1): a player is eliminated by arms, not by arithmetic
-(Claude's call; Civ 6 protects capitals through the Palace's loyalty bonus,
-we protect it outright because a one-city player losing the capital to drift
-would be elimination by an invisible hand).
+The capital is protected the Civ 6 way, by the Palace's +1 loyalty per
+citizen, not by immunity (Civ 6: "a Capital can in principle flip").
 
 ### 8.6 What loyalty is not
 
@@ -573,10 +798,30 @@ branch invokes (one place for "a district just completed").
 
 ### 9.4 The set
 
-*(table — completed from the digest: Pyramids, Stonehenge, Hanging Gardens,
-Temple of Artemis, Statue of Zeus, Oracle, Great Library, Colossus,
-Colosseum, Alhambra, Angkor Wat, Forbidden City — era, cost, requirement,
-placement, effect)*
+Twelve, chosen so that each tree has wonder races on it, every era has
+some, and every one changes something a player does (growth, armies,
+loyalty, policy slots, free research). Civ 6 costs; requirements moved
+where a cut tech or civic held them; placement in the §1.2/§2 vocabulary
+of the district registry.
+
+| Wonder | Era · cost | Requires | Placement (`on` / `requires_adjacent`) | Columns · effects |
+|---|---|---|---|---|
+| Pyramids | Ancient 220 | Masonry | flat Desert **or Plains** (Claude's call: Civ 6 is Desert-only; our Duel maps may hold little desert and Erik asked for this one) | culture 2; `free_units` Worker ×3 (Civ 6: one Builder + a charge; Erik: "quite a few builders", cost comparable to the builders) |
+| Stonehenge | Ancient 180 | Astrology | flat, adjacent to a Stone resource | faith 4 (Civ 6: +2 and a Great Prophet; no prophets here) |
+| Hanging Gardens | Ancient 180 | Irrigation | river on an edge of its tile (`river_on_tile`, accepted in `requires_adjacent`) | housing 2; `growth_percent` +15, scope player |
+| Temple of Artemis | Ancient 180 | Archery | adjacent to a Cattle, Sheep or Deer resource (Civ 6: a Camp) | food 4, housing 3 |
+| Oracle | Classical 290 | State Workforce (civic; Civ 6: Mysticism) | hills | culture 2, faith 2; `free_civic` 1 (Claude's call: Civ 6's great-person discount has no object here) |
+| Statue of Zeus | Classical 400 | Military Training (civic) | flat, adjacent to an Encampment | gold 3; `free_units` Spearman ×3, Archer ×3; `production_percent` +50 anti_cavalry, scope player |
+| Great Library | Classical 400 | Recorded History (civic) | flat, adjacent to a Campus | science 3; `free_tech` 1 (Civ 6: +2 and boosts for every Ancient/Classical tech) |
+| Colossus | Classical 400 | Celestial Navigation (Civ 6: Shipbuilding) | Coast, adjacent to land and to a Harbor | gold 3; `trade_route_capacity` 1; `free_units` Trader ×1 |
+| Colosseum | Classical 400 | Games and Recreation (civic) | flat, adjacent to an Entertainment Complex | culture 2; `loyalty` +2, `range` 6, scope player (own cities only) |
+| Alhambra | Medieval 710 | Castles | hills, adjacent to an Encampment | `policy_slots` military 1; `combat_strength` `city` +6, scope city (Civ 6: "as a Fort") |
+| Angkor Wat | Medieval 710 | Medieval Faires (civic) | adjacent to an Aqueduct | faith 2; `free_population` 1 all cities; `housing_if_districts` +1, `min_districts` 0 (every city) |
+| Forbidden City | Renaissance 920 | Divine Right (civic; Civ 6: Printing) | flat, adjacent to the city centre | culture 5; `policy_slots` wildcard 1 |
+
+Civ 6's "completing a wonder claims two more tiles" and the amenity effects
+are not implemented (**ACCEPTED GAP**: borders have their own system, and
+amenities do not exist).
 
 ---
 
@@ -691,14 +936,17 @@ Campus by 140, a University by 180):
 | 150–200 | ~26 | ~2850 | ~17 | ~1950 |
 | 200–250 | ~32 | ~4450 | ~22 | ~3050 |
 
-The tree in §4.2 sums to about 3000 science at Civ 6 costs and the civics in
-§5.1 to about 2400 culture, so **Civ 6 costs are kept as they are**
-(`[research] tech_cost_percent = 100`, `civic_cost_percent = 100`): the
-model puts the last tech around round 205 and the last civic around round
-215. The two knobs exist so the balancing pass has one dial per tree; a
-measured curve replaces this table in the first evaluation report after the
-block merges (`techs_researched` / `civics_researched` per game are in the
-episode stats for exactly that).
+The tree in §4.2 sums to 4,015 science at Civ 6 costs and the civics in
+§5.1 to 3,100 culture, which the model finishes only at the cap or past it.
+Civ 6's own Quick speed scales costs to 67 %; a 250-round game against
+Civ 6's 500 is closer to Online speed (50 %), but our yields are also
+lower than Civ 6's. **Both knobs start at 75 %** (`[research]
+tech_cost_percent = 75`, `civic_cost_percent = 75`): the model then puts
+the last tech around round 215 and the last civic around round 230. The two
+knobs exist so the balancing pass has one dial per tree; a measured curve
+replaces this table in the first evaluation report after the block merges
+(`techs_researched` / `civics_researched` per game are in the episode stats
+for exactly that).
 
 District costs escalate from this block on (`game_progress`, §4.3): a
 Campus placed with half the tree known costs `54 * (1 + 9 * 0.5) = 297`
@@ -715,6 +963,7 @@ normal ending with a score.
 | government | on unlocking a civic that grants one, adopt it if it is a higher tier than the current one; ties (the three Tier-1s) by config order | `set_government` |
 | policy loadout | whenever slots or unlocked cards change: keep legal cards, then fill each empty slot with the newest unlocked card of its type not yet slotted (wildcard: newest of any type); newest = latest civic, then config order | `set_policies` |
 | idle Trader | at its owner's turn start, send it to the eligible destination with the highest total yield to the origin; ties by city id | `establish_trade_route` |
+| idle Worker | build the best available improvement under it, else one step toward the nearest owned tile where it could (§15 P8) | #99's improvement action |
 | purchase, upgrade, district/wonder placement, production | none (production: the build agent, as today) | #99 |
 
 Defaults live in `civulator/game/defaults.py` and are called from
@@ -752,7 +1001,8 @@ member obeys.
 | Wonders are not `district = "any"` sources; `wonder = "any"` counts complete wonders only | adjacency double-counts wonders |
 | Loyalty: pressure per §8.2 (own city counted, largest foreign), drift clamped, garrison and sources added; bands scale yields and production and block growth; a city at 0 flips to the largest foreign presser through `set_owner`; the Palace city never flips; all deltas from phase-start state (turn-order independence, as in `test_border_growth`) | any term or the phase discipline drifts |
 | Domination: a player holding every Palace is the winner even while other cities stand; `player_score` sums the `[game.score]` terms | the verdict and the score diverge (#55) |
-| Defaults: with no agent choice a seeded game researches techs and civics, adopts governments, slots policies and sends Traders — all counters positive by round 150 of the smoke run — and two same-seed games produce identical pools, techs, loyalty and flips | a default is non-deterministic or dormant |
+| Defaults: with no agent choice a seeded game researches techs and civics, adopts governments, slots policies, sends Traders and improves tiles — all counters positive by round 150 of the smoke run — and two same-seed games produce identical pools, techs, loyalty and flips | a default is non-deterministic or dormant |
+| An idle Worker never builds an improvement its owner's techs do not allow, never on a tile its owner does not own, and steps only along `path_finder` | the worker default bypasses `can_build_improvement_at` or the hex kernels |
 | Same seed, same actions → identical everything (`test_determinism` extended with the new state) | set/dict iteration or RNG use anywhere new |
 
 ## 15. Patch plan
@@ -772,8 +1022,8 @@ v0.8.0 entry (opened by P1), `episode_stats` keys declared in
 | **P5 gold** | `maintenance` columns, the economy phase, bankruptcy, `purchasable`/`purchase_cost`/`purchase`, `faith_purchase` and `purchase_percent` consumers, trade routes (`TradeRoute`, `establish_trade_route`, capacity, yields, expiry, auto-send default), Trader mask rule | §14 rows 16–19; suite green; smoke shows routes and maintenance | subagent · Opus |
 | **P6 wonders** | `kind = "wonder"` in `district_model`, the twelve tables, uniqueness, race resolution + consolation, `wonder = "any"` source, `GameEnvironment.complete_district` with one-shot effects (`free_units`, `free_tech`, `free_civic`, `free_population`, `growth_percent` consumer), smoke script places wonders | §14 rows 20–21; suite green | subagent · Opus |
 | **P7 loyalty** | `game/loyalty.py` (pressure, drift, sources, bands), `City.loyalty`, `_loyalty_phase`, `_flip_city`, `loyalty` effect consumer, Monument/Colosseum/Limitanei values live, `loyalty_percent` into `city_yield`/`calculate_production`/growth, stats | §14 row 22; turn-order independence; suite green | subagent · Opus |
-| **P8 winning + release** | domination in `_check_game_end`, `[game.score]` terms in `player_score`, `victory` in `games_detail`; `__version__ = "0.8.0"`, fixture regenerated (`scripts/make_fixture_scenario.py`), CHANGELOG v0.8.0 entry finalised with the epoch marker, `docs/game_overview.md`, CLAUDE.md rows from the Systems section, `weights/trained/manifest.md` epoch note | §14 rows 23–25; suite green; one seeded smoke run of 250 rounds logged | subagent · Sonnet |
-| *P9 (optional)* | Worker automation default: an idle Worker builds the best available improvement on its own owned tile, else steps toward the nearest improvable owned tile; `Worker` leaves `DEFERRED_BUILD_UNITS` | determinism; suite green | subagent · Sonnet — only if the session's budget allows after P8 |
+| **P8 workers** | Worker automation default (`game/defaults.py`): at its owner's turn start an idle Worker on an owned tile with a buildable, tech-available improvement builds the one with the largest (food + production) gain (ties: config order); otherwise it moves one `path_finder` step toward the nearest owned tile where it could build (ties: coordinates); nothing to do → it stays. `Worker` leaves `DEFERRED_BUILD_UNITS` and enters `BUILD_OPTIONS`; `requires_tech` on improvements enforced by `can_build_improvement_at` | determinism; improvements appear in the smoke run; suite green | subagent · Sonnet |
+| **P9 winning + release** | domination in `_check_game_end`, `[game.score]` terms in `player_score`, `victory` in `games_detail`; `__version__ = "0.8.0"`, fixture regenerated (`scripts/make_fixture_scenario.py`), CHANGELOG v0.8.0 entry finalised with the epoch marker, `docs/game_overview.md`, CLAUDE.md rows from the Systems section, `weights/trained/manifest.md` epoch note | §14 rows 23–25; suite green; one seeded smoke run of 250 rounds logged | subagent · Sonnet |
 
 Re-planning happens at patch boundaries; the spec of the patch in flight is
 locked.
