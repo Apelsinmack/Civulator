@@ -15,8 +15,14 @@ Science, culture, gold and faith are integer TENTHS scaled by
 - the `<name>` column of each of the city's buildings (`[buildings.*]`);
 - the `<name>` column of each of its complete districts (`[districts.*]`);
 - `10 * district_yields(city, percent_by_district)[name]`, the adjacency of
-  its complete districts (the one conversion of adjacency into yields);
-- flat effects (stub until P4) and trade routes to this city (stub until P5).
+  its complete districts (the one conversion of adjacency into yields), each
+  district's score raised by the summed `adjacency_percent` effects in force
+  for its type (#116 P4);
+- the `city_yield` effects in force for the city (#116 P4): each entry's
+  amount of `name`, only in the city holding `[city] capital_building` when
+  `capital_only`, times the city's complete specialty districts when
+  `per_district`;
+- trade routes to this city (stub until P5).
 
 Every term is summed in tenths; food and production are then floored once
 to whole points. Pure engine code: reads config-derived tables and the live
@@ -25,8 +31,15 @@ module (a test greps for every configured one): a new source is a column
 on its own config table or an effect, never a term here.
 """
 
-from ..unit_model import BUILDING_YIELDS, YIELD_BASE, YIELD_COLUMNS, YIELD_PER_POP
-from .districts import district_spec, district_yields
+from ..effects import KIND_ADJACENCY_PERCENT, KIND_CITY_YIELD, active_effects
+from ..unit_model import (
+    BUILDING_YIELDS,
+    CAPITAL_BUILDING,
+    YIELD_BASE,
+    YIELD_COLUMNS,
+    YIELD_PER_POP,
+)
+from .districts import district_spec, district_yields, specialty_districts
 
 # Position of food and production in `Tile.yields`.
 _TILE_YIELD_INDEX = {"food": 0, "production": 1}
@@ -40,22 +53,52 @@ def loyalty_percent(city):
     return 100
 
 
-def _effect_yield(city, name):
-    """Flat `city_yield` effects in force for the city, in tenths. STUB: 0
-    until the effects interpreter exists (#116 P4, design §3)."""
-    return 0
+def _loyalty_sources(city):
+    """STUB for #116 P7 (design §8.2): where the `loyalty` effects in force
+    for a city will be summed (`loyalty_sources`, moving to game/loyalty.py
+    with `loyalty_percent`). The effect kind is validated since P4; nothing
+    reads it yet and this returns nothing."""
+    return ()
 
 
-def _effect_adjacency_percents(city):
-    """Summed `adjacency_percent` effects per district type, for
-    `district_yields`. STUB: none until the effects interpreter exists
-    (#116 P4, design §3 and v2 fixes)."""
-    return None
+def _effect_yield(city, name, in_force):
+    """The `city_yield` effects among `in_force` (the city's active
+    effects), in tenths of `name`: each entry's amount, skipped outside the
+    city holding the capital building when `capital_only`, multiplied by the
+    city's complete specialty districts when `per_district` (#116 P4,
+    design §3). The one consumer of `city_yield`."""
+    total = 0
+    for effect in in_force:
+        if effect.kind != KIND_CITY_YIELD:
+            continue
+        amount = effect["yields"].get(name, 0)
+        if not amount:
+            continue
+        if effect["capital_only"] and CAPITAL_BUILDING not in city.buildings:
+            continue
+        if effect["per_district"]:
+            amount *= len(specialty_districts(city))
+        total += amount
+    return total
+
+
+def _effect_adjacency_percents(in_force):
+    """District type -> the summed `adjacency_percent` of the entries among
+    `in_force`, for `district_yields` to apply once per district (v2 fixes:
+    summed, then applied with one floor). The one consumer of
+    `adjacency_percent`."""
+    percents = {}
+    for effect in in_force:
+        if effect.kind == KIND_ADJACENCY_PERCENT:
+            district = effect["district"]
+            percents[district] = percents.get(district, 0) + effect["percent"]
+    return percents
 
 
 def _route_yield(city, name):
     """Yields of trade routes whose origin is this city, in tenths. STUB: 0
-    until trade routes exist (#116 P5, design §7.4)."""
+    until trade routes exist (#116 P5, design §7.4); P5 adds the
+    `route_yield` effects in force here, the one consumer of that kind."""
     return 0
 
 
@@ -87,12 +130,14 @@ def _tile_gold_tenths(city):
 def _source_tenths(city, name):
     """Every term the six yields share, in tenths: building and complete-
     district columns, district adjacency, effects and routes."""
+    in_force = active_effects(city.player, city)
     columns = sum(BUILDING_YIELDS[name].get(b, 0) for b in city.buildings)
     columns += sum(
         district_spec(d.type).yield_columns[name] for d in city.districts if d.complete
     )
-    adjacency = 10 * district_yields(city, _effect_adjacency_percents(city)).get(name, 0)
-    return columns + adjacency + _effect_yield(city, name) + _route_yield(city, name)
+    adjacency = 10 * district_yields(city, _effect_adjacency_percents(in_force)).get(name, 0)
+    return (columns + adjacency + _effect_yield(city, name, in_force)
+            + _route_yield(city, name))
 
 
 def city_yield(city, name):

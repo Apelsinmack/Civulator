@@ -14,9 +14,11 @@ Validation (design §1.2 and "v3 fixes", config loading):
 - `amount` and `per` are positive ints; `adjacency_yield` is one of
   ACCEPTED_YIELDS; housing values and the optional flat yield columns
   (unit_model.YIELD_COLUMNS, issue #116) go through unit_model.to_tenths;
-- `requires_tech` names a tech (research_model, #116 P2), `maintenance` is
-  a non-negative multiple of 0.1 (tenths), `requires_civic` is kept raw
-  until #116 P4 defines civics;
+- `requires_tech` names a tech (research_model, #116 P2), `requires_civic`
+  a civic (#116 P4), `maintenance` is a non-negative multiple of 0.1
+  (tenths);
+- `effects` is kept raw (a list; #116 P4) and validated by
+  civulator/effects.py, which loads after this registry;
 - every `[buildings.*] requires_district` (parsed by unit_model, which loads
   before this registry) names a district of this registry.
 
@@ -28,7 +30,7 @@ from dataclasses import dataclass
 
 from .config import CFG
 from . import terrain_model
-from .research_model import validate_tech_name
+from .research_model import validate_civic_name, validate_tech_name
 from .unit_model import BUILDING_REQUIRES_DISTRICT, YIELD_COLUMNS, to_tenths
 
 CITY_CENTER = "City Center"
@@ -55,7 +57,16 @@ _DISTRICT_KEYS = frozenset({
     "housing", "water_housing_min", "water_housing_boost",
     *YIELD_COLUMNS,
     "requires_tech", "requires_civic", "maintenance",  # #116 P2
+    "effects",  # #116 P4
 })
+
+# What a registry entry is (progression design §9.1). Every configured entry
+# is a "district" until #116 P6 adds the `kind` column and its wonders; the
+# field exists now so that readers (specialty districts, the effects
+# interpreter) are written against it once.
+KIND_DISTRICT = "district"
+KIND_WONDER = "wonder"
+KINDS = (KIND_DISTRICT, KIND_WONDER)
 
 
 @dataclass(frozen=True)
@@ -97,12 +108,17 @@ class DistrictSpec:
     # unit_model.YIELD_COLUMNS -> int tenths, 0 when the column is absent.
     # Read by game/yields.py city_yield; separate from the adjacency yield.
     yield_columns: dict
-    # Availability (#116 P2): the tech the owner must know to place it (None =
-    # ungated); the civic (raw, passes until P4); gold upkeep per turn in int
-    # tenths (stored now, deducted from P5 on).
+    # Availability (#116 P2, P4): the tech and the civic the owner must know
+    # to place it (None = ungated); gold upkeep per turn in int tenths (stored
+    # now, deducted from P5 on).
     requires_tech: object = None
     requires_civic: object = None
     maintenance: int = 0
+    # The raw `effects` list (#116 P4), validated by civulator/effects.py;
+    # city scope by default. Empty when absent.
+    effects: tuple = ()
+    # KIND_DISTRICT for every entry until #116 P6 configures wonders.
+    kind: str = KIND_DISTRICT
 
 
 @dataclass(frozen=True)
@@ -254,9 +270,18 @@ def _parse_district(name, table, district_names):
         yield_columns={c: _optional_tenths(table, c, where) or 0 for c in YIELD_COLUMNS},
         requires_tech=(validate_tech_name(table["requires_tech"], where)
                        if "requires_tech" in table else None),
-        requires_civic=table.get("requires_civic"),
+        requires_civic=(validate_civic_name(table["requires_civic"], where)
+                        if "requires_civic" in table else None),
         maintenance=_maintenance(table, where),
+        effects=_effects(table, where),
     )
+
+
+def _effects(table, where):
+    effects = table.get("effects", [])
+    if not isinstance(effects, list):
+        raise ValueError(f"{where}: effects must be a list, got {effects!r}")
+    return tuple(effects)
 
 
 def _maintenance(table, where):

@@ -6,9 +6,11 @@ from `get_valid_build_mask`, so only what the city may build (#116 P2: the
 tech gates; never `random.choice(BUILD_OPTIONS)`). Logs, at
 round checkpoints, tiles owned per player, total population, cumulative
 culture claims, per-player housing vs population and growth_slowed_turns,
-techs researched per player (the engine's research default, #116 P2), plus
-wall-clock. A sanity check that borders grow and research progresses in real
-games, not a measurement.
+techs researched per player (the engine's research default, #116 P2), civics
+researched, the government and the slotted policy cards per player (the
+engine's civic, government and loadout defaults, #116 P4), plus wall-clock. A
+sanity check that borders grow, research and civics progress and the defaults
+adopt governments and slot cards in real games, not a measurement.
 
 Districts (#86): at each player's turn start every city has a small chance to
 place a district through the engine (candidate tiles from Map.tiles_of_city,
@@ -74,10 +76,14 @@ def main():
         pops = [sum(c.population for c in p.cities) for p in env.players]
         slowed = [env.episode_stats[i]["growth_slowed_turns"] for i in range(num_players)]
         techs = [env.episode_stats[i]["techs_researched"] for i in range(num_players)]
+        civics = [env.episode_stats[i]["civics_researched"] for i in range(num_players)]
+        governments = [p.government for p in env.players]
+        policies = [list(p.policies) for p in env.players]
         print(f"round {round_no:4d}  tiles_owned={owned}  cities={cities}  "
               f"population={pop}  culture_claims={claims}  housing={house}  "
               f"pop_by_player={pops}  growth_slowed_turns={slowed}  "
-              f"techs_researched={techs}  "
+              f"techs_researched={techs}  civics_researched={civics}  "
+              f"governments={governments}  policies={policies}  "
               f"t={time.perf_counter() - t0:.1f}s")
 
     district_rng = random.Random(args.seed)
@@ -145,6 +151,10 @@ def main():
         print(f"techs {player.name}: researched={env.episode_stats[player.player_index]['techs_researched']} "
               f"current={player.current_tech} science_pool_tenths={player.science} "
               f"order={player.techs}")
+        print(f"civics {player.name}: researched={env.episode_stats[player.player_index]['civics_researched']} "
+              f"current={player.current_civic} culture_pool_tenths={player.culture} "
+              f"government={player.government} policies={player.policies} "
+              f"order={player.civics}")
     print(f"done={env.done} steps={steps} wall={time.perf_counter() - t0:.1f}s")
 
 

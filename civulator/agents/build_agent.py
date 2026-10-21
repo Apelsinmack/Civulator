@@ -21,16 +21,18 @@ from ..torch_env import resolve_device
 # is the gate for that, and for the converse — a statted unit is either here or
 # named in game/unit.py's DEFERRED_BUILD_UNITS with a reason (issue #67).
 #
-# Availability (#116 P2): an option is offered only when the city could start
-# it -- the owner's research and, for buildings, the required district and
-# building (get_valid_build_mask) -- so the mask invariant (CLAUDE.md) holds:
-# an offered option always changes the city's production.
+# Availability (#116 P2, P4): an option is offered only when the city could
+# start it -- the owner's techs and civics and, for buildings, the required
+# government tier, district and building (get_valid_build_mask) -- so the mask
+# invariant (CLAUDE.md) holds: an offered option always changes the city's
+# production.
 #
 # Changing this list changes the BuildNetwork output width and therefore
 # invalidates previously saved build-agent weights. APPEND ONLY (#67): the
-# #116 P2 buildings follow the v0.7 list, and the #116 P3 units follow them
-# (the Trader is not here: it is in game/unit.py's DEFERRED_BUILD_UNITS until
-# P5 gives it routes).
+# #116 P2 buildings follow the v0.7 list, the #116 P3 units follow them (the
+# Trader is not here: it is in game/unit.py's DEFERRED_BUILD_UNITS until P5
+# gives it routes), and the #116 P4 civic- and government-gated buildings
+# follow those.
 BUILD_OPTIONS = [
     "Warrior", "Spearman", "Archer", "Horseman", "Catapult",
     "Settler", "Granary", "Slinger", "Swordsman", "Walls",
@@ -38,6 +40,7 @@ BUILD_OPTIONS = [
     "Medieval Walls", "Workshop",
     "Man-At-Arms", "Pikeman", "Crossbowman", "Knight", "Trebuchet",
     "Musketman",
+    "Temple", "Amphitheater", "Ancestral Hall", "Grand Master's Chapel",
 ]
 NUM_BUILD_OPTIONS = len(BUILD_OPTIONS)
 
@@ -176,13 +179,14 @@ def get_valid_build_mask(city, device=None, options=None):
     is masked by the rule that applies to it and never by position:
 
     - buildings (keys of City.BUILDING_COSTS): valid iff
-      `city_can_build_building` (the owner's research, a complete required
-      district, an owned required building; #116 P2) and not already built —
+      `city_can_build_building` (the owner's techs and civics, its
+      government's tier, a complete required district, an owned required
+      building; #116 P2, P4) and not already built —
       re-producing one it owns could not change the city's state (CLAUDE.md's
       mask invariant, #51)
     - units: valid iff the owner `player_can_build` them (their
-      `requires_tech`, #116 P2: the opening web is Warrior, Slinger and
-      Settler); the Settler also needs population >= 3
+      `requires_tech` / `requires_civic`, #116 P2, P4: the opening web is
+      Warrior, Slinger and Settler); the Settler also needs population >= 3
 
     The same predicates `City.produce_unit` / `produce_building` apply, so
     an option the mask offers is never refused by production.

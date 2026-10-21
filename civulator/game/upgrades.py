@@ -21,6 +21,7 @@ Pure: reads parsed config and live state, mutates nothing.
 """
 
 from .. import unit_model
+from ..effects import KIND_UPGRADE_COST_PERCENT, active_effects, percent_sum
 from .availability import player_can_build
 
 
@@ -31,15 +32,11 @@ def upgrade_target(unit):
 
 def _upgrade_cost_percent(player):
     """Percent added to every upgrade price by `player`'s active
-    `upgrade_cost_percent` effects (Civ 6's Professional Army: -50).
-
-    HOOK for #116 P4: the effects interpreter (`effects.py`) has not landed, so
-    nothing yet changes a price and this is 0. P4 returns the SUM of the
-    player's `upgrade_cost_percent` effects here -- summed first and applied
-    once, floored, as every effect of one kind is ("v2 fixes", N3) -- and
-    `upgrade_cost` below already applies it that way.
-    """
-    return 0
+    `upgrade_cost_percent` effects (Civ 6's Professional Army: -50): their
+    SUM, which `upgrade_cost` applies once with one floor, as every effect
+    of one kind is ("v2 fixes", N3). The one consumer of that kind (#116 P4);
+    0 without an owner."""
+    return percent_sum(active_effects(player, kind=KIND_UPGRADE_COST_PERCENT))
 
 
 def upgrade_cost(unit):
