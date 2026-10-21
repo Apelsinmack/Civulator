@@ -20,6 +20,7 @@ from civulator.game.housing import housing
 from civulator.game.yields import city_yield
 from civulator.unit_model import POOL_YIELDS, YIELD_COLUMNS
 
+from conftest import grant_all
 from test_districts import DISTRICTS, board, far_site, make_city, neighbours, placeable_type
 
 
@@ -363,14 +364,21 @@ def test_build_state_encoding_refuses_district_production_naming_99():
 
 
 def _play(seed):
+    """Placement and completion under fixed actions. Every player knows both
+    trees (#116 P4: every district is tech- or civic-gated), which escalates
+    district costs ~10x (`game_progress`), so each city is granted the
+    production its placed districts cost, once, before the rounds: they then
+    complete one per turn, in the order this loop resumes them."""
     env = GameEnvironment(8, 16, num_players=2, map_type="basic")
     env.reset(seed=seed)
     for player in env.players:
+        grant_all(player)
         for city in player.cities:
             city.population = 6
             for pos in sorted(env.map.tiles_of_city(city.city_id)):
                 for name in DISTRICTS:
                     env.place_district(city, name, pos)
+            city.production = sum(d.cost for d in city.districts)
     for _ in range(40):
         env.turn_counter += 1
         for player in env.players:

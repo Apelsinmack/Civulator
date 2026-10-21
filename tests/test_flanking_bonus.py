@@ -16,11 +16,20 @@ v0.6.2's lesson (#63) was that a modifier must be applied in every role it
 belongs in — not that every modifier belongs in every role.
 
 **Config-gated.** `[combat] flanking_bonus`; 0 disables the rule completely.
+
+**Civic-gated (#116 P4, the design's named inversion of this file).** Flanking
+is Civ 6's Military Tradition unlock: it holds only for a player who knows a
+civic whose `enables` effect names the `flanking` rule. Every #59 number
+below is unchanged on boards whose players know that civic (the
+`flanking_on` fixture grants it); `test_flanking_is_off_until_its_civic_is_
+known_then_exactly_the_bonus_per_tile` is the gate itself.
 """
+
+import sys
 
 import pytest
 
-from civulator import unit_model
+from civulator import effects, unit_model
 from civulator.game import unit as unit_module
 from civulator.game.city import City
 from civulator.game.unit import (
@@ -31,7 +40,25 @@ from civulator.game.unit import (
     WarriorUnit,
 )
 
+from conftest import grant_civic
 from test_combat_range import make_flat_env, place
+
+_make_flat_env = make_flat_env
+
+
+def _flanking_civics():
+    """The civics whose effects switch the flanking rule on (from config)."""
+    return [name for name in effects.research_model.CIVICS
+            if any(e.kind == effects.KIND_ENABLES and effects.RULE_FLANKING in e["rules"]
+                   for e in effects.effects_of(effects.SOURCE_CIVIC, name))]
+
+
+def _with_flanking_civic(*args, **kwargs):
+    """make_flat_env, every player knowing the civic that enables flanking."""
+    env = _make_flat_env(*args, **kwargs)
+    for player in env.players:
+        grant_civic(player, _flanking_civics()[0])
+    return env
 
 
 class FixedRoll:
@@ -44,8 +71,11 @@ BONUS = unit_model.FLANKING_BONUS
 
 @pytest.fixture
 def flanking_on(monkeypatch):
-    """Pin the rule on at the configured value, whatever config says."""
+    """Pin the rule on at the configured value, whatever config says, and
+    make every board this module builds (`make_flat_env`) one whose players
+    know the civic that enables flanking (#116 P4)."""
     monkeypatch.setattr(unit_module, "FLANKING_BONUS", 2)
+    monkeypatch.setattr(sys.modules[__name__], "make_flat_env", _with_flanking_civic)
     return 2
 
 
@@ -54,6 +84,30 @@ def flanking_on(monkeypatch):
 
 def test_configured_bonus_is_the_civ6_value():
     assert unit_model.FLANKING_BONUS == 2, "Civ 6 uses +2 per flanking unit"
+
+
+def test_flanking_is_off_until_its_civic_is_known_then_exactly_the_bonus_per_tile():
+    """#116 P4: with no civic that enables it, three flanking tiles add
+    nothing to the strike (and the exchange is the unflanked one); once the
+    striker's owner knows such a civic, each flanking tile adds exactly
+    `[combat] flanking_bonus` (the real config value). Breaks if the rule
+    gate is lost or the bonus changes (design §14)."""
+    assert _flanking_civics(), "fixture: a civic enables flanking"
+    env = _make_flat_env()
+    env.rng = FixedRoll()
+    attacker = place(env, WarriorUnit, 0, (3, 3))
+    defender = place(env, WarriorUnit, 1, (3, 4))
+    alone = attacker.get_combat_strength(is_attacking=True, target=defender)
+    free = [p for p in env.map.get_adjacent_coords(defender.coordinates) if p != (3, 3)]
+    for pos in free[:3]:
+        place(env, WarriorUnit, 0, pos)
+    assert attacker.flanking_count(defender) == 3
+    assert attacker.get_combat_strength(is_attacking=True, target=defender) == alone
+    grant_civic(attacker.player, _flanking_civics()[0])
+    assert attacker.get_combat_strength(is_attacking=True, target=defender) == (
+        alone + 3 * unit_model.FLANKING_BONUS)
+    assert defender.get_combat_strength(is_attacking=True, target=attacker) == alone, \
+        "the defender's owner does not know the civic"
 
 
 def test_one_friendly_unit_beside_the_defender_adds_the_bonus(flanking_on):
@@ -247,9 +301,10 @@ def test_flanking_does_not_change_an_unsupported_exchange(flanking_on):
 
 
 def test_zero_disables_the_rule_entirely(monkeypatch):
+    """Even for a player who knows the civic that enables flanking."""
     monkeypatch.setattr(unit_module, "FLANKING_BONUS", 0)
 
-    env = make_flat_env()
+    env = _with_flanking_civic()
     env.rng = FixedRoll()
     attacker = place(env, WarriorUnit, 0, (3, 3))
     defender = place(env, WarriorUnit, 1, (3, 4))
