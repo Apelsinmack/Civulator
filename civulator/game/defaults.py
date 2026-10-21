@@ -236,10 +236,15 @@ def worker_target(worker, env, claimed=frozenset()):
     """The tile `worker` is headed for: the nearest by `distance_function`
     (ties by (row, col)) of `improvements.worker_targets` -- the owner's
     tiles where an improvement may be built, with no foreign unit and no own
-    Worker standing -- leaving out the `claimed` tiles (the ones an earlier
-    Worker of the same pass chose). None when there is none."""
+    Worker standing -- preferring the tiles no earlier Worker of the pass
+    `claimed`. When every target is claimed it takes the nearest claimed one
+    instead of none: a Worker never idles while there is a tile to reach
+    (without the fallback, a farther Worker whose way is blocked by a nearer
+    one that has no target of its own would hold the last tile for ever).
+    None when there is no target at all."""
     here = tuple(worker.coordinates)
-    candidates = (pos for pos in worker_targets(worker.player, env) if pos not in claimed)
+    targets = list(worker_targets(worker.player, env))
+    candidates = [pos for pos in targets if pos not in claimed] or targets
     return min(candidates, key=lambda pos: (env.distance_function(here, pos), pos),
                default=None)
 
@@ -258,8 +263,9 @@ def default_workers(player, env):
         builds that one through `WorkerUnit.build_improvement`;
     (b) otherwise it takes one step, `step_toward`, through `Unit.move`
         toward the nearest `worker_target`. A tile a Worker chose earlier in
-        the same pass is not chosen again, so Workers that start together
-        spread over the land instead of queueing for one tile;
+        the same pass is chosen again only when no other is left, so Workers
+        that start together spread over the land instead of queueing for one
+        tile, and none idles while a tile can be reached;
     (c) with nothing to build or reach it stays.
 
     Never `path_finder`, no RNG. Returns the number of improvements built."""

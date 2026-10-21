@@ -58,9 +58,10 @@ def _table(**columns):
     return {**columns, "on": PLAINS}
 
 
-def scene(**tables):
-    """A board with one city of player 0 at CENTRE (it owns its ring) and the
-    improvements `tables`, installed by the caller's `with` block."""
+def scene():
+    """A board with one city of player 0 at CENTRE (it owns its ring); the
+    improvements are whatever the caller's `synthetic_improvements` block
+    installed."""
     env = board()
     city = make_city(env, CENTRE)
     return env, env.players[0], city
@@ -480,6 +481,54 @@ def test_a_worker_does_not_head_for_a_tile_another_worker_stands_on_or_chose_ear
         assert targets[0][1] == nearest_first
 
 
+def test_when_every_open_tile_is_claimed_a_later_worker_takes_the_nearest_claimed_one(monkeypatch):
+    """With a single open tile, every idle Worker of the pass heads for it:
+    the claim of an earlier Worker only steers a later one to ANOTHER tile
+    when another is open. Breaks if a Worker idles while a tile can be
+    reached (the first Worker would hold the tile its blocked way never
+    reaches, and the Worker next to it would never be sent)."""
+    with synthetic_improvements({"Plot": _table(food=1)}):
+        env, player, city = scene()
+        w, near, far = nearest_scene(env, ring(env, CENTRE, 1))
+        open_only(env, city, [near], "Plot")
+        first = stand(env, "Worker", 0, w)
+        later = stand(env, "Worker", 0, next(p for p in ring(env, CENTRE, 3) if p != w))
+        targets = []
+        real = defaults.step_toward
+        monkeypatch.setattr(defaults, "step_toward",
+                            lambda unit, target, game_env: (targets.append((unit, target)),
+                                                            real(unit, target, game_env))[1])
+        default_workers(player, env)
+        assert [(u, t) for u, t in targets] == [(first, near), (later, near)]
+
+
+def test_a_crowd_of_workers_improves_every_open_tile_and_none_is_left_behind():
+    """Six Workers on a city that owns three rings of tiles improve every one
+    of them within a bounded number of rounds, whatever order the Workers
+    stand in and however they block each other's way, and then stay idle.
+    Breaks if the default can deadlock: a Worker with a blocked way holding
+    the last tile while the Workers nearest it have nothing to aim at (found
+    by this very scene: 35 of 36 tiles built and nobody moving, for ever)."""
+    with synthetic_improvements({"Plot": _table(food=1)}):
+        env, player, city = scene()
+        for distance in (2, 3):
+            for pos in ring(env, CENTRE, distance):
+                own(env, city, pos)
+        owned = [p for p in env.map.tiles_of_city(city.city_id) if p != CENTRE]
+        assert len(owned) > 30, "fixture: a wide territory"
+        for _ in range(6):
+            assert city.complete_unit_production("Worker", env)
+        for rounds in range(1, 41):
+            new_turn(player)
+            env.economy_phase(player)
+            if env.episode_stats[0]["improvements_built"] == len(owned):
+                break
+        assert sorted(board_improvements(env)) == sorted(owned), rounds
+        new_turn(player)
+        env.economy_phase(player)
+        assert not any(u.has_acted for u in player.units)
+
+
 # --- (c) Nothing to do -> it stays ---------------------------------------------------------
 
 
@@ -767,6 +816,7 @@ def test_a_seeded_game_builds_improvements_within_a_bounded_number_of_rounds():
     assert all(len(v) == 1 for v in board_improvements(env).values())
     env.reset(seed=SEED)
     assert [env.episode_stats[i]["improvements_built"] for i in range(2)] == [0, 0]
+    assert board_improvements(env) == {}
 
 
 def _worker_wonder():

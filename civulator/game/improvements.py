@@ -27,9 +27,11 @@ never improved again, by the default or by the offer of a Worker. The tile
 predicate refuses only a repeat of the SAME improvement (housing design: "our
 engine lets several stack" -- Civ 6 allows one), so without this rule a
 Worker would stand on one Plains tile and add a Farm, then a Plantation, then
-a Camp, a Pasture and a Quarry. The rule is the default's, not the
-predicate's: the painter, tests and a future agent action keep the engine's
-permissive tile rule until Erik decides otherwise.
+a Camp, a Pasture and a Quarry. The rule is this module's, not the tile
+predicate's: `can_build_improvement_at`, the painter and `build_improvement`
+keep the engine's permissive tile rule until Erik decides otherwise, and a
+future agent action to build improvements (#99) must read this module for the
+same reason.
 
 Pure: reads live state, mutates nothing. Imports no `defaults` (the defaults
 are called only from `GameEnvironment`; this module is what `City` may call).

@@ -1017,9 +1017,15 @@ dormant in real games.
     `can_build_improvement_at`, the painter and `build_improvement` are as
     they were. Whether the engine itself should refuse a second improvement is
     Erik's call.
-  - **Workers spread.** A tile an earlier Worker of the same pass chose is not
-    chosen by a later one, so Workers that start together -- the Pyramids'
-    three -- go to different tiles instead of queueing for one.
+  - **Workers spread.** A tile an earlier Worker of the same pass chose is
+    chosen by a later one only when no other open tile is left, so Workers
+    that start together -- the Pyramids' three -- go to different tiles
+    instead of queueing for one. The fallback is not optional: a first version
+    that excluded the claimed tiles outright deadlocked six Workers on a
+    36-tile territory with 35 improved and nobody moving (the Worker nearest
+    the last tile had nothing to aim at while a farther one, first in unit
+    order, held it behind a blocked way); `tests/test_worker_default.py` keeps
+    that scene.
   - **Config order is a tuple.** `IMPROVEMENT_NAMES` is a frozenset, whose
     iteration order changes with the process's hash seed; "ties by config
     order" reads the new `terrain_model.IMPROVEMENT_ORDER`. (On flat Plains
@@ -1052,15 +1058,15 @@ dormant in real games.
   game each, 250 rounds; it now logs per player the improvements built, the
   improvements standing on its cities' tiles and its Workers alive at every
   checkpoint and in an end line. Built / standing / Workers alive at the end,
-  one entry per player: seed 4242 duel [6, 0] / [6, 0] / [4, 0]; seed 7 duel
+  one entry per player: seed 4242 duel [6, 0] / [6, 0] / [3, 0]; seed 7 duel
   [0, 3] / [0, 1] / [0, 1]; seed 99 duel [0, 6] / [0, 3] / [0, 1]; seed 4242
   `--size tiny` (3 players) [0, 7, 8] / [0, 3, 5] / [0, 0, 2]; seed 7 `--size
-  tiny` [25, 9, 17] / [20, 8, 11] / [1, 5, 1]. The counts are low and uneven
+  tiny` [20, 9, 17] / [13, 7, 12] / [0, 4, 2]. The counts are low and uneven
   because the random build choice rarely picks a Worker and the random agent
   also moves the Workers the default is working. Built minus standing is, in
   all five runs, exactly the improvements the smoke script's random district
   placement cleared (a district placed on an improved tile removes the
-  improvement, P2): 0, 2, 3, 7 and 12, counted by a one-off wrapper around
+  improvement, P2): 0, 2, 3, 7 and 14, counted by a one-off wrapper around
   `Tile.clear_improvements` that is not committed.
 - **What agents see.** The terrain-aware encoder reads `Tile.yields`, so built
   improvements show in its food and production channels (the terrain epoch is
