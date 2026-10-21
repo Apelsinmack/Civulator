@@ -25,11 +25,13 @@ Validation (design §1.2 and "v3 fixes", config loading):
   before this registry) names a district of this registry;
 - `kind` is "district" (default) or "wonder" (#116 P6, progression design
   §9.1): a wonder table declares `era` (one of research_model.ERAS),
-  `counts_toward_limit = false`, `cost_model = "fixed"` and `max_per_city =
-  1`, and no adjacency of its own (`adjacency_yield`, `adjacency`,
-  `discount_percent`); `era` is a wonder column only;
+  `counts_toward_limit = false`, `cost_model = "fixed"`, `max_per_city = 1`
+  and `max_per_player = 1` (#116 P9), and no adjacency of its own
+  (`adjacency_yield`, `adjacency`, `discount_percent`); `era` is a wonder
+  column only;
 - `[wonders]` holds `consolation_percent` (0..100), the share of a race
-  loser's locked cost refunded into its city's production pool (design §9.2).
+  loser's locked cost refunded into its city's production pool (design §9.2;
+  0 as configured since #116 P9).
 
 Imports only config / research_model / terrain_model / unit_model: no
 civulator.game.
@@ -84,10 +86,12 @@ KIND_DISTRICT = "district"
 KIND_WONDER = "wonder"
 KINDS = (KIND_DISTRICT, KIND_WONDER)
 
-# What a wonder table must declare, exactly (design §9.1): no population slot,
-# a cost that never escalates, one per city.
+# What a wonder table must declare, exactly (design §9.1; #116 P9): no
+# population slot, a cost that never escalates, one per city and one per player
+# (Civ 6: once a city has broken ground on a wonder, no other city of that
+# player may start it -- `can_place_district` reads `max_per_player`).
 _WONDER_REQUIRED = (("counts_toward_limit", False), ("cost_model", "fixed"),
-                    ("max_per_city", 1))
+                    ("max_per_city", 1), ("max_per_player", 1))
 # What a wonder table may not declare: it has no adjacency of its own and no
 # discount.
 _WONDER_FORBIDDEN = ("adjacency_yield", "adjacency", "discount_percent")

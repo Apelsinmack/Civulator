@@ -54,7 +54,8 @@ from civulator.agents.build_agent import BUILD_OPTIONS
 from civulator.game.city import City
 from civulator.agents.action_space import decode_action, end_turn_index
 from civulator.game.unit import NUM_UNIT_SLOTS
-from civulator.training.trainer import STEP_LIMIT, determine_winner, player_score
+from civulator.game.victory import determine_outcome
+from civulator.training.trainer import STEP_LIMIT, player_score
 from civulator.viz.hex_render import (
     draw_hex,
     draw_hex_outline,
@@ -384,19 +385,22 @@ def run_viewer(env, agents, build_agents_list, labels, epsilon, smoke_frames=0,
             pcolor = PLAYER_COLORS[p.player_index % len(PLAYER_COLORS)]
             y = 80 + i * 18
             # THE score formula, not a copy of it (issue #55) — a scoreboard
-            # must never disagree with determine_winner's verdict below.
+            # must never disagree with determine_outcome's verdict below. Since
+            # #116 P9 the score has more terms than the cities and units shown
+            # (population, techs, civics, wonders), so it is not their sum.
             score = player_score(p)
             label = (f"{labels.get(p.player_index, f'P{p.player_index + 1}')}: "
-                     f"{len(p.units)}u {len(p.cities)}c = {score}pts")
+                     f"{len(p.cities)}c {len(p.units)}u  score {score}")
             if p.is_dead:
                 label += " DEAD"
             rl.draw_text(label.encode(), 10, y, 14, pcolor)
 
         if done:
-            w = determine_winner(env)
-            # Score = cities*weight + units (determine_winner's cap tiebreak)
-            # — shown so a turn-cap winner is self-explanatory in the HUD.
-            result = "DRAW" if w is None else f"WINNER: {labels.get(w, f'P{w + 1}')} (score tiebreak)"
+            w, victory = determine_outcome(env)
+            # The one verdict (#116 P9): who won and how (elimination,
+            # domination, or the turn-cap score above), so a winner is
+            # self-explanatory in the HUD.
+            result = "DRAW" if w is None else f"WINNER: {labels.get(w, f'P{w + 1}')} ({victory})"
             y_result = 80 + len(env.players) * 18 + 6
             rl.draw_text(result.encode(), 10, y_result, 18, rl.GOLD)
             # Replay fidelity check: bit-exact replay needs the same float

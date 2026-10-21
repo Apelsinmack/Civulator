@@ -43,6 +43,7 @@ from ..district_model import (
     REMOVABLE_FEATURES as DISTRICT_REMOVABLE_FEATURES,
 )
 from . import loyalty, territory
+from .victory import game_over
 from .territory import (
     FOUNDING_RING, NEUTRAL, border_cost_function, choose_claim_tile,
     run_border_phase,
@@ -827,7 +828,7 @@ class GameEnvironment:
         return best
 
     def _check_game_end(self):
-        """Check if the game should end (all units spent, player eliminated, turn limit)."""
+        """Check if the game should end (all units spent, a win, turn limit)."""
         # Auto-advance if all units spent
         if self.current_player.units:
             all_units_moved = all(u.movement_points == 0 for u in self.current_player.units)
@@ -840,15 +841,15 @@ class GameEnvironment:
         self._update_done()
 
     def _update_done(self):
-        """The engine's end-of-game test: at most one living player (a player
-        dies in `Player.end_turn` once it holds no city -- after a capture or
-        a loyalty flip alike), or the turn cap passed. Sets `done`; never
-        clears it."""
-        alive_players = [p for p in self.players if not p.is_dead]
-        if len(alive_players) <= 1:
-            self.done = True
-
-        if self.turn_counter > self.max_turns:
+        """The engine's one end-of-game test (#116 P7, P9): `victory.game_over`
+        -- at most one living player (a player dies in `Player.end_turn` once
+        it holds no city -- after a capture or a loyalty flip alike), a living
+        player holding every Palace in the game (domination), or the turn cap
+        passed. Called from `_check_game_end` (every step that can capture a
+        city) and from `next_turn` (after the loyalty phase, so a flip can
+        end the game in its own round); `victory.determine_outcome` is the
+        verdict on the same rules. Sets `done`; never clears it."""
+        if game_over(self):
             self.done = True
 
     def next_turn(self):
@@ -867,7 +868,7 @@ class GameEnvironment:
         if self.current_player_index == 0:
             self._border_phase()
             self._loyalty_phase()
-            self._update_done()  # the round-end verdict; #116 P9 adds domination here
+            self._update_done()  # the round-end verdict: a flip can end the game
             self.turn_counter += 1
 
         self.current_player.start_turn()

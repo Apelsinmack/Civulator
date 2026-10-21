@@ -6,9 +6,12 @@ from ..effects import (
     ITEM_UNIT,
     KIND_CITY_RANGED_STRENGTH,
     KIND_GROWTH_PERCENT,
+    KIND_POLICY_SLOTS,
     KIND_PRODUCTION_PERCENT,
+    SOURCE_DISTRICT,
     active_effects,
     combat_strength_amounts,
+    effects_of,
     percent_sum,
     target_matches,
 )
@@ -27,7 +30,7 @@ from ..unit_model import (
 from . import territory
 from .availability import city_can_build_building, player_can_build
 from .culture import culture
-from .districts import district_spec, district_yields
+from .districts import district_spec, district_yields, is_wonder
 from .housing import housing
 from .improvements import worker_has_work
 from .loyalty import CAPTURED as LOYALTY_CAPTURED, FOUNDED as LOYALTY_FOUNDED
@@ -520,6 +523,11 @@ class City:
         player that starts or ends here ends (`trade.end_routes_touching`):
         a route whose origin its owner still holds returns its Trader there,
         one whose origin was this city is lost.
+        #116 P9 (wonder rulings): when the city holds a complete wonder that
+        grants policy slots (`holds_policy_slot_wonder`), both players' slots
+        changed, so both loadouts are re-fit through the engine's government
+        and loadout defaults -- the old owner's falls back to what its slots
+        hold, the new owner's fills the new slot.
         """
         old_player = self.player
         if old_player:
@@ -537,6 +545,21 @@ class City:
             ]
         end_routes_touching(game_env, self.city_id)
         self.assign_tiles(game_env)
+        if self.holds_policy_slot_wonder():
+            for player in (old_player, new_player):
+                if player is not None:
+                    game_env._government_and_loadout_defaults(player, refit=True)
+
+    def holds_policy_slot_wonder(self):
+        """Whether the city holds a COMPLETE wonder (`kind = "wonder"`) whose
+        effects include `policy_slots`: one whose change of hands changes the
+        slots of both its old and its new owner (`set_owner`)."""
+        return any(
+            district.complete and is_wonder(district.type)
+            and any(effect.kind == KIND_POLICY_SLOTS
+                    for effect in effects_of(SOURCE_DISTRICT, district.type))
+            for district in self.districts
+        )
 
 
 # Unit type name -> its Unit subclass (#116 P3): the one exported registry of

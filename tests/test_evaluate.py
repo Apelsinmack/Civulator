@@ -26,6 +26,8 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(_PROJECT_ROOT, "scripts"))
 
 import evaluate
+from civulator import __version__ as GAME_VERSION
+from civulator.game.victory import VICTORIES
 
 WEIGHTS = os.path.join(_PROJECT_ROOT, "weights", "trained", "duel_25ch_1000ep.pth")
 
@@ -111,10 +113,67 @@ def test_truncation_is_recorded_and_absent_from_a_healthy_run():
 
 def test_games_detail_keeps_the_fields_older_readers_use():
     """scripts/watch.py reads games_detail entries by name (game_index, seed,
-    a_seat, b_seat, winner_seat, outcome, turns). #51 ADDS `truncated`; it
-    must not rename or drop anything, and older summaries that lack the key
-    must stay readable (consumers treat a missing key as False)."""
+    a_seat, b_seat, winner_seat, outcome, turns). #51 ADDS `truncated` and
+    #116 P9 `victory`; neither may rename or drop anything, and older
+    summaries that lack the keys must stay readable (consumers treat a
+    missing key as False / unknown). The set of keys is designed to grow, so
+    only the ones older readers need are asserted."""
     summary = _run()
     for game in summary["games_detail"]:
         assert {"game_index", "seed", "a_seat", "b_seat", "winner_seat",
                 "outcome", "turns"} <= set(game)
+
+
+def test_every_game_records_how_it_ended():
+    """Each `games_detail` entry carries `victory`, the engine's verdict
+    (`civulator.game.victory.determine_outcome`): one of the known kinds for a
+    game that ended on its own, and consistent with the winner -- a game has
+    no winner exactly when it is a draw. Breaks if `victory` is missing, is
+    re-derived in the harness, or disagrees with `winner_seat`."""
+    summary = _run()
+    assert summary["games_detail"], "fixture: games were played"
+    for game in summary["games_detail"]:
+        assert game["truncated"] is False
+        assert game["victory"] in VICTORIES, game
+        assert (game["winner_seat"] is None) == (game["victory"] == "draw"), game
+
+
+def test_a_truncated_game_has_no_victory():
+    """A game cut off by the step guard has `victory: null` -- never "draw",
+    though it is also counted in `totals["draws"]` (#51, #116 P9). Breaks if
+    a cut-off game is given a verdict."""
+    original_limit = evaluate.STEP_LIMIT
+    evaluate.STEP_LIMIT = 3
+    try:
+        cut_off = _run()
+    finally:
+        evaluate.STEP_LIMIT = original_limit
+    assert cut_off["truncated_games"] == GAMES
+    for game in cut_off["games_detail"]:
+        assert game["truncated"] is True
+        assert game["victory"] is None, game
+        assert game["winner_seat"] is None
+
+
+def test_the_summary_records_the_rules_and_each_sides_weights_version():
+    """The summary names the engine's `game_version` and, per side, the
+    `game_version` of the weights' own manifest (None when a file carries no
+    manifest), so archived weights playing newer rules are visible in the
+    record (#116 P9: 0.7 weights play 0.8 rules). Breaks if either is
+    missing, or the weights' version is taken from the engine."""
+    summary = _run()
+    assert summary["game_version"] == GAME_VERSION
+    assert set(summary["weights_game_version"]) == {"a", "b"}
+    for side in ("a", "b"):
+        manifest = summary[f"manifest_{side}"]
+        recorded = manifest.get("game_version") if manifest else None
+        assert summary["weights_game_version"][side] == recorded
+
+
+def test_a_weights_manifest_version_is_read_from_the_manifest_not_the_engine():
+    """`_weights_game_version` reports what the manifest says (an older epoch's
+    number stays an older number) and None for a file without one. Breaks if
+    it falls back to the engine's version."""
+    assert evaluate._weights_game_version({"game_version": "0.7.3"}) == "0.7.3"
+    assert evaluate._weights_game_version({"git_commit": "abc"}) is None
+    assert evaluate._weights_game_version(None) is None

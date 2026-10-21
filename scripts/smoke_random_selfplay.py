@@ -17,8 +17,9 @@ lost and gained by loyalty flips (#116 P7; the end line adds the lowest
 loyalty any of its cities had after any round), and per player the
 improvements its Workers built, the improvements standing on its tiles and its
 Workers alive (#116 P8; the engine's Worker default builds them -- nothing
-here orders a Worker's work, though the random agent may move one), plus
-wall-clock. A sanity check that borders grow, research and civics progress,
+here orders a Worker's work, though the random agent may move one), and
+the verdict (#116 P9: the winner and how the game ended, with each player's
+score term by term), plus wall-clock. A sanity check that borders grow, research and civics progress,
 the defaults adopt governments, slot cards, send Traders and improve tiles,
 upkeep is paid and loyalty moves in real games, not a measurement.
 
@@ -55,7 +56,9 @@ from civulator.game.city import City
 from civulator.game.districts import can_place_district
 from civulator.game.housing import housing
 from civulator.game.unit import WorkerUnit
+from civulator.game.victory import determine_outcome, score_breakdown
 from civulator.game import GameEnvironment, resolve_size_and_players
+from civulator.unit_model import CAPITAL_BUILDING
 
 STEP_LIMIT = 200_000
 DISTRICT_CHANCE = 0.1  # per city per own turn start
@@ -223,6 +226,11 @@ def main():
     print(f"gold {gold_line()}")
     print(f"loyalty {loyalty_line()}  lowest_after_any_round={lowest_seen}")
     print(f"improvements {improvement_line()}")
+    winner, victory = determine_outcome(env)
+    print(f"victory winner={winner} victory={victory} "
+          f"palaces_held={[sum(CAPITAL_BUILDING in c.buildings for c in p.cities) for p in env.players]} "
+          f"score={[sum(score_breakdown(p).values()) for p in env.players]} "
+          f"terms={[score_breakdown(p) for p in env.players]}")
     print(f"done={env.done} steps={steps} wall={time.perf_counter() - t0:.1f}s")
 
 

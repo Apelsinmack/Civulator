@@ -12,10 +12,18 @@ import matplotlib.pyplot as plt
 from ..agents.action_space import decode_action, end_turn_index
 from ..agents.networks import get_valid_select_mask
 from ..agents.build_agent import BUILD_OPTIONS
-from ..config import CFG
 from ..game.city import City
 from ..game.environment import REWARDS
 from ..game.unit import NUM_UNIT_SLOTS
+# The verdict and the score formula live in the engine (the engine may import
+# nothing of training); trainer.py keeps exporting the names every caller has
+# always imported from here (#116 P9).
+from ..game.victory import (  # noqa: F401
+    CITY_SCORE_WEIGHT,
+    determine_outcome,
+    determine_winner,
+    player_score,
+)
 from ..mapgen.starts import StartPlacementError
 from ..meta import build_manifest, save_weights
 
@@ -34,11 +42,6 @@ _MAX_CONSECUTIVE_SEED_SKIPS = 1000
 # reported through `train_agents(truncated_episodes=[...])`. A module-level
 # constant so tests can lower it; mirrors scripts/evaluate.py's STEP_LIMIT.
 STEP_LIMIT = 10000
-
-# Turn-cap score weight: a city is worth this many units when no one has been
-# eliminated by max_turns (issue #55 — was a bare literal here, re-derived by
-# the viewer HUD). Gameplay constant, so config.toml owns it.
-CITY_SCORE_WEIGHT = CFG.get("game", {}).get("city_score_weight", 10)
 
 
 def _seeded_reset(env, seed_cursor, episode, seed_base, skip_log=None):
@@ -436,44 +439,6 @@ def _terminal_rewards(winner, num_agents):
         i: REWARDS["win"] if i == winner else REWARDS["loss"]
         for i in range(num_agents)
     }
-
-
-def player_score(player):
-    """A living player's turn-cap score: cities * CITY_SCORE_WEIGHT + units.
-
-    THE score formula (issue #55) — `determine_winner`'s tiebreak below and
-    every display of a score (e.g. scripts/watch.py's HUD) call this, so a
-    scoreboard can never disagree with the verdict beside it. Dead players
-    are handled by the caller: `determine_winner` scores them -1, which is
-    a ranking convention rather than a property of the player.
-    """
-    return len(player.cities) * CITY_SCORE_WEIGHT + len(player.units)
-
-
-def determine_winner(env):
-    """Determine the winner based on the environment state.
-
-    Returns:
-        int: Index of winning player, or None
-    """
-    alive_players = [i for i, p in enumerate(env.players) if not p.is_dead]
-
-    if len(alive_players) == 1:
-        return alive_players[0]
-
-    if env.done and env.turn_counter >= env.max_turns:
-        scores = []
-        for player in env.players:
-            if player.is_dead:
-                scores.append(-1)
-            else:
-                scores.append(player_score(player))
-
-        max_score = max(scores)
-        if scores.count(max_score) == 1:
-            return scores.index(max_score)
-
-    return None
 
 
 def _save_checkpoints(agents, episode):
