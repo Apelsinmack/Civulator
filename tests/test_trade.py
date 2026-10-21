@@ -262,11 +262,9 @@ def test_a_refused_route_changes_nothing(case):
         target = city_at(env, (3, 3 + ROUTE_RANGE), player_index=1)
         unit = stand(env, TRADER_UNIT, 0, origin.coordinates)
     elif case == "pair already linked":
-        player.routes.append(TradeRoute(destination.city_id, origin.city_id, 0, 1))
-        player.civics.append(QUIET)  # irrelevant civic; capacity is free anyway
-        destination.player.cities.remove(destination)
-        player.cities.append(destination)
-        destination.player = player
+        player.routes.append(TradeRoute(origin.city_id, destination.city_id, 0, 1))
+        origin.buildings.append(_capacity_buildings()[0])  # a slot stays free
+        assert route_capacity(player) > len(player.routes)
     elif case == "no free slot":
         only_civics(player, [])
     before = _route_state(env)
