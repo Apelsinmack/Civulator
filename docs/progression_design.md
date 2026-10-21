@@ -720,6 +720,112 @@ normal ending with a score.
 Defaults live in `civulator/game/defaults.py` and are called from
 `GameEnvironment` only, so a future agent action replaces one call.
 
-## 14. Tests · 15. Patches · Systems
+## 14. Tests (properties, each naming the change that breaks it)
 
-*(completed with the content sections)*
+Written from this section, never from the implementation. No test pins the
+set, count or order of techs, civics, policies, wonders, units or build
+options — those are designed to grow; every test asserts the rule each
+member obeys.
+
+| Property | Breaks if |
+|---|---|
+| `city_yield(city, "culture")` equals today's `culture(city)` for a city with no districts, wonders, routes or effects (v0.7 fixture values) | the refactor changes culture numbers |
+| Every yield source is a column or an effect; `yields.py` contains no building, district, wonder or policy name | a source is special-cased in code |
+| A complete Theater Square / Campus / Holy Site / Commercial Hub raises its city's culture / science / faith / gold by exactly its adjacency score; an incomplete one by nothing | district yields reach the wrong consumer or are double-counted |
+| The four pools grow by the sum of the owner's cities' yields once per round; a city captured mid-round accrues once | the once-per-round guard is lost |
+| Every `effects` entry in every table has a known `kind` and valid attributes; an unknown kind, a `city_yield` effect on a building, or a target naming nothing raises at load | the loader accepts junk |
+| Each effect kind is consumed exactly where §3 says (one test per kind with a synthetic policy) | a kind gains a second consumer or loses its one |
+| An item with `requires_tech` is refused by the build mask, `produce_*`, `can_place_district`, `can_build_improvement_at`, `purchase` and `upgrade_unit` until its tech is known; the mask never offers it before | any one path skips `player_can_build` (mask invariant, #51) |
+| A `requires_tech` / `requires_civic` / `requires` / `requires_district` / `requires_building` naming nothing raises at load | validation is skipped |
+| Research completes exactly when the pool reaches the scaled cost, at most one tech per turn, overflow kept; `set_research` refuses an unavailable tech | resolution drifts or allows two per turn |
+| `game_progress` is the larger of the two tree fractions and district cost follows `base * (den + 9*num) // den` | the #86 hook is fed wrongly |
+| With every tech of the tree known, every unit, building, district and wonder is available; every tech is reachable from the start (prerequisite graph acyclic and connected) | a dead node or an unreachable item |
+| Class bonuses: every existing unit pairing's attack and defence strength is bit-identical to v0.7 (`matchup_matrix` before/after; `test_unit_config_identity`) | the class table changes an old number |
+| `CLASS_INDEX` is derived from `combat_class`; the encoder channel count is unchanged | a new unit adds a channel |
+| A government's and the slotted policies' effects are in force; a card of the wrong type, an obsolete card, a duplicate or an unlocked-but-unslotted card has no effect; `set_policies` refuses an illegal loadout | the loadout check or the aggregation drifts |
+| Flanking adds nothing until the civic that enables it is known, then exactly `[combat] flanking_bonus` per flanking tile (the #59 numbers) | the rule gate is lost or the bonus changes |
+| Maintenance is deducted once per owner turn; at a negative treasury units are disbanded highest-maintenance-first, oldest-first, until it is non-negative; the treasury never ends a turn negative | bankruptcy order depends on iteration order |
+| Purchase costs `production_cost * multiplier` scaled by effects, is refused when unaffordable / not purchasable / not available / wrong resource, and yields a unit placed by `complete_unit_production` or a building in `city.buildings` | purchase bypasses the build rules or the placement path |
+| Upgrade: refused without the target's tech, off own territory, without full movement; cost per §7.3; type, health and movement per §6.4 | any precondition is dropped |
+| A trade route needs a Trader, a destination within range, and free capacity; its yields reach the origin's `city_yield`; it ends after `duration_turns` with a Trader back at the origin; capture of either city ends it | route bookkeeping drifts |
+| A wonder is refused anywhere once any player completed it; completion removes other players' copies, refunds `consolation_percent` of their locked cost, bumps `district_epoch`; one-shot effects fire exactly once, never on load or capture | the race or the one-shot discipline breaks |
+| Wonders are not `district = "any"` sources; `wonder = "any"` counts complete wonders only | adjacency double-counts wonders |
+| Loyalty: pressure per §8.2 (own city counted, largest foreign), drift clamped, garrison and sources added; bands scale yields and production and block growth; a city at 0 flips to the largest foreign presser through `set_owner`; the Palace city never flips; all deltas from phase-start state (turn-order independence, as in `test_border_growth`) | any term or the phase discipline drifts |
+| Domination: a player holding every Palace is the winner even while other cities stand; `player_score` sums the `[game.score]` terms | the verdict and the score diverge (#55) |
+| Defaults: with no agent choice a seeded game researches techs and civics, adopts governments, slots policies and sends Traders — all counters positive by round 150 of the smoke run — and two same-seed games produce identical pools, techs, loyalty and flips | a default is non-deterministic or dormant |
+| Same seed, same actions → identical everything (`test_determinism` extended with the new state) | set/dict iteration or RNG use anywhere new |
+
+## 15. Patch plan
+
+One agent at a time; branch `116-progression-<patch>` from develop, merged
+`--no-ff` when green, worktree and branch deleted. No patch is HUMAN-TEST.
+Every patch: full suite green, its §14 rows, a CHANGELOG paragraph under the
+v0.8.0 entry (opened by P1), `episode_stats` keys declared in
+`_fresh_episode_stats`.
+
+| Patch | Content | Gate | Mode · tier |
+|---|---|---|---|
+| **P1 yields** | `game/yields.py` (`city_yield`, loyalty hook stubbed at 100 %), `[science]`/`[gold]`/`[faith]`, yield columns in `unit_model`, `Player.faith`, pools in tenths, the yield phase, `episode_stats` counters; `culture()` delegates; district yields consumed (Theater, Campus, Holy Site, Commercial, Harbor, Industrial Zone production into `calculate_production`) | §14 rows 1–4; v0.7 culture identity; suite green | subagent · Opus |
+| **P2 tech tree** | `research_model.py` (`[research]`, `[techs.*]`), `Player.techs`, `current_tech`, `resolve_research`, `set_research`, auto-pick default (`game/defaults.py`), `player_can_build`, `requires_tech` on existing units/buildings/districts/improvements, `game_progress` live, build-mask gate, the new buildings of §6.2 with `requires_district`/`requires_building` and `city_can_build_building`, Granary/Workshop effects, Factory removed, `BUILD_OPTIONS` appended (buildings) | §14 rows 5 (tech part), 7–11; suite green; smoke run shows techs researched | subagent · Opus |
+| **P3 units** | `combat_class`, `era`, `[combat] class_bonuses`, `CLASS_INDEX` derivation, the six new units + Trader tables (`UNIT_SLOT`, `MOVEMENT_DOMAIN`, `_create_unit`, `BUILD_OPTIONS` appended), `upgrades_to`, `upgrade_unit`, `upgrade_cost` | bit-identity on every existing pairing (`matchup_matrix` + identity test); §14 rows 12–13, 18; suite green | subagent · Sonnet (oracle-gated) |
+| **P4 civics** | `[civics.*]`, `[governments.*]`, `[policies.*]` in `research_model`; `effects.py` interpreter and the consumers `city_yield`, `production_percent`, `adjacency_percent`, `combat_strength`, `enables` (flanking gate), `policy_slots`; `Player.civics/current_civic/government/policies`; `resolve_civic`, `set_civic`, `set_government`, `set_policies`; government and loadout defaults; Government Plaza buildings | §14 rows 5–6, 14–15; suite green; smoke shows civics, governments, policies | subagent · Opus |
+| **P5 gold** | `maintenance` columns, the economy phase, bankruptcy, `purchasable`/`purchase_cost`/`purchase`, `faith_purchase` and `purchase_percent` consumers, trade routes (`TradeRoute`, `establish_trade_route`, capacity, yields, expiry, auto-send default), Trader mask rule | §14 rows 16–19; suite green; smoke shows routes and maintenance | subagent · Opus |
+| **P6 wonders** | `kind = "wonder"` in `district_model`, the twelve tables, uniqueness, race resolution + consolation, `wonder = "any"` source, `GameEnvironment.complete_district` with one-shot effects (`free_units`, `free_tech`, `free_civic`, `free_population`, `growth_percent` consumer), smoke script places wonders | §14 rows 20–21; suite green | subagent · Opus |
+| **P7 loyalty** | `game/loyalty.py` (pressure, drift, sources, bands), `City.loyalty`, `_loyalty_phase`, `_flip_city`, `loyalty` effect consumer, Monument/Colosseum/Limitanei values live, `loyalty_percent` into `city_yield`/`calculate_production`/growth, stats | §14 row 22; turn-order independence; suite green | subagent · Opus |
+| **P8 winning + release** | domination in `_check_game_end`, `[game.score]` terms in `player_score`, `victory` in `games_detail`; `__version__ = "0.8.0"`, fixture regenerated (`scripts/make_fixture_scenario.py`), CHANGELOG v0.8.0 entry finalised with the epoch marker, `docs/game_overview.md`, CLAUDE.md rows from the Systems section, `weights/trained/manifest.md` epoch note | §14 rows 23–25; suite green; one seeded smoke run of 250 rounds logged | subagent · Sonnet |
+| *P9 (optional)* | Worker automation default: an idle Worker builds the best available improvement on its own owned tile, else steps toward the nearest improvable owned tile; `Worker` leaves `DEFERRED_BUILD_UNITS` | determinism; suite green | subagent · Sonnet — only if the session's budget allows after P8 |
+
+Re-planning happens at patch boundaries; the spec of the patch in flight is
+locked.
+
+---
+
+## Systems
+
+### (a) Existing canonical systems this design must use
+
+- **Gameplay config** (`CFG`): every number and every table.
+- **Unit/combat config interpreter** (`unit_model.py`): yield and
+  maintenance columns, `combat_class`, `class_bonuses`, `purchasable`,
+  `upgrades_to` — no other reader of `[units.*]` / `[buildings.*]`.
+- **Combat** (`Unit.get_combat_strength` / `get_ranged_strength`,
+  `_execute_attack`): class bonuses and `combat_strength` effects applied in
+  both roles; the flanking gate; nothing else touches damage.
+- **City economy** (`City.process_turn`, `calculate_production`): the yield
+  phase, production modifiers, loyalty scaling, growth percent.
+- **Culture yield** (`culture(city)`): becomes a `city_yield` alias.
+- **District registry / placement / yields / Adjacency** (`district_model`,
+  `game/districts.py`, `place_district`): wonders ride them unchanged;
+  `game_progress` is the escalation hook.
+- **Housing** (`housing(city)`): wonder housing columns are read like
+  building columns.
+- **Territory** (`Map.owner_city`, `set_owner`, `city_changed_player`): flips
+  and upgrades-on-own-tile read it; a flip moves tiles exactly as a capture.
+- **Palace** rule: the capital marker for domination and loyalty immunity.
+- **Build options / Action masking** (`BUILD_OPTIONS`, `get_valid_build_mask`):
+  append-only growth; the availability gate.
+- **Hex math** (`distance_function`, `get_adjacent_coords`): loyalty range,
+  trade range, every adjacency.
+- **Engine RNG**: untouched — nothing in this block draws from it.
+- **Run truncation / Evaluation harness / Win determination**:
+  `determine_winner` / `player_score` are the only verdict; `games_detail`
+  gains `victory`.
+- **Artifact manifests** (`meta.py`): the version bump and fixture regen.
+- **Combat-training tools** and the smoke script: extended, not forked.
+
+### (b) New systems, with draft CLAUDE.md rows
+
+| System | Where | Draft rule |
+|---|---|---|
+| City yields | `city_yield(city, name)` (`game/yields.py`) over `[science]`/`[culture]`/`[gold]`/`[faith]`, yield columns, `district_yields`, effects, routes, loyalty | The only computation of a city's science, culture, gold and faith (integer tenths). A new source is a column on its own table or an effect, never a term in code |
+| Effects | `civulator/effects.py` (`active_effects`), `effects = [...]` on any table | The only interpreter of effect lists; a closed set of kinds, each with exactly one consumer named in the design (§3). A new kind adds a row there and one consumer, never a second reader of the same kind |
+| Research | `civulator/research_model.py` (`[research]`, `[techs.*]`, `[civics.*]`, `[governments.*]`, `[policies.*]`); `Player.techs/civics`; `GameEnvironment.resolve_research/resolve_civic/set_research/set_civic`; `player_can_build` | The only interpreter of the trees and the only availability check. An item is gated by `requires_tech`/`requires_civic` on its own table; every build, purchase, placement and upgrade path calls `player_can_build`; "what a tech unlocks" is derived, never declared |
+| Governments and policies | `Player.government/policies`, `set_government/set_policies`, `slot_counts` | The only loadout state and the only legality check; effects reach the game only through `active_effects` |
+| Economy phase | `GameEnvironment.economy_phase(player)` in `Player.start_turn` after the cities: maintenance, bankruptcy, research, civics, routes | The only place gold leaves the treasury on a timer and the only place a tech or civic completes |
+| Purchasing | `purchase_cost` / `GameEnvironment.purchase` | The only instant-completion path; purchasability is a column on the item's table; a purchased item is created by the same code as a built one |
+| Upgrades | `upgrades_to` column; `upgrade_cost` / `GameEnvironment.upgrade_unit` | The only way a unit changes type |
+| Trade routes | `TradeRoute`, `GameEnvironment.establish_trade_route`, `route_capacity`, `[trade]` | The only route state; yields reach cities only through `city_yield` |
+| Wonders | `kind = "wonder"` in the district registry; `GameEnvironment.complete_district` | A wonder is a district table; uniqueness, the race and one-shot effects live in `complete_district`, the one place a district finishes |
+| Loyalty | `game/loyalty.py` (`pressure`, `loyalty_delta`, `loyalty_percent`), `City.loyalty`, `_loyalty_phase`, `_flip_city` | The only loyalty computation and the only non-combat change of a city's owner; it goes through `City.set_owner` like a capture. Amenities, governors and ages do not exist here |
+| Engine defaults | `game/defaults.py` | The deterministic choice the engine makes where no agent action exists yet (research, civic, government, loadout, Trader); each default is one function `GameEnvironment` calls, replaced one-for-one by an agent action in #99 |
+| Victory | `determine_winner` (elimination, domination, score), `[game.score]` | unchanged seam, two new rules; `victory` is recorded per game |
