@@ -66,7 +66,8 @@ def specialty_districts(city):
     (`counts_toward_limit`) -- progression design "v2 fixes", District
     registry readers. The one definition every rule counting "specialty
     districts" reads (Meritocracy, Classical Republic, Insulae, Medina
-    Quarter, `housing_if_districts`; #116 P5's trade rule)."""
+    Quarter, `housing_if_districts`; the trade routes' destination rule,
+    game/trade.py pair_yields, #116 P5)."""
     result = []
     for district in city.districts:
         spec = district_spec(district.type)

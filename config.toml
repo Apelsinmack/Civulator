@@ -529,10 +529,12 @@ city_score_weight = 10   # Turn-cap tiebreak: score = cities * this + units (#55
 #                    civilian capture and the encoder's class channel all read
 #                    it, so no combat rule names a unit.
 #   era              REQUIRED. One of [research]'s eras (informational for now).
-#   maintenance      REQUIRED. Gold per turn (a multiple of 0.1); deducted by
-#                    #116 P5.
+#   maintenance      REQUIRED. Gold per turn (a multiple of 0.1); deducted from
+#                    the treasury in the owner's economy phase (#116 P5).
 #   purchasable      optional, default ["gold"]. Resources that may buy it
-#                    ("gold", "faith"); consumed by #116 P5.
+#                    ("gold", "faith"; GameEnvironment.purchase, #116 P5). A
+#                    land military unit may also be bought with faith where a
+#                    `faith_purchase` effect unlocks its category.
 #   upgrades_to      optional. The unit type this one upgrades into
 #                    (GameEnvironment.upgrade_unit, [gold] upgrade_* below).
 #   requires_tech / requires_civic   availability gates (#116 P2).
@@ -776,9 +778,9 @@ production_cost = 240
 
 # Trader: a civilian (slot 1, land) that makes and keeps one trade route
 # (#116 P5; docs/progression_design.md §7.4). Gated on the Foreign Trade CIVIC
-# (validated against [civics.*] since #116 P4). Its table exists now, but it stays in
-# game/unit.py's DEFERRED_BUILD_UNITS until P5 gives it routes: a build option
-# that cannot pay off is the #67 failure.
+# (validated against [civics.*] since #116 P4). Named once as [trade] unit
+# below; a build option since #116 P5, offered only while its owner has a
+# free route slot (game/trade.py trader_slot_free).
 [units.Trader]
 requires_civic = "Foreign Trade"
 combat_class = "civilian"
@@ -914,10 +916,58 @@ per_pop = 0.0       # and buildings do
 # gold) and is the community's reading of the game files. Both whole numbers.
 upgrade_per_production = 2
 upgrade_base = 10
+# Purchasing (#116 P5; docs/progression_design.md §7.3): a unit or building
+# costs production_cost * purchase_multiplier of the resource, scaled by the
+# `purchase_percent` effects in force for it (summed, applied once, floored
+# at 0). Civ 6: gold is 4x production. A whole number.
+purchase_multiplier = 4
 
 [faith]
 base = 0.0
 per_pop = 0.0
+# Civ 6: faith is 2x production (#116 P5). A whole number.
+purchase_multiplier = 2
+
+# --- Trade routes (#116 P5; docs/progression_design.md §7.4 and "v2 fixes") ----
+# Read only by civulator/game/trade.py. A route runs from a city centre of its
+# owner (the origin, where a Trader stood) to another city within `range` hexes
+# (canonical wrap distance), lasts `duration_turns` of its owner's turns, and
+# yields to the ORIGIN every turn: for the destination's centre and each of its
+# complete specialty districts, that entry of [trade.domestic] (destination of
+# the same owner) or [trade.international] (another owner's), plus every
+# `route_yield` effect in force. The destination's owner gets nothing (Civ 6).
+# Entries name a district or "City Center" (anything else raises); yields are
+# whole points of science / culture / gold / faith / food / production. Civ 6
+# Gathering Storm values (docs/civ6_progression_reference.md §10): land range
+# 15, minimum duration 21 turns (no round trips, no era extension).
+[trade]
+unit = "Trader"     # the unit that makes a route (a [units.*] name)
+range = 15
+duration_turns = 21
+
+[trade.domestic]
+"City Center" = { food = 1, production = 1 }
+Campus = { food = 1 }
+"Holy Site" = { food = 1 }
+"Theater Square" = { food = 1 }
+"Entertainment Complex" = { food = 1 }
+Encampment = { production = 1 }
+"Industrial Zone" = { production = 1 }
+"Commercial Hub" = { production = 1 }
+Harbor = { production = 1 }
+"Government Plaza" = { food = 1, production = 1 }
+
+[trade.international]
+"City Center" = { gold = 3 }
+Campus = { science = 1 }
+"Holy Site" = { faith = 1 }
+"Theater Square" = { culture = 1 }
+"Entertainment Complex" = { food = 1 }
+Encampment = { production = 1 }
+"Industrial Zone" = { production = 1 }
+"Commercial Hub" = { gold = 3 }
+Harbor = { gold = 3 }
+"Government Plaza" = { gold = 2 }
 
 # --- Housing (issue #88, docs/housing_design.md s1) -------------------------
 # Water housing at the city centre (Civ 6 values) and the radius within which
@@ -1099,7 +1149,7 @@ requires = ["Code of Laws"]
 cost = 40
 era = "Ancient"
 requires = ["Code of Laws"]
-effects = [{ kind = "trade_route_capacity", amount = 1 }]   # Civ 6: +1 Trade Route capacity (consumed from #116 P5)
+effects = [{ kind = "trade_route_capacity", amount = 1 }]   # Civ 6: +1 Trade Route capacity (game/trade.py route_capacity)
 
 [civics."Military Tradition"]
 cost = 50
@@ -1214,13 +1264,18 @@ requires = ["Feudalism", "Civil Service"]
 #   housing_if_districts  amount, min_districts (complete specialty districts; 0 = any city)
 #   housing_with_building building, amount
 #   enables               rules = ["flanking"]
-#   unit_maintenance_delta (amount), purchase_percent (resource, percent),
-#   faith_purchase (categories = ["land_military"]), trade_route_capacity
-#   (amount), route_yield (gold/culture/science/food/production = N,
-#   international_only), loyalty (amount, range, requires_garrison,
-#   per_population), growth_percent (percent), free_units (units = [{ unit,
-#   count }]), free_tech / free_civic (count), free_population (amount,
-#   all_cities): validated now, consumed from #116 P5-P7.
+#   unit_maintenance_delta amount (whole gold per unit and turn, may be negative;
+#                         a unit's upkeep never falls below 0)
+#   purchase_percent      resource ("gold" | "faith"), percent
+#   faith_purchase        categories = ["land_military"] (units of a fighting
+#                         combat class may then be bought with faith)
+#   trade_route_capacity  amount (a building's counts once per city, Civ 6)
+#   route_yield           gold/culture/science/food/production = N per route;
+#                         international_only = true
+#   loyalty (amount, range, requires_garrison, per_population), growth_percent
+#   (percent), free_units (units = [{ unit, count }]), free_tech / free_civic
+#   (count), free_population (amount, all_cities): validated now, consumed
+#   from #116 P6-P7.
 
 # --- Governments (issue #116 P4, docs/progression_design.md §5.2) ------------
 # Read only by civulator/research_model.py: requires_civic (the civic that
@@ -1323,7 +1378,7 @@ effects = [{ kind = "production_percent", target = { unit_class = ["melee", "ran
 [policies.Caravansaries]
 type = "economic"
 requires_civic = "Foreign Trade"
-effects = [{ kind = "route_yield", gold = 2 }]   # +2 gold per trade route (consumed from #116 P5)
+effects = [{ kind = "route_yield", gold = 2 }]   # +2 gold per trade route
 
 [policies.Maneuver]
 type = "military"
@@ -1334,7 +1389,7 @@ effects = [{ kind = "production_percent", target = { unit_class = ["light_cavalr
 [policies.Conscription]
 type = "military"
 requires_civic = "State Workforce"
-effects = [{ kind = "unit_maintenance_delta", amount = -1 }]   # per unit (consumed from #116 P5)
+effects = [{ kind = "unit_maintenance_delta", amount = -1 }]   # -1 gold upkeep per unit
 
 # Civ 6: Ancient and Classical wonders. Wonders arrive in #116 P6 with no era
 # column yet, so this targets every wonder; P6 restates it if wonders gain an era.
@@ -1412,7 +1467,7 @@ effects = [{ kind = "upgrade_cost_percent", percent = -50 }]
 [policies."Trade Confederation"]
 type = "economic"
 requires_civic = "Mercenaries"
-effects = [{ kind = "route_yield", culture = 1, science = 1, international_only = true }]   # consumed from #116 P5
+effects = [{ kind = "route_yield", culture = 1, science = 1, international_only = true }]
 
 [policies.Aesthetics]
 type = "economic"
@@ -1466,10 +1521,10 @@ effects = [{ kind = "production_percent", target = { kind = "wonder" }, percent 
 #   requires_government_tier
 #                      the owner's current government must be of at least this
 #                      tier (no government = below every tier; #116 P4)
-#   maintenance        gold per turn (multiple of 0.1, default 0); parsed and
-#                      stored now, deducted from #116 P5 on
+#   maintenance        gold per turn (multiple of 0.1, default 0), deducted in
+#                      the owner's economy phase (#116 P5)
 #   purchasable        resources that may buy it, default ["gold"]; [] = never
-#                      bought (#116 P4 parses it, P5 consumes it)
+#                      bought (GameEnvironment.purchase, #116 P5)
 #   effects            optional; city scope by default (see Effects above). A
 #                      yield is a column, never a `city_yield` effect.
 # Civ 6 Gathering Storm values (docs/civ6_progression_reference.md §7);
@@ -1561,7 +1616,9 @@ requires_building = "Ancestral Hall"
 faith = 5
 maintenance = 2
 purchasable = []
-effects = [{ kind = "faith_purchase", categories = ["land_military"] }]   # consumed from #116 P5
+# Civ 6: land military units may be bought with faith in EVERY city of the
+# owner, so the effect is player-scoped (a building's default is its own city).
+effects = [{ kind = "faith_purchase", categories = ["land_military"], scope = "player" }]
 
 [buildings.Barracks]
 production_cost = 90
@@ -1570,6 +1627,28 @@ requires_district = "Encampment"
 production = 1
 housing = 1
 maintenance = 1
+
+# Market and Lighthouse (#116 P5; Civ 6 Gathering Storm, docs/
+# civ6_progression_reference.md §7, §10): +1 trade route capacity each, but a
+# city holding both adds 1 (game/trade.py route_capacity counts a building's
+# capacity once per city). The wiki gives neither an upkeep: 0.
+[buildings.Market]
+production_cost = 120
+requires_tech = "Currency"
+requires_district = "Commercial Hub"
+gold = 3
+maintenance = 0
+effects = [{ kind = "trade_route_capacity", amount = 1 }]
+
+[buildings.Lighthouse]
+production_cost = 120
+requires_tech = "Celestial Navigation"
+requires_district = "Harbor"
+food = 1
+gold = 1
+housing = 1
+maintenance = 0
+effects = [{ kind = "trade_route_capacity", amount = 1 }]
 
 # Medieval Walls: a second +30 on top of the Walls (Civ 6: +100 outer
 # defence each); no maintenance (Civ 6).
@@ -1617,8 +1696,8 @@ production = 2
 #   requires_civic       a [civics.*] name the owner must know to place it (#116 P4)
 #   effects              optional, city scope by default (see Effects above)
 #   maintenance          gold per turn (multiple of 0.1, default 0; Civ 6:
-#                        the gold districts pay for themselves); parsed and
-#                        stored now, deducted from #116 P5 on
+#                        the gold districts pay for themselves), deducted for
+#                        a complete district in the owner's economy phase (#116 P5)
 # Sources: terrain = {bases/relief/features/resources} (terrain_model `on`
 # form), improvement = [...], district = [...] | "any" ("City Center" names a
 # city centre; "any" = any district or centre), river_on_tile = true

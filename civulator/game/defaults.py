@@ -4,7 +4,9 @@
 Each default is one deterministic function (no RNG) that `GameEnvironment`
 calls in place of an agent action that does not exist yet (#99); an agent
 action replaces exactly one call. P2 ships the research default; P4 the
-civic, government and policy-loadout defaults; P5 adds the Trader's, P8 the
+civic, government and policy-loadout defaults; P5 the Trader's
+(`default_trade`, which acts through the same public paths an agent would:
+`GameEnvironment.establish_trade_route` and `Unit.move`); P8 adds the
 Worker's.
 
 "Newest" (v2 fixes, N2): a card unlocked by a civic later in
@@ -25,6 +27,13 @@ from ..research_model import (
     scaled_tech_cost,
 )
 from .availability import government_tier
+from .trade import (
+    TRADER_UNIT,
+    eligible_destinations,
+    origin_city,
+    pair_yields,
+    route_capacity,
+)
 
 
 def default_research(player):
@@ -118,3 +127,89 @@ def default_loadout(player):
             kept.append(name)
             free[POLICY_WILDCARD] -= 1
     return kept
+
+
+# --- The Trader (#116 P5, design §7.4, §13 and "v2 fixes") ---------------------
+
+
+def best_destination(trader, env):
+    """The city the engine sends `trader` to from the own city centre it
+    stands on: among `trade.eligible_destinations`, the one whose route would
+    yield the origin the most, every yield counted equally (food,
+    production, gold, science, culture, faith; summed in tenths, the order
+    whole points give), ties to the lower city id. None when the Trader is
+    not on an own city centre or nothing is eligible."""
+    origin = origin_city(trader, env)
+    if origin is None:
+        return None
+    best, best_key = None, None
+    for destination in eligible_destinations(trader, env):
+        total = sum(pair_yields(trader.player, origin, destination).values())
+        key = (-total, destination.city_id)
+        if best_key is None or key < best_key:
+            best, best_key = destination, key
+    return best
+
+
+def trader_step(trader, env):
+    """The one step the engine takes `trader` (not on an own city centre)
+    toward home: the target is the own city centre nearest it by
+    `distance_function` (ties by the centre's (row, col)); the step is the
+    adjacent tile `Unit.move` would accept -- enterable, no foreign unit, no
+    own unit in the Trader's slot, no enemy city, affordable -- that is
+    strictly nearer the target, the nearest first, ties by (row, col). Never
+    `path_finder`. None when no such tile exists (the Trader waits)."""
+    player = trader.player
+    if not player.cities:
+        return None
+    here = tuple(trader.coordinates)
+    target = min((tuple(c.coordinates) for c in player.cities),
+                 key=lambda pos: (env.distance_function(here, pos), pos))
+    current = env.distance_function(here, target)
+    best, best_key = None, None
+    for pos in env.map.get_adjacent_coords(here):
+        pos = tuple(pos)
+        tile = env.map.get_tile(pos)
+        if tile is None or not trader.can_enter(tile):
+            continue
+        units = env.get_units_at(pos)
+        if any(u.player is not player for u in units):
+            continue
+        if any(u.slot == trader.slot for u in units):
+            continue
+        if trader.enemy_city_blocks(pos, env):
+            continue
+        if trader.step_cost(here, pos, env) > trader.movement_points:
+            continue
+        distance = env.distance_function(pos, target)
+        if distance >= current:
+            continue
+        key = (distance, pos)
+        if best_key is None or key < best_key:
+            best, best_key = pos, key
+    return best
+
+
+def default_trade(player, env):
+    """The idle-Trader default, once per own turn in the economy phase after
+    route expiry (design §13 as amended by v2). In `player.units` order:
+    a Trader standing on an own city centre with all its movement and not
+    having acted this turn is sent, while a route slot is free
+    (`route_capacity` > routes), to `best_destination` through
+    `GameEnvironment.establish_trade_route`; a Trader elsewhere takes
+    `trader_step` through `Unit.move`. Returns the number of routes opened."""
+    opened = 0
+    for trader in [u for u in player.units if u.unit_type == TRADER_UNIT]:
+        if origin_city(trader, env) is not None:
+            if trader.has_acted or trader.movement_points < trader.get_max_movement():
+                continue
+            if len(player.routes) >= route_capacity(player):
+                continue
+            destination = best_destination(trader, env)
+            if destination is not None and env.establish_trade_route(trader, destination):
+                opened += 1
+        else:
+            step = trader_step(trader, env)
+            if step is not None:
+                trader.move(step, env)
+    return opened

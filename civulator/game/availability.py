@@ -7,16 +7,17 @@ Two predicates, and every build path reads them:
   unit, building, district or improvement: the item exists, its
   `requires_tech` (a column on the item's own config table) is in
   `player.techs` and its `requires_civic` in `player.civics` (#116 P4).
-  `City.produce_unit` / `produce_building`, the build mask
-  (`agents/build_agent.get_valid_build_mask`), `can_place_district` and
+  `City.can_produce_unit` (so `produce_unit`, the build mask
+  `agents/build_agent.get_valid_build_mask` and `GameEnvironment.purchase`),
+  `produce_building`, `can_place_district` and
   `GameEnvironment.can_player_build_improvement_at` call it.
 - `city_can_build_building(city, name)` -- the one building-availability
   predicate: the building is producible, its owner `player_can_build` it,
   the owner's current government is of at least its
   `requires_government_tier` (no government: below every tier, #116 P4), a
   COMPLETE district of its `requires_district` type stands in the city, and
-  the city owns its `requires_building`. `produce_building` and the build
-  mask call it (P5's purchase will too).
+  the city owns its `requires_building`. `produce_building`, the build
+  mask and `GameEnvironment.purchase` (#116 P5) call it.
 
 Captured units and buildings are kept whatever the new owner knows (Civ 6):
 nothing here is consulted for what a city already has.

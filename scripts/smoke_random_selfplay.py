@@ -8,9 +8,13 @@ round checkpoints, tiles owned per player, total population, cumulative
 culture claims, per-player housing vs population and growth_slowed_turns,
 techs researched per player (the engine's research default, #116 P2), civics
 researched, the government and the slotted policy cards per player (the
-engine's civic, government and loadout defaults, #116 P4), plus wall-clock. A
-sanity check that borders grow, research and civics progress and the defaults
-adopt governments and slot cards in real games, not a measurement.
+engine's civic, government and loadout defaults, #116 P4), and per player the
+treasury (whole gold), the upkeep paid, the units disbanded by bankruptcy,
+the trade routes opened and running (the engine's Trader default) and the
+gold and faith spent on purchases (#116 P5; 0: no default buys), plus
+wall-clock. A sanity check that borders grow, research and civics progress,
+the defaults adopt governments, slot cards and send Traders, and upkeep is
+paid in real games, not a measurement.
 
 Districts (#86): at each player's turn start every city has a small chance to
 place a district through the engine (candidate tiles from Map.tiles_of_city,
@@ -84,7 +88,19 @@ def main():
               f"pop_by_player={pops}  growth_slowed_turns={slowed}  "
               f"techs_researched={techs}  civics_researched={civics}  "
               f"governments={governments}  policies={policies}  "
-              f"t={time.perf_counter() - t0:.1f}s")
+              f"{gold_line()}  t={time.perf_counter() - t0:.1f}s")
+
+    def gold_line():
+        """Per player: treasury (whole gold), upkeep paid (whole gold),
+        units disbanded, routes opened / running, purchases (tenths spent)."""
+        stats = [env.episode_stats[i] for i in range(num_players)]
+        return (f"treasury={[p.gold // 10 for p in env.players]}  "
+                f"maintenance_paid={[s['gold_maintenance'] // 10 for s in stats]}  "
+                f"units_disbanded={[s['units_disbanded'] for s in stats]}  "
+                f"routes_established={[s['trade_routes_established'] for s in stats]}  "
+                f"routes_running={[len(p.routes) for p in env.players]}  "
+                f"purchases_gold_faith_tenths="
+                f"{[(s['gold_spent_purchases'], s['faith_spent_purchases']) for s in stats]}")
 
     district_rng = random.Random(args.seed)
     placed = 0
@@ -155,6 +171,7 @@ def main():
               f"current={player.current_civic} culture_pool_tenths={player.culture} "
               f"government={player.government} policies={player.policies} "
               f"order={player.civics}")
+    print(f"gold {gold_line()}")
     print(f"done={env.done} steps={steps} wall={time.perf_counter() - t0:.1f}s")
 
 

@@ -22,7 +22,10 @@ Science, culture, gold and faith are integer TENTHS scaled by
   amount of `name`, only in the city holding `[city] capital_building` when
   `capital_only`, times the city's complete specialty districts when
   `per_district`;
-- trade routes to this city (stub until P5).
+- the trade routes of the city's owner that start here (#116 P5,
+  `trade.yields_to_origin`): per route, the `[trade]` table entries of its
+  destination and the `route_yield` effects in force, in tenths of every
+  yield (food and production too, floored with the rest).
 
 Every term is summed in tenths; food and production are then floored once
 to whole points. Pure engine code: reads config-derived tables and the live
@@ -40,6 +43,7 @@ from ..unit_model import (
     YIELD_PER_POP,
 )
 from .districts import district_spec, district_yields, specialty_districts
+from .trade import yields_to_origin
 
 # Position of food and production in `Tile.yields`.
 _TILE_YIELD_INDEX = {"food": 0, "production": 1}
@@ -96,10 +100,12 @@ def _effect_adjacency_percents(in_force):
 
 
 def _route_yield(city, name):
-    """Yields of trade routes whose origin is this city, in tenths. STUB: 0
-    until trade routes exist (#116 P5, design §7.4); P5 adds the
-    `route_yield` effects in force here, the one consumer of that kind."""
-    return 0
+    """Tenths of `name` from the trade routes whose origin is this city
+    (#116 P5, design §7.4): `trade.yields_to_origin`, which sums each route's
+    destination table entries and the `route_yield` effects in force (their
+    one consumer, `trade.pair_yields`). Only the owner's own routes start at
+    its city, so only the origin's owner gains."""
+    return yields_to_origin(city, name)
 
 
 def _tile_yield(city, name):

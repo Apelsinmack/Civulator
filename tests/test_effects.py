@@ -29,6 +29,9 @@ from civulator.effects import (
 )
 from civulator.game import districts as districts_mod
 from civulator.game.housing import housing
+from civulator.game.maintenance import maintenance_due
+from civulator.game.purchasing import faith_purchase_categories, purchase_cost
+from civulator.game.trade import DURATION_TURNS, TradeRoute, route_capacity, route_yields
 from civulator.game.upgrades import upgrade_cost
 from civulator.game.yields import city_yield
 from civulator.research_model import CIVIC_ORDER, CIVICS
@@ -88,7 +91,8 @@ class Stage:
     card slotted; its capital (population 3) holds a complete Probe beside a
     complete Marker (two specialty districts, gold adjacency 3) and an
     Aside, and is producing the fighter; a fighter and a shooter of its own
-    stand beside an enemy, with no other unit near it (no flanking)."""
+    stand beside an enemy, with no other unit near it (no flanking). The
+    capital runs one trade route to a city of the other player (#116 P5)."""
 
     def __init__(self, monkeypatch):
         _registry(monkeypatch)
@@ -110,6 +114,10 @@ class Stage:
         self.fighter = stand(env, self.fighter_type, 0, (6, 10))
         self.enemy = stand(env, self.fighter_type, 1, (6, 11))
         self.shooter = stand(env, self.shooter_type, 0, (2, 13))
+        self.partner = make_city(env, (0, 8), player_index=1)
+        self.route = TradeRoute(city.city_id, self.partner.city_id, player.player_index,
+                                DURATION_TURNS)
+        player.routes.append(self.route)
         assert env.set_government(player, GOVERNMENT)
         assert env.set_policies(player, [])
 
@@ -132,6 +140,14 @@ class Stage:
         out["slots"] = tuple(sorted(slot_counts(self.player).items()))
         out["upgrade cost"] = upgrade_cost(self.fighter)
         out["flanking"] = rule_enabled(self.player, RULE_FLANKING)
+        # The #116 P5 consumers.
+        out["maintenance"] = maintenance_due(self.player)
+        for resource in unit_model.PURCHASE_RESOURCES:
+            out[f"purchase {resource}"] = purchase_cost(self.player, "unit", self.fighter_type,
+                                                        resource)
+        out["faith categories"] = faith_purchase_categories(self.player, city)
+        out["route capacity"] = route_capacity(self.player)
+        out["route yields"] = tuple(sorted(route_yields(self.route, env).items()))
         return out
 
 
@@ -247,19 +263,51 @@ def test_policy_slots_from_a_civic_move_only_the_slot_counts(monkeypatch):
     assert dict(after["slots"])["military"] == dict(before["slots"])["military"] + 1
 
 
+@pytest.mark.parametrize("entries, expected", [
+    # Every unit of the stage with positive upkeep pays 1 gold less (the
+    # exact per-unit rule: tests/test_gold.py).
+    ([{"kind": "unit_maintenance_delta", "amount": -1}], {"maintenance": None}),
+    ([{"kind": "purchase_percent", "resource": "faith", "percent": -15}],
+     {"purchase faith": None}),
+    ([{"kind": "faith_purchase", "categories": list(effects.FAITH_PURCHASE_CATEGORIES)}],
+     {"faith categories": None}),
+    ([{"kind": "trade_route_capacity", "amount": 1}], {"route capacity": 1}),
+    ([{"kind": "route_yield", "gold": 2}], {"yield gold": 20, "route yields": None}),
+])
+def test_each_p5_kind_moves_exactly_its_consumer(monkeypatch, entries, expected):
+    """The five kinds consumed from #116 P5 (deferred in P4), one synthetic
+    card each, slotted: exactly their consumer's output moves -- maintenance,
+    the purchase price in the card's resource, the faith-purchase
+    categories, the route capacity, the route's yields (and through them the
+    origin's city_yield) -- and nothing a P4 consumer computes. Breaks if a
+    P5 kind gains a second consumer, loses its one, or leaks into another
+    price (§14 row 6, restated from the P4 deferred-kinds test)."""
+    stage = Stage(monkeypatch)
+    before = stage.fingerprint()
+    stage.slot(monkeypatch, entries)
+    after = stage.fingerprint()
+    assert _moved(before, after) == set(expected), entries
+    for key, delta in expected.items():
+        if delta is not None:
+            assert after[key] - before[key] == delta, key
+    if "maintenance" in expected:
+        assert after["maintenance"] < before["maintenance"], "a -1 delta lowers upkeep"
+    if "purchase faith" in expected:
+        assert after["purchase faith"] < before["purchase faith"], "-15 % lowers the price"
+    if "faith categories" in expected:
+        assert after["faith categories"] == tuple(effects.FAITH_PURCHASE_CATEGORIES)
+    if "route yields" in expected:
+        assert dict(after["route yields"])["gold"] - dict(before["route yields"])["gold"] == 20
+
+
 @pytest.mark.parametrize("entry", [
-    {"kind": "unit_maintenance_delta", "amount": -1},
-    {"kind": "purchase_percent", "resource": "faith", "percent": -15},
-    {"kind": "faith_purchase", "categories": list(effects.FAITH_PURCHASE_CATEGORIES)},
-    {"kind": "trade_route_capacity", "amount": 1},
-    {"kind": "route_yield", "gold": 2},
     {"kind": "loyalty", "amount": 2, "requires_garrison": True},
     {"kind": "growth_percent", "percent": 15},
 ])
 def test_a_deferred_kind_is_validated_and_moves_nothing_yet(monkeypatch, entry):
-    """The kinds whose consumers land in P5-P7 parse on a card and change
-    nothing a P4 consumer computes. Breaks if one of them is read early by
-    the wrong consumer."""
+    """The kinds whose consumers land in P6-P7 parse on a card and change
+    nothing a P4 or P5 consumer computes. Breaks if one of them is read
+    early by the wrong consumer."""
     assert entry["kind"] in DEFERRED_KINDS
     stage = Stage(monkeypatch)
     before = stage.fingerprint()

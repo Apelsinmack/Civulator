@@ -109,8 +109,9 @@ class DistrictSpec:
     # Read by game/yields.py city_yield; separate from the adjacency yield.
     yield_columns: dict
     # Availability (#116 P2, P4): the tech and the civic the owner must know
-    # to place it (None = ungated); gold upkeep per turn in int tenths (stored
-    # now, deducted from P5 on).
+    # to place it (None = ungated); gold upkeep per turn in int tenths, paid
+    # for a complete district in the owner's economy phase (game/maintenance.py,
+    # #116 P5).
     requires_tech: object = None
     requires_civic: object = None
     maintenance: int = 0
