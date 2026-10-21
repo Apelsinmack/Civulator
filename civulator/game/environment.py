@@ -22,7 +22,9 @@ from .player import Player
 from .city import City
 from .availability import player_can_build
 from .city import _create_unit
-from .defaults import default_civic, default_government, default_loadout, default_research
+from .defaults import (
+    default_civic, default_government, default_loadout, default_research, default_trade,
+)
 from .districts import (
     YIELD_NAMES as DISTRICT_YIELD_NAMES, District, can_place_district, district_cost,
 )
@@ -31,6 +33,18 @@ from . import territory
 from .territory import (
     FOUNDING_RING, NEUTRAL, border_cost_function, choose_claim_tile,
     run_border_phase,
+)
+from .maintenance import disband_candidate, maintenance_due, unit_maintenance_delta, unit_upkeep
+from .purchasing import ITEM_UNIT, can_purchase, purchase_cost, spend
+from .trade import (
+    DURATION_TURNS as TRADE_DURATION_TURNS,
+    TRADER_UNIT,
+    TradeRoute,
+    eligible_destinations,
+    end_routes_touching,
+    expire_routes,
+    origin_city,
+    route_capacity,
 )
 from .unit import WarriorUnit, calculate_damage, movement_domain
 from .upgrades import can_upgrade, upgrade_cost, upgrade_target
@@ -241,6 +255,14 @@ class GameEnvironment:
                 "techs_researched": 0,  # completed techs (#116 P2)
                 "civics_researched": 0,  # completed civics (#116 P4)
                 "units_upgraded": 0,  # units upgraded into their next type (#116 P3)
+                # Gold (#116 P5): upkeep actually paid from the treasury (int
+                # tenths), units disbanded by bankruptcy, the gold and faith
+                # spent on purchases (int tenths), trade routes opened.
+                "gold_maintenance": 0,
+                "units_disbanded": 0,
+                "gold_spent_purchases": 0,
+                "faith_spent_purchases": 0,
+                "trade_routes_established": 0,
                 # Summed adjacency score per yield, per city-round (#86 s5)
                 **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
             }
@@ -1040,7 +1062,9 @@ class GameEnvironment:
     def remove_city(self, city):
         """The ONLY way a city ceases to exist without being captured
         (borders design §2.3): its tiles become neutral and its districts
-        are deleted with it (issue #86)."""
+        are deleted with it (issue #86). Every trade route touching it ends
+        (#116 P5, `trade.end_routes_touching`): a route from another city
+        returns its Trader there, one from this city is lost."""
         if city.districts:
             for district in city.districts:
                 tile = self.map.get_tile(district.coordinates)
@@ -1057,6 +1081,7 @@ class GameEnvironment:
             city.player.cities.remove(city)
         self.city_by_id.pop(city.city_id, None)
         city.worked_tiles = []
+        end_routes_touching(self, city.city_id)
 
     def swap_tile(self, coordinates, to_city):
         """Move an owned tile between two cities of the same player (borders
@@ -1309,53 +1334,138 @@ class GameEnvironment:
         if civic_completed:
             player.policies = default_loadout(player)
 
-    # --- Hooks for the effect kinds consumed from #116 P5 (validated since P4) ---
+    # --- Gold: maintenance and bankruptcy (#116 P5, docs/progression_design.md §7.1-§7.2) ---
 
-    def _unit_maintenance_delta(self, player, unit):
-        """STUB for #116 P5 (design §7.1): where maintenance will add the
-        summed `unit_maintenance_delta` effects in force to each unit's
-        upkeep (floored at 0 per unit). Nothing reads the kind yet."""
-        return 0
+    def _pay_maintenance(self, player):
+        """Deduct this turn's upkeep from the treasury (int tenths):
+        `maintenance.maintenance_due` -- every unit's (its column plus the
+        summed `unit_maintenance_delta`, floored at 0 per unit), every
+        building's and every complete district's. Returns what was due."""
+        due = maintenance_due(player)
+        player.gold -= due
+        return due
 
-    def _purchase_percent(self, player, resource):
-        """STUB for #116 P5 (design §7.3): where `purchase_cost` will sum the
-        `purchase_percent` effects in force for `resource`, applied once.
-        Nothing reads the kind yet."""
-        return 0
+    def _resolve_bankruptcy(self, player):
+        """While the treasury is negative and a unit with positive upkeep
+        remains, disband `maintenance.disband_candidate` (the highest upkeep,
+        the lowest `player.units` index among equals) through `delete_unit`;
+        a disbanded unit does not pay this turn's upkeep, so its upkeep goes
+        back into the treasury, and nothing else is refunded. Then the
+        treasury is floored at 0. Each disbanded unit counts in
+        `episode_stats["units_disbanded"]`. Returns the units disbanded."""
+        delta = unit_maintenance_delta(player)
+        disbanded = []
+        while player.gold < 0:
+            unit = disband_candidate(player, delta)
+            if unit is None:
+                break
+            upkeep = unit_upkeep(unit, delta)
+            self.delete_unit(unit)
+            player.gold += upkeep
+            disbanded.append(unit)
+            self.episode_stats[player.player_index]["units_disbanded"] += 1
+        if player.gold < 0:
+            player.gold = 0
+        return disbanded
 
-    def _faith_purchase_categories(self, player, city):
-        """STUB for #116 P5 (design §7.3): where `can_purchase` will collect
-        the categories the `faith_purchase` effects in force for the city
-        unlock. Nothing reads the kind yet."""
-        return ()
+    # --- Purchasing (#116 P5, docs/progression_design.md §7.3) ---
 
-    def _route_capacity_bonus(self, player):
-        """STUB for #116 P5 (design §7.4): where `route_capacity` will add the
-        `trade_route_capacity` effects in force (once per city for a
-        building's). Nothing reads the kind yet."""
-        return 0
+    def purchase(self, city, kind, name, resource):
+        """The current player buys the `kind` ("unit" | "building") item
+        `name` with `resource` ("gold" | "faith") in `city`, one of its own.
+        Refused (False, nothing changed) unless `purchasing.can_purchase`
+        holds: the item is purchasable with that resource (its `purchasable`
+        column, or faith for a unit whose faith category a `faith_purchase`
+        effect in force unlocks), the city could start it (`City.
+        can_produce_unit` / `city_can_build_building`, a building not
+        already owned) and the pool covers 10 x `purchase_cost` (tenths).
+
+        On success the price leaves the pool; a unit is placed by
+        `complete_unit_production`, or queued in `Player.queued_units` when
+        the city has no room (`City.place_or_queue_unit`); a building is
+        appended to `city.buildings` exactly as a produced one, and if the
+        city was producing that building its production item is cleared (the
+        production pool is kept, as on any switch). The only instant-
+        completion path. No engine default and no agent action calls this
+        yet (#99): an ACCEPTED GAP."""
+        player = self.current_player
+        if self.city_by_id.get(getattr(city, "city_id", None)) is not city:
+            return False
+        if not can_purchase(player, city, kind, name, resource):
+            return False
+        price = 10 * purchase_cost(player, kind, name, resource)
+        spend(player, resource, price)
+        if kind == ITEM_UNIT:
+            city.place_or_queue_unit(name, self)
+        else:
+            city.buildings.append(name)
+            if city.current_production == {"type": "building", "building_type": name}:
+                city.current_production = None
+        self.episode_stats[player.player_index][f"{resource}_spent_purchases"] += price
+        return True
+
+    # --- Trade routes (#116 P5, docs/progression_design.md §7.4) ---
+
+    def establish_trade_route(self, trader, destination_city):
+        """Open a trade route with `trader` from the own city centre it stands
+        on (the origin) to `destination_city`. Refused (False, nothing
+        changed) unless `trader` is a live unit of the trade type (`[trade]
+        unit`) on one of its owner's city centres, the destination is among
+        `trade.eligible_destinations` (another city within range, no route of
+        this player between the pair) and a route slot is free
+        (`len(routes) < trade.route_capacity`). On success the Trader is
+        consumed (`delete_unit`) and a `TradeRoute` of `[trade]
+        duration_turns` turns is appended to its owner's `routes`;
+        `episode_stats["trade_routes_established"]` counts it."""
+        player = trader.player
+        if trader.unit_type != TRADER_UNIT or trader not in player.units:
+            return False
+        origin = origin_city(trader, self)
+        if origin is None:
+            return False
+        if not any(city is destination_city for city in eligible_destinations(trader, self)):
+            return False
+        if len(player.routes) >= route_capacity(player):
+            return False
+        self.delete_unit(trader)
+        player.routes.append(TradeRoute(
+            origin_city_id=origin.city_id,
+            destination_city_id=destination_city.city_id,
+            player_index=player.player_index,
+            turns_left=TRADE_DURATION_TURNS,
+        ))
+        self.episode_stats[player.player_index]["trade_routes_established"] += 1
+        return True
 
     def economy_phase(self, player):
         """The player's economy phase (progression design, "v2 fixes", turn
         order): runs once per own turn from `Player.start_turn`, after every
-        city has accrued and before the city ranged strike. The only place a
-        tech or a civic completes. The full order, one step per rule:
+        city has accrued and before the city ranged strike. The only place
+        timed gold leaves the treasury and the only place a tech or a civic
+        completes. The full order, one step per rule:
 
-        1. maintenance (#116 P5)
-        2. bankruptcy (#116 P5)
+        1. maintenance -- `_pay_maintenance` (#116 P5)
+        2. bankruptcy -- `_resolve_bankruptcy` (#116 P5); what the two steps
+           took from the treasury counts in `episode_stats["gold_maintenance"]`
         3. research -- `resolve_research` (#116 P2)
         4. civics -- `resolve_civic` (#116 P4)
         5. government and loadout defaults -- `_government_and_loadout_defaults`
            (#116 P4)
-        6. route expiry and Trader return (#116 P5)
-        7. Trader auto-send (#116 P5)
+        6. route expiry and Trader return -- `trade.expire_routes` (#116 P5)
+        7. Trader auto-send -- `defaults.default_trade` (#116 P5)
         8. Worker default (#116 P8)
 
-        Steps 3-5 exist; a later patch inserts its steps at their place here.
+        Steps 1-7 exist; a later patch inserts its steps at their place here.
         """
+        treasury = player.gold
+        self._pay_maintenance(player)
+        self._resolve_bankruptcy(player)
+        self.episode_stats[player.player_index]["gold_maintenance"] += max(0, treasury - player.gold)
         self.resolve_research(player)
         civic = self.resolve_civic(player)
         self._government_and_loadout_defaults(player, civic is not None)
+        expire_routes(player, self)
+        default_trade(player, self)
 
     # --- Upgrades (#116 P3, docs/progression_design.md §6.4) ---
 

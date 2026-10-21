@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 from .networks import horizontal_wrap_padding
 from .replay_memory import ReplayMemory, Transition
-from ..game.availability import city_can_build_building, player_can_build
+from ..game.availability import city_can_build_building
 from ..game.unit import Unit
 from ..game.city import City
 from ..torch_env import resolve_device
@@ -21,18 +21,18 @@ from ..torch_env import resolve_device
 # is the gate for that, and for the converse — a statted unit is either here or
 # named in game/unit.py's DEFERRED_BUILD_UNITS with a reason (issue #67).
 #
-# Availability (#116 P2, P4): an option is offered only when the city could
-# start it -- the owner's techs and civics and, for buildings, the required
-# government tier, district and building (get_valid_build_mask) -- so the mask
-# invariant (CLAUDE.md) holds: an offered option always changes the city's
-# production.
+# Availability (#116 P2, P4, P5): an option is offered only when the city could
+# start it -- the owner's techs and civics, for buildings the required
+# government tier, district and building, for the Trader a free route slot
+# (get_valid_build_mask) -- so the mask invariant (CLAUDE.md) holds: an offered
+# option always changes the city's production.
 #
 # Changing this list changes the BuildNetwork output width and therefore
 # invalidates previously saved build-agent weights. APPEND ONLY (#67): the
-# #116 P2 buildings follow the v0.7 list, the #116 P3 units follow them (the
-# Trader is not here: it is in game/unit.py's DEFERRED_BUILD_UNITS until P5
-# gives it routes), and the #116 P4 civic- and government-gated buildings
-# follow those.
+# #116 P2 buildings follow the v0.7 list, the #116 P3 units follow them, the
+# #116 P4 civic- and government-gated buildings follow those, and #116 P5
+# appends the Market, the Lighthouse and the Trader (which left game/unit.py's
+# DEFERRED_BUILD_UNITS with the trade routes it makes).
 BUILD_OPTIONS = [
     "Warrior", "Spearman", "Archer", "Horseman", "Catapult",
     "Settler", "Granary", "Slinger", "Swordsman", "Walls",
@@ -41,6 +41,7 @@ BUILD_OPTIONS = [
     "Man-At-Arms", "Pikeman", "Crossbowman", "Knight", "Trebuchet",
     "Musketman",
     "Temple", "Amphitheater", "Ancestral Hall", "Grand Master's Chapel",
+    "Market", "Lighthouse", "Trader",
 ]
 NUM_BUILD_OPTIONS = len(BUILD_OPTIONS)
 
@@ -184,9 +185,12 @@ def get_valid_build_mask(city, device=None, options=None):
       building; #116 P2, P4) and not already built —
       re-producing one it owns could not change the city's state (CLAUDE.md's
       mask invariant, #51)
-    - units: valid iff the owner `player_can_build` them (their
-      `requires_tech` / `requires_civic`, #116 P2, P4: the opening web is
-      Warrior, Slinger and Settler); the Settler also needs population >= 3
+    - units: valid iff `City.can_produce_unit` -- the owner
+      `player_can_build` them (their `requires_tech` / `requires_civic`,
+      #116 P2, P4: the opening web is Warrior, Slinger and Settler), and the
+      Trader only while its owner's route capacity exceeds its routes plus
+      its standing Traders (#116 P5: a Trader that could never be sent
+      cannot pay off); the Settler also needs population >= 3
 
     The same predicates `City.produce_unit` / `produce_building` apply, so
     an option the mask offers is never refused by production.
@@ -205,7 +209,7 @@ def get_valid_build_mask(city, device=None, options=None):
         if option in City.BUILDING_COSTS:
             valid = option not in city.buildings and city_can_build_building(city, option)
         else:
-            valid = player_can_build(city.player, "unit", option)
+            valid = city.can_produce_unit(option)
             if option == "Settler":
                 valid = valid and city.population >= 3
         if valid:

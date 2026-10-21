@@ -118,11 +118,8 @@ DEFERRED_BUILD_UNITS = {
     # adjacency rule.
     "BatteringRam",
     "SiegeTower",
-    # Trader (#116 P3): its table exists, but a Trader makes a trade route and
-    # routes arrive in P5 (docs/progression_design.md §7.4), so offering it
-    # today would be a build option that cannot pay off. P5 takes it out of
-    # here in the patch that gives it routes.
-    "Trader",
+    # (The Trader sat here from #116 P3 until P5 gave it trade routes; it is a
+    # build option now, offered only while its owner has a free route slot.)
 }
 
 
@@ -865,9 +862,10 @@ class SettlerUnit(Unit):
 
 
 class TraderUnit(Unit):
-    """Civilian that makes and keeps a trade route (#116 P5). Its table and
-    class exist now so a route-less Trader is already captured, not killed,
-    and encoded; it cannot be built until P5 (DEFERRED_BUILD_UNITS)."""
+    """Civilian that makes a trade route (#116 P5): standing on an own city
+    centre it is consumed by `GameEnvironment.establish_trade_route` and
+    reappears there when the route ends (game/trade.py). A civilian by
+    class, so it is captured, not killed."""
 
     def __init__(self, player, coordinates):
         super().__init__(player, coordinates, "Trader")

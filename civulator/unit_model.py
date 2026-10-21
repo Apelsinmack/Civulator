@@ -52,6 +52,12 @@ the three name-keyed constants (`anti_cavalry_bonus`,
 `parse_class_bonuses`. `[gold] upgrade_per_production` / `upgrade_base` price
 an upgrade (`base_upgrade_cost`). This module is the only reader of all of it.
 
+Purchasing (#116 P5, design §7.3): `[gold] purchase_multiplier` and `[faith]
+purchase_multiplier` (`PURCHASE_MULTIPLIER`) price a purchase with that
+resource, and `faith_category(unit)` names the faith-purchase category a
+`faith_purchase` effect unlocks a unit by (`land_military`: every fighting
+combat class). civulator/game/purchasing.py consumes both.
+
 tests/test_unit_config_identity.py is the bit-identity gate for #64 and #116
 P3: it pins every value below, and every existing unit pairing's combat and
 ranged strength, as hardcoded literals, independent of this module and of
@@ -232,8 +238,12 @@ def growth_percent(margin_tenths, bands=None):
 
 
 # Keys a pool table holds beside `base` / `per_pop`, read by this module itself:
-# `[gold]` carries the unit-upgrade price (#116 P3, see base_upgrade_cost).
-_POOL_TABLE_EXTRA_KEYS = {"gold": ("upgrade_per_production", "upgrade_base")}
+# `[gold]` carries the unit-upgrade price (#116 P3, see base_upgrade_cost);
+# `[gold]` and `[faith]` the purchase multiplier (#116 P5, PURCHASE_MULTIPLIER).
+_POOL_TABLE_EXTRA_KEYS = {
+    "gold": ("upgrade_per_production", "upgrade_base", "purchase_multiplier"),
+    "faith": ("purchase_multiplier",),
+}
 
 
 def _pool_yield_table(name):
@@ -396,7 +406,8 @@ def _raw_effects(table, where):
 # no attack; the encoder gives both no class channel.
 COMBAT_CLASSES = ("melee", "anti_cavalry", "ranged", "light_cavalry",
                   "heavy_cavalry", "siege", "support", "civilian")
-# The resources a unit or building may be bought with (consumed by #116 P5).
+# The resources a unit or building may be bought with (#116 P5: each has a
+# `purchase_multiplier` in its pool table and a Player pool of the same name).
 PURCHASE_RESOURCES = ("gold", "faith")
 # Which strength a [combat] class_bonuses row modifies: `Unit.get_combat_strength`
 # reads the STRENGTH_COMBAT rows, `Unit.get_ranged_strength` the STRENGTH_RANGED
@@ -515,7 +526,8 @@ _UNIT_COLUMNS = parse_unit_columns(_UNITS_CFG)
 COMBAT_CLASS = _UNIT_COLUMNS["combat_class"]
 UNIT_ERA = _UNIT_COLUMNS["era"]
 # Gold per turn in int tenths (the treasury's unit), nonzero entries only,
-# like BUILDING_MAINTENANCE. Parsed and stored now; #116 P5 deducts it.
+# like BUILDING_MAINTENANCE; deducted in the owner's economy phase
+# (civulator/game/maintenance.py, #116 P5).
 UNIT_MAINTENANCE = _UNIT_COLUMNS["maintenance"]
 UNIT_PURCHASABLE = _UNIT_COLUMNS["purchasable"]
 UPGRADES_TO = _UNIT_COLUMNS["upgrades_to"]
@@ -523,6 +535,26 @@ UPGRADES_TO = _UNIT_COLUMNS["upgrades_to"]
 # Unit types in the siege class (issue #66): derived from `combat_class`, no
 # longer a boolean column of its own (#116 P3).
 SIEGE_CLASS = frozenset(name for name, cls in COMBAT_CLASS.items() if cls == "siege")
+
+# --- Faith-purchase categories (#116 P5, design §3, §7.3, §10.1) ---
+#
+# The categories a `faith_purchase` effect may unlock (effects.py validates
+# its `categories` against this tuple). `land_military` = every unit of a
+# fighting combat class -- all but `support` and `civilian` (every unit is a
+# land unit here; Civ 6: "land military units").
+FAITH_CATEGORY_LAND_MILITARY = "land_military"
+FAITH_CATEGORIES = (FAITH_CATEGORY_LAND_MILITARY,)
+_LAND_MILITARY_CLASSES = frozenset(c for c in COMBAT_CLASSES if c not in ("support", "civilian"))
+
+
+def faith_category(unit_type):
+    """The faith-purchase category of `unit_type`: FAITH_CATEGORY_LAND_MILITARY
+    for a unit of a fighting class (melee, anti_cavalry, ranged,
+    light_cavalry, heavy_cavalry, siege), None otherwise (and for a name that
+    is no unit). Read by civulator/game/purchasing.py."""
+    if COMBAT_CLASS.get(unit_type) in _LAND_MILITARY_CLASSES:
+        return FAITH_CATEGORY_LAND_MILITARY
+    return None
 
 # `[combat] class_bonuses` (see parse_class_bonuses and config.toml): the
 # class-pair modifiers `Unit.get_combat_strength` / `get_ranged_strength` read.
@@ -559,6 +591,18 @@ for _key, _value in (("upgrade_per_production", UPGRADE_PER_PRODUCTION),
         raise ValueError(f"[gold] {_key} must be a whole number >= 0, got {_value!r}")
 
 
+# --- Purchasing (#116 P5, docs/progression_design.md §7.3) ---
+
+# resource -> how many of it one production point costs (Civ 6: gold 4,
+# faith 2). One entry per PURCHASE_RESOURCES name; whole numbers >= 1.
+PURCHASE_MULTIPLIER = {resource: CFG[resource]["purchase_multiplier"]
+                       for resource in PURCHASE_RESOURCES}
+for _resource, _value in PURCHASE_MULTIPLIER.items():
+    if isinstance(_value, bool) or not isinstance(_value, int) or _value < 1:
+        raise ValueError(f"[{_resource}] purchase_multiplier must be a whole number >= 1, "
+                         f"got {_value!r}")
+
+
 def base_upgrade_cost(unit_type):
     """Whole gold to upgrade a `unit_type` into its `upgrades_to`, before any
     effect: `upgrade_per_production * (target cost - unit cost) + upgrade_base`
@@ -578,11 +622,12 @@ BUILDING_REQUIRES_DISTRICT = _BUILDING_GATES["requires_district"]
 BUILDING_REQUIRES_BUILDING = _BUILDING_GATES["requires_building"]
 BUILDING_REQUIRES_CIVIC = _BUILDING_GATES["requires_civic"]
 BUILDING_REQUIRES_GOVERNMENT_TIER = _BUILDING_GATES["requires_government_tier"]
-# Gold per turn in int tenths (the treasury's unit), nonzero entries only.
-# Parsed and stored now; #116 P5 deducts it.
+# Gold per turn in int tenths (the treasury's unit), nonzero entries only;
+# deducted in the owner's economy phase (civulator/game/maintenance.py, #116 P5).
 BUILDING_MAINTENANCE = _BUILDING_GATES["maintenance"]
 # Resources each building may be bought with (#116 P4, design §7.3): every
-# configured building, default ("gold",), () = never bought. Consumed by P5.
+# configured building, default ("gold",), () = never bought. Read by
+# civulator/game/purchasing.py (#116 P5).
 BUILDING_PURCHASABLE = _BUILDING_GATES["purchasable"]
 # Raw `effects` lists (building -> tuple of dicts), for the buildings that
 # declare one; validated and interpreted only by civulator/effects.py.

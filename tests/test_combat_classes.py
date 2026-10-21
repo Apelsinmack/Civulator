@@ -591,16 +591,19 @@ def test_a_city_produces_every_buildable_unit_as_its_registered_class(unit_type)
     assert type(made[0]) is UNIT_CLASSES[unit_type]
 
 
-def test_the_trader_exists_but_is_deferred_until_routes_exist():
-    """The Trader's table, subclass, slot and capture rules exist (P3), but a
-    Trader makes a trade route and routes arrive in P5, so it is a deferred
-    build unit, not a build option that cannot pay off (#67). P5 takes it out
-    of DEFERRED_BUILD_UNITS and appends it. Breaks if it is offered early."""
+def test_the_trader_is_a_build_option_once_routes_exist():
+    """Restated in #116 P5 (it asserted the P3 deferral): the Trader's
+    table, subclass, slot and capture rules exist since P3, and since P5 it
+    makes trade routes, so it has left DEFERRED_BUILD_UNITS and is appended
+    to BUILD_OPTIONS after every earlier option (#67's append-only
+    contract), gated on its civic. Breaks if it is deferred again, inserted
+    before an older option, or loses its class, slot or civic gate."""
 
     assert "Trader" in unit_model.UNIT_NAMES
     assert unit_model.COMBAT_CLASS["Trader"] == "civilian"
     assert unit_model.UNIT_REQUIRES_CIVIC["Trader"] == "Foreign Trade"
-    assert "Trader" in DEFERRED_BUILD_UNITS and "Trader" not in BUILD_OPTIONS
+    assert "Trader" not in DEFERRED_BUILD_UNITS and "Trader" in BUILD_OPTIONS
+    assert BUILD_OPTIONS.index("Trader") >= len(PRE_P3_BUILD_OPTIONS)
     assert UNIT_SLOT["Trader"] == 1 and MOVEMENT_DOMAIN["Trader"] == "land"
 
 

@@ -90,8 +90,9 @@ KIND_FREE_CIVIC = "free_civic"
 KIND_FREE_POPULATION = "free_population"
 
 # The one consumer of each kind (design §3, "consumed by"). The kinds wired in
-# #116 P4 name their reader; the others are validated now and name the patch
-# whose consumer reads them -- each has a documented stub where it will live.
+# #116 P4 and P5 name their reader; the others are validated now and name the
+# patch whose consumer reads them -- each has a documented stub where it will
+# live.
 CONSUMERS = {
     KIND_CITY_YIELD: "game/yields.py city_yield (food and production reach "
                      "calculate_food / calculate_production through it)",
@@ -105,11 +106,12 @@ CONSUMERS = {
     KIND_HOUSING_IF_DISTRICTS: "game/housing.py housing",
     KIND_HOUSING_WITH_BUILDING: "game/housing.py housing",
     KIND_ENABLES: "effects.rule_enabled (flanking: Unit.get_combat_strength)",
-    KIND_UNIT_MAINTENANCE_DELTA: "#116 P5: maintenance (GameEnvironment._unit_maintenance_delta stub)",
-    KIND_PURCHASE_PERCENT: "#116 P5: purchase_cost (GameEnvironment._purchase_percent stub)",
-    KIND_FAITH_PURCHASE: "#116 P5: can_purchase (GameEnvironment._faith_purchase_categories stub)",
-    KIND_TRADE_ROUTE_CAPACITY: "#116 P5: route_capacity (GameEnvironment._route_capacity_bonus stub)",
-    KIND_ROUTE_YIELD: "#116 P5: the route term of city_yield (game/yields.py _route_yield stub)",
+    KIND_UNIT_MAINTENANCE_DELTA: "game/maintenance.py unit_maintenance_delta (the economy "
+                                 "phase's maintenance and bankruptcy)",
+    KIND_PURCHASE_PERCENT: "game/purchasing.py purchase_cost (_purchase_percent)",
+    KIND_FAITH_PURCHASE: "game/purchasing.py faith_purchase_categories (can_purchase)",
+    KIND_TRADE_ROUTE_CAPACITY: "game/trade.py route_capacity",
+    KIND_ROUTE_YIELD: "game/trade.py pair_yields (the route term of game/yields.py city_yield)",
     KIND_LOYALTY: "#116 P7: loyalty_sources (game/yields.py _loyalty_sources stub)",
     KIND_GROWTH_PERCENT: "#116 P6: the growth bucket (City._growth_percent stub)",
     KIND_FREE_UNITS: "#116 P6: complete_district one-shots (GameEnvironment._one_shot_effects stub)",
@@ -118,10 +120,9 @@ CONSUMERS = {
     KIND_FREE_POPULATION: "#116 P6: complete_district one-shots (GameEnvironment._one_shot_effects stub)",
 }
 KINDS = tuple(CONSUMERS)
-# Kinds validated in P4 whose consumer lands later (the stubs above).
+# Kinds validated since P4 whose consumer lands later (the stubs above).
 DEFERRED_KINDS = frozenset({
-    KIND_UNIT_MAINTENANCE_DELTA, KIND_PURCHASE_PERCENT, KIND_FAITH_PURCHASE,
-    KIND_TRADE_ROUTE_CAPACITY, KIND_ROUTE_YIELD, KIND_LOYALTY, KIND_GROWTH_PERCENT,
+    KIND_LOYALTY, KIND_GROWTH_PERCENT,
     KIND_FREE_UNITS, KIND_FREE_TECH, KIND_FREE_CIVIC, KIND_FREE_POPULATION,
 })
 # One-shot kinds fire once when a wonder completes (design §3, §9.3), so they
@@ -142,8 +143,10 @@ COMBAT_STRENGTH_CLASSES = tuple(c for c in unit_model.COMBAT_CLASSES
                                 if c not in ("support", "civilian"))
 _APPLIES_TO = (*COMBAT_STRENGTH_CLASSES, APPLIES_ALL, APPLIES_CITY)
 
-# Categories a `faith_purchase` effect unlocks (consumed by #116 P5).
-FAITH_PURCHASE_CATEGORIES = ("land_military",)
+# Categories a `faith_purchase` effect unlocks, defined beside the unit
+# classes they cover (unit_model.faith_category; consumed by
+# game/purchasing.py, #116 P5).
+FAITH_PURCHASE_CATEGORIES = unit_model.FAITH_CATEGORIES
 
 # What a production item is, for a `production_percent` target.
 ITEM_UNIT = "unit"

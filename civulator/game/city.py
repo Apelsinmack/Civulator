@@ -28,6 +28,7 @@ from .availability import city_can_build_building, player_can_build
 from .culture import culture
 from .districts import district_spec, district_yields
 from .housing import housing
+from .trade import TRADER_UNIT, end_routes_touching, trader_slot_free
 from .yields import city_yield
 from .unit import (
     Unit, WarriorUnit, SlingerUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
@@ -137,11 +138,21 @@ class City:
         """Range of the city's ranged strike (`[city] ranged_range`)."""
         return CITY_RANGED_RANGE
 
+    def can_produce_unit(self, unit_type):
+        """Whether this city may start (or buy) a `unit_type`: its owner
+        `player_can_build` it (#116 P2, P4), and -- for the trade unit
+        (`[trade] unit`) -- the owner has a route slot no route or standing
+        Trader fills (`trade.trader_slot_free`, #116 P5: a Trader that could
+        never be sent is an option that cannot pay off). The one unit
+        predicate of `produce_unit`, the build mask and `purchase`."""
+        if not player_can_build(self.player, "unit", unit_type):
+            return False
+        return unit_type != TRADER_UNIT or trader_slot_free(self.player)
+
     def produce_unit(self, unit_type):
         """Start producing a unit. Refused (False, production unchanged)
-        unless the owner may build it: a configured unit whose
-        `requires_tech` the owner knows (#116 P2, `player_can_build`)."""
-        if not player_can_build(self.player, "unit", unit_type):
+        unless `can_produce_unit` holds."""
+        if not self.can_produce_unit(unit_type):
             return False
         self.current_production = {"type": "unit", "unit_type": unit_type}
         return True
@@ -442,12 +453,29 @@ class City:
         # All tiles occupied or unreachable — defer to next turn
         return False
 
+    def place_or_queue_unit(self, unit_type, game_env):
+        """Place a `unit_type` the owner is owed here -- a purchased unit,
+        a returning Trader (#116 P5) -- through `complete_unit_production`;
+        if it cannot be placed, append `(city_id, unit_type)` to the owner's
+        `queued_units`, which `Player.start_turn` places later. Returns True
+        if the unit stands on the board now."""
+        if self.complete_unit_production(unit_type, game_env):
+            return True
+        self.player.queued_units.append((self.city_id, unit_type))
+        return False
+
     def set_owner(self, new_player):
-        """Transfer city ownership to a new player (the one capture hook).
+        """Transfer city ownership to a new player -- the one place a city
+        changes hands (`GameEnvironment._capture_city` calls it).
 
         Borders design §2.3: the city keeps all its tiles and they change
         player with it — `Map.city_changed_player` moves the per-player tile
         counters and bumps territory_epoch. Culture pools go along untouched.
+        #116 P5 (design "v2 fixes", flips and captures): the old owner's
+        queued units for this city are dropped, and every trade route of any
+        player that starts or ends here ends (`trade.end_routes_touching`):
+        a route whose origin its owner still holds returns its Trader there,
+        one whose origin was this city is lost.
         """
         old_player = self.player
         if old_player:
@@ -458,6 +486,11 @@ class City:
         game_env.map.city_changed_player(
             self, old_player.player_index if old_player else None
         )
+        if old_player is not None:
+            old_player.queued_units = [
+                entry for entry in old_player.queued_units if entry[0] != self.city_id
+            ]
+        end_routes_touching(game_env, self.city_id)
         self.assign_tiles(game_env)
 
 
