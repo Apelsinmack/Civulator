@@ -8,6 +8,7 @@ import torch.nn.functional as F
 
 from .networks import horizontal_wrap_padding
 from .replay_memory import ReplayMemory, Transition
+from ..game.availability import city_can_build_building, player_can_build
 from ..game.unit import Unit
 from ..game.city import City
 from ..torch_env import resolve_device
@@ -20,15 +21,19 @@ from ..torch_env import resolve_device
 # is the gate for that, and for the converse — a statted unit is either here or
 # named in game/unit.py's DEFERRED_BUILD_UNITS with a reason (issue #67).
 #
-# No availability gate beyond cost: research does not exist yet (#41/#76), so
-# every unit option is always a legal, state-changing action and the mask
-# invariant (CLAUDE.md) holds.
+# Availability (#116 P2): an option is offered only when the city could start
+# it -- the owner's research and, for buildings, the required district and
+# building (get_valid_build_mask) -- so the mask invariant (CLAUDE.md) holds:
+# an offered option always changes the city's production.
 #
 # Changing this list changes the BuildNetwork output width and therefore
-# invalidates previously saved build-agent weights.
+# invalidates previously saved build-agent weights. APPEND ONLY (#67): the
+# #116 P2 buildings follow the v0.7 list.
 BUILD_OPTIONS = [
     "Warrior", "Spearman", "Archer", "Horseman", "Catapult",
     "Settler", "Granary", "Slinger", "Swordsman", "Walls",
+    "Monument", "Library", "University", "Shrine", "Barracks",
+    "Medieval Walls", "Workshop",
 ]
 NUM_BUILD_OPTIONS = len(BUILD_OPTIONS)
 
@@ -166,11 +171,17 @@ def get_valid_build_mask(city, device=None, options=None):
     Driven by BUILD_OPTIONS rather than by hardcoded indices, so a new option
     is masked by the rule that applies to it and never by position:
 
-    - buildings (keys of City.BUILDING_COSTS): valid unless already built —
+    - buildings (keys of City.BUILDING_COSTS): valid iff
+      `city_can_build_building` (the owner's research, a complete required
+      district, an owned required building; #116 P2) and not already built —
       re-producing one it owns could not change the city's state (CLAUDE.md's
       mask invariant, #51)
-    - Settler: requires population >= 3
-    - every other unit: always valid, there is no research gate yet (#41/#76)
+    - units: valid iff the owner `player_can_build` them (their
+      `requires_tech`, #116 P2: the opening web is Warrior, Slinger and
+      Settler); the Settler also needs population >= 3
+
+    The same predicates `City.produce_unit` / `produce_building` apply, so
+    an option the mask offers is never refused by production.
 
     Returns:
         [len(options)] tensor, defaulting to NUM_BUILD_OPTIONS wide
@@ -184,11 +195,11 @@ def get_valid_build_mask(city, device=None, options=None):
 
     for idx, option in enumerate(options):
         if option in City.BUILDING_COSTS:
-            valid = option not in city.buildings
-        elif option == "Settler":
-            valid = city.population >= 3
+            valid = option not in city.buildings and city_can_build_building(city, option)
         else:
-            valid = True
+            valid = player_can_build(city.player, "unit", option)
+            if option == "Settler":
+                valid = valid and city.population >= 3
         if valid:
             mask[idx] = 1.0
 

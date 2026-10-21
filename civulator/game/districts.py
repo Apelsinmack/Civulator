@@ -1,5 +1,7 @@
 """Districts (issue #86, docs/districts_design.md): the data record, the one
-adjacency computation, the one placement check and the cost rule.
+adjacency computation, the one placement check and the cost rule. Since #116
+P2 the placement check also asks `availability.player_can_build` (a
+district's `requires_tech`) and the cost escalates with `game_progress`.
 
 Pure: reads the map, the config registry (district_model) and the city;
 mutates nothing. The only writers of `Tile.district` / `City.districts` are
@@ -22,7 +24,10 @@ from ..district_model import (
     POPULATION_PER_DISTRICT,
     REMOVABLE_FEATURES,
 )
+from ..research_model import TECHS
 from ..terrain_model import matches, resource_class
+# A module reference (availability reads district_spec back from here).
+from . import availability
 from . import territory
 
 # Reportable yield names; "none" is not a yield.
@@ -152,6 +157,9 @@ def can_place_district(city, district_type, coords):
     spec = DISTRICTS.get(district_type)
     if spec is None or city.city_id is None:
         return False
+    # The owner's research (#116 P2): an unresearched district is never placeable.
+    if not availability.player_can_build(city.player, "district", district_type):
+        return False
     game_env = city.player.game_env
     game_map = game_env.map
     tile = game_map.get_tile(coords)
@@ -219,9 +227,10 @@ def can_place_district(city, district_type, coords):
 
 
 def game_progress(player):
-    """The player's progress through the tech/civic tree as a fraction
-    (num, den). (0, 1) until a tech tree exists (#90): ACCEPTED GAP."""
-    return (0, 1)
+    """The player's progress through the trees as a fraction (num, den):
+    techs known over techs in the tree (#116 P2, design §4.3, the #86 hook).
+    #116 P4 makes it the larger of this and the civic fraction."""
+    return (len(player.techs), len(TECHS))
 
 
 def _completed_discounted(player):

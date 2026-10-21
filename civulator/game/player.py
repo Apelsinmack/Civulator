@@ -35,9 +35,12 @@ class Player:
         self.culture = 0
         self.gold = 0  # the treasury
         self.faith = 0
+        # Research (#116 P2): completed techs in completion order (membership
+        # tests only) and the tech the science pool is spent on (None: the
+        # engine default picks one in GameEnvironment.resolve_research).
+        self.techs = []
+        self.current_tech = None
         # Declared for later #116 patches; nothing reads them yet.
-        self.techs = []          # completed techs, in completion order (P2)
-        self.current_tech = None  # P2
         self.civics = []         # completed civics, in completion order (P4)
         self.current_civic = None  # P4
         self.government = None   # P4
@@ -45,7 +48,9 @@ class Player:
         self.routes = []         # trade routes from this player's cities (P5)
 
     def start_turn(self):
-        """Process the start of a player's turn."""
+        """Process the start of a player's turn: exploration -> unit reset and
+        heal -> cities -> economy phase (#116: research; later patches add
+        their steps inside it) -> city ranged strike -> queued units."""
         self.game_env.update_exploration(self.player_index)
 
         for unit in self.units:
@@ -54,6 +59,9 @@ class Player:
 
         for city in self.cities:
             city.process_turn(self.game_env)
+
+        # After every city has accrued this turn's yields (#116 P2).
+        self.game_env.economy_phase(self)
 
         # A city with Walls shoots once at the start of its owner's turn
         # (issue #84). Automatic rather than an order, because the action

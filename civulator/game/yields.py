@@ -8,7 +8,10 @@ Science, culture, gold and faith are integer TENTHS scaled by
 (loyalty scales production at its consumer, P7). The terms:
 
 - science/culture/gold/faith: `[<name>] base + per_pop * population`;
-  food/production: the city centre plus the worked tiles (`Tile.yields`);
+  food/production: the city centre plus the worked tiles (`Tile.yields`,
+  which includes their improvements' food and production since #116 P2);
+- gold also: the improvement gold of the centre and the worked tiles
+  (`Tile.gold`, #116 P2) -- the one place tile gold is summed;
 - the `<name>` column of each of the city's buildings (`[buildings.*]`);
 - the `<name>` column of each of its complete districts (`[districts.*]`);
 - `10 * district_yields(city, percent_by_district)[name]`, the adjacency of
@@ -69,6 +72,18 @@ def _tile_yield(city, name):
     return total
 
 
+def _tile_gold_tenths(city):
+    """Tenths of gold from the improvements on the centre and the worked
+    tiles (`Tile.gold`, whole points)."""
+    game_map = city.player.game_env.map
+    total = game_map.get_tile(city.coordinates).gold
+    for pos in city.worked_tiles:
+        tile = game_map.get_tile(pos)
+        if tile:
+            total += tile.gold
+    return 10 * total
+
+
 def _source_tenths(city, name):
     """Every term the six yields share, in tenths: building and complete-
     district columns, district adjacency, effects and routes."""
@@ -89,5 +104,7 @@ def city_yield(city, name):
     if name in YIELD_BASE:
         total = (YIELD_BASE[name] + YIELD_PER_POP[name] * city.population
                  + _source_tenths(city, name))
+        if name == "gold":  # the one pool yield tiles produce (Tile.gold)
+            total += _tile_gold_tenths(city)
         return total * loyalty_percent(city) // 100
     raise ValueError(f"city_yield: unknown yield {name!r}, expected one of {YIELD_COLUMNS}")

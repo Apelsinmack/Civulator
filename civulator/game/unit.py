@@ -746,8 +746,12 @@ class WorkerUnit(Unit):
         super().__init__(player, coordinates, "Worker")
 
     def build_improvement(self, improvement_type, game_env):
-        """Build an improvement on the current tile."""
-        if not game_env.can_build_improvement_at(self.coordinates, improvement_type):
+        """Build an improvement on the current tile, if the owner may: a tile
+        of one of its cities, the improvement's tech known, and the tile
+        predicate (`GameEnvironment.can_player_build_improvement_at`, #116 P2)."""
+        if not game_env.can_player_build_improvement_at(
+            self.player, self.coordinates, improvement_type
+        ):
             return False
 
         game_env.build_improvement(self.coordinates, improvement_type)

@@ -13,9 +13,11 @@ import pytest
 
 from civulator import unit_model
 from civulator.agents.build_agent import BUILD_OPTIONS, get_valid_build_mask
+from civulator.game.availability import required_tech
 from civulator.game.city import City
 from civulator.game.unit import ArcherUnit, CatapultUnit, WarriorUnit
 
+from conftest import grant
 from test_combat_range import make_flat_env, place
 
 
@@ -130,11 +132,16 @@ def test_walls_is_a_build_option():
 
 def test_the_mask_offers_walls_until_they_are_built():
     """Mask invariant (CLAUDE.md, #51): once a city owns Walls, producing them
-    again could not change its state, so the option must disappear."""
+    again could not change its state, so the option must disappear. Since
+    #116 P2 the Walls are offered only once their tech (Masonry) is known."""
     env = make_flat_env()
     city = make_city(env, (3, 3))
     idx = BUILD_OPTIONS.index("Walls")
 
+    tech = required_tech("building", "Walls")
+    if tech is not None:
+        assert get_valid_build_mask(city)[idx] == 0.0
+        grant(city.player, tech)
     assert get_valid_build_mask(city)[idx] == 1.0
 
     city.buildings.append("Walls")
@@ -149,7 +156,10 @@ def test_a_city_builds_walls_and_becomes_harder_to_take():
     city.assign_tiles(env)
     before = city.get_combat_strength()
 
-    city.produce_building("Walls")
+    tech = required_tech("building", "Walls")
+    if tech is not None:
+        grant(city.player, tech)  # #116 P2: the Walls need Masonry
+    assert city.produce_building("Walls") is True
     city.production = City.BUILDING_COSTS["Walls"]
     city.process_turn(env)
 
