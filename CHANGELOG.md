@@ -526,6 +526,169 @@ arrive with the Lighthouse in P5. Governor titles, legacy cards, amenities,
 the Audience Chamber and Warlord's Throne are not modelled. Every
 deferred effect kind above is validated and dormant until its patch.
 
+### Gold: maintenance, bankruptcy, purchasing, trade routes (#116 P5)
+
+**Rule change, effect NOT yet measured.** Spec: `docs/progression_design.md`
+§3 (the five kinds consumed here), §6.2 (Market, Lighthouse), §7, §10.1, §13
+and "v2 fixes" (turn order; flips, captures and `set_owner`; upgrades and
+bankruptcy). Civ 6 facts: `docs/civ6_progression_reference.md` §7 (Market,
+Lighthouse), §8 (gold), §10 (trade routes) and §13 (faith purchasing),
+Gathering Storm values where the wiki splits them.
+
+- **Upkeep is paid.** The economy phase now opens with maintenance: each own
+  turn the treasury pays, in tenths, every unit's `maintenance` column (the
+  Civ 6 GS values listed under P3: Warrior, Slinger, Settler, Worker, Trader
+  0 up to Knight and Musketman 4), every building's (Civ 6: Library,
+  Shrine, Amphitheater, Barracks, Workshop, Ancestral Hall 1; University,
+  Temple, Grand Master's Chapel 2; Walls, Monument, Granary, Market,
+  Lighthouse 0) and every COMPLETE district's (Civ 6: Campus, Theater
+  Square, Holy Site, Industrial Zone, Encampment, Entertainment Complex 1;
+  Commercial Hub, Harbor, Government Plaza, Aqueduct 0 -- the gold
+  districts pay for themselves; a placed, unfinished district pays
+  nothing). `unit_maintenance_delta` effects are summed into one whole-gold
+  change per unit, and no unit's upkeep falls below 0 (Conscription: -1
+  gold per unit, so the 1-gold units become free). New per-player stat
+  `gold_maintenance` (tenths actually paid). Civ 6: maintenance is paid
+  from the treasury every turn (Gold page).
+- **Bankruptcy disbands units.** If the treasury is negative after upkeep,
+  units are disbanded one at a time -- the highest upkeep first, the
+  lowest index in `Player.units` ("oldest", creation order) among equals --
+  each removed through `delete_unit`, until the treasury is >= 0 or no unit
+  with upkeep is left; then the treasury is floored at 0, so it never ends
+  an economy phase negative. A disbanded unit does not pay that turn's
+  upkeep (its upkeep goes back to the treasury) and nothing else is
+  refunded. New stat `units_disbanded`. Civ 6: "if the treasury becomes
+  empty, units disband automatically until the balance is restored" (Unit
+  page); which units go first is not stated, so this order is the
+  design's (§7.2). Buildings and districts are never sold.
+- **Purchasing.** `GameEnvironment.purchase(city, kind, name, resource)`
+  lets the current player buy a unit or a building with gold or faith in
+  one of its cities: the price is `production_cost * [<resource>]
+  purchase_multiplier` (new keys: `[gold]` 4, `[faith]` 2 -- Civ 6: gold is
+  4x production, faith 2x), scaled by the summed `purchase_percent` effects
+  for that resource (Theocracy: faith -15 %), floored at 0. Refused, with
+  nothing changed, unless the item lists the resource in its `purchasable`
+  column (default gold; Shrine and Temple gold or faith; Walls, Medieval
+  Walls, Palace and the Government Plaza buildings never -- Civ 6) or it is
+  a land military unit (every unit of a fighting combat class:
+  `unit_model.faith_category`) bought with faith where a `faith_purchase`
+  effect unlocks the category (Theocracy, the Grand Master's Chapel); the
+  city could start it (the build predicates: tech, civic, government tier,
+  district, building chain; a building not already owned; the Trader rule
+  below) and the pool covers it. A bought unit is placed by the same
+  `complete_unit_production` as a built one (queued when the city has no
+  room); a bought building is appended exactly as a built one, and if the
+  city was producing it the production item is cleared (the production
+  pool is kept). New stats `gold_spent_purchases`, `faith_spent_purchases`
+  (tenths).
+- **The Grand Master's Chapel unlocks faith purchases in every city** of
+  its owner: its `faith_purchase` effect is now `scope = "player"` (Civ 6:
+  empire-wide; P4 left it city-scoped and named the one-word fix).
+- **Trade routes** (`civulator/game/trade.py`, the only interpreter of the
+  new `[trade]` table). A Trader standing on one of its owner's city
+  centres (the origin) is consumed by
+  `GameEnvironment.establish_trade_route(trader, destination)` to open a
+  route to any other city, of any owner, within `[trade] range = 15` hexes
+  (canonical wrap distance; Civ 6's land range), when no route of this
+  player already links the two cities in either direction and a route slot
+  is free. Capacity (`route_capacity`) = the `trade_route_capacity` effects
+  in force: the Foreign Trade civic's +1 (Civ 6), plus one per city holding
+  a Market or a Lighthouse -- a city holding both still adds 1 (Civ 6, R&F
+  onward), the largest building capacity per city -- plus any later
+  wonder's. A route lasts `[trade] duration_turns = 21` of its owner's
+  turns (Civ 6's minimum duration on Standard speed) and then ends, its
+  Trader reappearing at the origin. Every turn it yields its ORIGIN, through
+  `city_yield`, the `[trade.domestic]` (destination of the same owner) or
+  `[trade.international]` entries of the destination's centre and of each
+  of its complete specialty districts -- Civ 6's destination-district
+  table: City Center 1 food 1 production / 3 gold; Campus, Holy Site,
+  Theater Square 1 food / 1 science, 1 faith, 1 culture; Entertainment
+  Complex 1 food / 1 food; Encampment, Industrial Zone 1 production / 1
+  production; Commercial Hub, Harbor 1 production / 3 gold; Government
+  Plaza 1 food 1 production / 2 gold (domestic / international) -- plus the
+  `route_yield` effects in force (Caravansaries +2 gold per route, Trade
+  Confederation +1 culture +1 science per international route). Food and
+  production from routes are the first non-tile source of either. The
+  destination's owner gets nothing (Civ 6). A name in a `[trade.*]` table
+  that is no district and not "City Center" raises at load. New stat
+  `trade_routes_established`.
+- **Routes end when a city changes hands or is removed.** `City.set_owner`
+  (every capture) and `remove_city` end every route, of any player, that
+  starts or ends at the city: a player who still holds a route's origin
+  gets its Trader back there; a route whose origin was the city is simply
+  removed (its Trader is lost). Civ 6 cancels routes when a city becomes a
+  Free City and returns Traders on war; there is no war here.
+- **Queued units are back.** `Player.queued_units` holds `(city_id,
+  unit_type)` entries for a unit owed but not placeable -- a purchase or a
+  returning Trader in a city with no free tile; `Player.start_turn` places
+  them at the end of the turn start through the city's
+  `complete_unit_production`, keeps the ones that still cannot be placed,
+  and drops those whose city the player no longer holds; `City.set_owner`
+  drops the old owner's entries for the city. (Production that cannot place
+  its unit still waits in the city, as before.)
+- **Two buildings,** Civ 6's costs and yields: Market (120 production, no
+  upkeep, +3 gold, +1 route capacity; Currency, a Commercial Hub) and
+  Lighthouse (120, no upkeep, +1 food, +1 gold, +1 housing, +1 route
+  capacity; Celestial Navigation, a Harbor). The wiki gives neither an
+  upkeep. Veterancy's +30 % toward Harbor buildings now reaches the
+  Lighthouse.
+- **The Trader is buildable**, offered while a route slot is free: the
+  build mask, `produce_unit` and `purchase` offer or accept a Trader only
+  when the owner's route capacity exceeds its running routes plus its
+  standing Traders (`City.can_produce_unit`, one predicate for all three),
+  so a Trader that could never be sent is never an option (#67, #51). Civ
+  6: "when Traders equal capacity you cannot build more". Build options
+  appended, the #67 contract: Market, Lighthouse, Trader. The Trader left
+  `DEFERRED_BUILD_UNITS`; the trade unit is named once, as `[trade] unit`.
+- **Engine defaults** (design §13 as amended by v2; no agent chooses yet,
+  #99): `defaults.default_trade`, each economy phase after route expiry: in
+  `Player.units` order, a Trader on an own city centre with all its
+  movement and not having acted is sent, while a slot is free, to the
+  eligible destination whose route would yield the origin the most (every
+  yield counted alike), ties to the lower city id; a Trader anywhere else
+  takes one step, through `Unit.move`, to the adjacent tile strictly nearer
+  the nearest own city centre (ties by coordinates; never onto a foreign
+  unit, never `path_finder`). A returned Trader is therefore sent out again
+  in the same phase.
+- **Engine.** The economy phase order is now maintenance, bankruptcy,
+  research, civics, the government and loadout defaults, route expiry and
+  Trader return, the Trader default (design "v2 fixes", turn order; the
+  Worker default follows in P8). `Player.routes` (`trade.TradeRoute`
+  records) and `queued_units` are declared in `Player.reset_state`. The
+  P4 hook stubs in `environment.py` are replaced by the real consumers:
+  `unit_maintenance_delta` (`game/maintenance.py`), `purchase_percent` and
+  `faith_purchase` (`game/purchasing.py`), `trade_route_capacity` and
+  `route_yield` (`game/trade.py`). The smoke script logs treasury, upkeep
+  paid, units disbanded, routes opened and running, and purchases per
+  player; one seeded run (`python scripts/smoke_random_selfplay.py --seed
+  4242`, duel, 250 rounds, random valid actions, 1 game) opened 2 and 6
+  routes (none by the round-50 checkpoint, 2 each by round 100), paid 674
+  and 1,023 gold of upkeep, disbanded no unit (treasuries 985 and 897 gold
+  at the end), bought nothing (no default buys), and had no route running
+  at the round-200 and round-250 checkpoints (log checkpoints at rounds 50,
+  100, 150, 200 and 250).
+
+**What agents see.** No encoder channel reads the treasury, faith, upkeep or
+routes (#99, #111): routes reach agents only through their origin's yields
+(the build state's turns-to-complete channels read `calculate_production`,
+which now includes route production), and upkeep only through which units
+survive. At full width the build head has three more outputs and the build
+state three more channels; an archived narrower head is loaded at its own
+width and does not see them.
+
+**Accepted gaps.** No engine default and no agent action buys or upgrades
+(#99): `purchase` and `upgrade_unit` are dormant in play, like `swap_tile`.
+No plunder, no route path on the map, no Trading Posts and no "Switch City";
+routes need neither a discovered destination nor a land path. A route lasts
+21 turns flat: no round-trip arithmetic and no era extension (Civ 6 GS adds
+10 turns from the Medieval world era). The destination's owner gets nothing
+(as in Civ 6). A bought unit can act the turn it is bought (Civ 6: no
+movement until next turn) and a city may buy a unit while a unit of its
+class stands on the centre (it is placed beside it or queued; Civ 6 refuses
+the purchase). Unit and Trader prices do not rise with each purchase or
+with tech (Civ 6's progressive Settler, Builder and Trader costs are not
+modelled). Bankruptcy has no amenity penalty (no amenities, #96).
+
 ---
 
 ## v0.7.0 — Borders and culture; city combat and the other post-0.6.2 rule changes (2026-10-11)
