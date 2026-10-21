@@ -44,14 +44,23 @@ pending):
 - Output: per-side win/loss/draw totals, the same split BY WHICH SEAT A
   HELD (first-move-advantage check), mean/min/max game length in turns, and
   a JSON summary (`stats/eval_<Atag>_vs_<Btag>_<timestamp>.json`) with the
-  full per-game result list (seed, seats, winner, turns, truncated) plus both
-  weight files' manifest key fields (game_version, git_commit, date).
+  full per-game result list (seed, seats, winner, victory, turns, truncated)
+  plus both weight files' manifest key fields (game_version, git_commit,
+  date).
+- Victory (#116 P9): each game's `victory` is how it ended, read from
+  `civulator.game.victory.determine_outcome` -- the engine's one verdict, never
+  re-derived here -- `"elimination"`, `"domination"` (a player holds every
+  Palace), `"score"` (the turn-cap score) or `"draw"` (a tied top score at the
+  cap), and null for a truncated game. The summary records the engine's
+  `game_version` and each side's weights' `weights_game_version` beside it:
+  weights saved under an older rules epoch play today's rules (0.7 weights play
+  0.8), and the record must say so.
 - Truncation (issue #51): a game stopped by the STEP_LIMIT guard instead of
   ending on its own is NOT a result. It is flagged per game as
   `truncated: true` and counted in the summary's `truncated_games`. Such
-  games are also in `totals["draws"]` — determine_winner has no other verdict
-  for a game cut off mid-play — so any reading of the run must subtract them
-  first. Summaries written before #51 have neither field; treat a missing
+  games are also in `totals["draws"]` — the verdict has no winner for a game
+  cut off mid-play (its `victory` is null, never "draw") — so any reading of
+  the run must subtract them first. Summaries written before #51 have neither field; treat a missing
   `truncated` as false and consult the run log's `Step limit exceeded` lines.
 - Rules epochs (issue #78 amendment, ratified by Erik 2026-09-06): a win rate
   is comparable ONLY within a rules epoch. Freezing a reference opponent's
@@ -112,13 +121,15 @@ from civulator.agents import DQNAgent, BuildAgent, ReplayMemory, get_encoder
 from civulator.agents.action_space import decode_action, end_turn_index
 from civulator.agents.networks import conv_channels_from_state_dict
 from civulator.agents.build_agent import BUILD_OPTIONS
+from civulator import __version__ as GAME_VERSION
 from civulator.config import CFG
 from civulator.game import GameEnvironment, resolve_size_and_players
 from civulator.game.city import City
 from civulator.game.unit import NUM_UNIT_SLOTS
+from civulator.game.victory import determine_outcome
 from civulator.meta import load_weights
 from civulator.torch_env import resolve_device
-from civulator.training.trainer import _seeded_reset, determine_winner
+from civulator.training.trainer import _seeded_reset
 
 # --- Pinned world/architecture config (protocol v1) -------------------------
 # Same pins run_baseline.py trains under (see that script's module docstring
@@ -138,7 +149,7 @@ DEFAULT_EPSILON = 0.05
 
 # Safety net for a game that will not end on its own. Reaching it is a bug
 # (issue #51), not a legitimate outcome, so a game that hits it is flagged
-# `truncated` rather than quietly handed to determine_winner. A module-level
+# `truncated` rather than quietly handed to the verdict. A module-level
 # constant so tests can lower it; mirrors trainer.STEP_LIMIT.
 STEP_LIMIT = 10000
 
@@ -221,6 +232,12 @@ def _manifest_summary(manifest):
     return {k: manifest[k] for k in ("game_version", "git_commit", "date") if k in manifest}
 
 
+def _weights_game_version(manifest):
+    """The `game_version` a weights file's manifest records, or None (a file
+    saved before artifact manifests, or a manifest without one)."""
+    return manifest.get("game_version") if manifest else None
+
+
 def _play_game(env, agents_by_seat, build_agents_by_seat, epsilon):
     """Play one episode to completion on `env` (already reset onto the
     world this game should use). Mirrors `civulator.training.trainer.
@@ -236,9 +253,11 @@ def _play_game(env, agents_by_seat, build_agents_by_seat, epsilon):
             section).
 
     Returns:
-        (winner_seat, turns, builds_by_seat, combat_by_seat, truncated):
-        winner_seat is a player_index or None (draw, `determine_winner`'s
-        own contract); turns is `env.turn_counter` when the episode ended;
+        (winner_seat, victory, turns, builds_by_seat, combat_by_seat,
+        truncated): winner_seat is a player_index or None (a draw), and
+        victory how the game ended -- `determine_outcome`'s own pair, the
+        engine's one verdict -- or None for a truncated game; turns is
+        `env.turn_counter` when the episode ended;
         builds_by_seat maps each player_index to {build_option: count} for
         this game (what each side actually produced -- surfaced in the run
         summary's build_distribution); combat_by_seat is the engine's
@@ -247,9 +266,10 @@ def _play_game(env, agents_by_seat, build_agents_by_seat, epsilon):
 
         Truncation must be reported, never left implicit (issue #51): a
         livelocked game breaks out of the loop with both players alive and
-        below the turn cap, so `determine_winner` returns None and the game
-        is indistinguishable from a genuine draw in the run record. 50 of
-        200 games in one #48 evaluation were such phantom draws.
+        below the turn cap, so the verdict has no winner and the game is
+        indistinguishable from a genuine draw in the run record (its
+        `victory` is None, never "draw"). 50 of 200 games in one #48
+        evaluation were such phantom draws.
     """
     end_turn_idx = end_turn_index(env.n, env.m)
     last_player_index = -1
@@ -309,11 +329,13 @@ def _play_game(env, agents_by_seat, build_agents_by_seat, epsilon):
                 print(f"AttributeError during step: {e}")
                 done = env.done
 
-    winner = determine_winner(env)
+    winner, victory = determine_outcome(env)
+    if truncated:
+        winner, victory = None, None   # a cut-off game has no verdict (#51)
     # Snapshot the engine's per-player episode counters (kills, losses,
     # damage, cities founded/captured, civilians captured) for aggregation.
     combat_by_seat = {seat: env.episode_stats_snapshot(seat) for seat in agents_by_seat}
-    return winner, env.turn_counter, builds_by_seat, combat_by_seat, truncated
+    return winner, victory, env.turn_counter, builds_by_seat, combat_by_seat, truncated
 
 
 def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
@@ -393,8 +415,8 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
         build_agents_by_seat = {a_seat: a_builds[a_seat], b_seat: b_builds[b_seat]}
 
         with torch.no_grad():
-            winner_seat, turns, builds_by_seat, combat_by_seat, truncated = _play_game(
-                env, agents_by_seat, build_agents_by_seat, epsilon)
+            (winner_seat, victory, turns, builds_by_seat, combat_by_seat,
+             truncated) = _play_game(env, agents_by_seat, build_agents_by_seat, epsilon)
 
         for side, seat in (("a", a_seat), ("b", b_seat)):
             for option, count in builds_by_seat[seat].items():
@@ -419,9 +441,10 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
         if truncated:
             truncated_games += 1
 
-        # `truncated` is a new field (issue #51); readers of older summaries
-        # (scripts/watch.py) must keep working, so nothing else in the entry
-        # moved and consumers should treat a missing key as False.
+        # `truncated` (issue #51) and `victory` (#116 P9) are later fields;
+        # readers of older summaries (scripts/watch.py) must keep working, so
+        # nothing else in the entry moved and consumers treat a missing key as
+        # False / unknown.
         games_detail.append({
             "game_index": i,
             "seed": episode_seed,
@@ -431,12 +454,13 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
             "outcome": outcome,
             "turns": turns,
             "truncated": truncated,
+            "victory": victory,
         })
 
         if verbose:
             print(
                 f"[eval] game {i + 1}/{games} seed={episode_seed} "
-                f"A@seat{a_seat} outcome={outcome} turns={turns}"
+                f"A@seat{a_seat} outcome={outcome} victory={victory} turns={turns}"
                 + (" TRUNCATED" if truncated else "")
             )
 
@@ -460,9 +484,9 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
         "totals": totals,
         # Games cut off by the step-limit guard rather than ending on their
         # own (issue #51). They are ALSO counted in totals["draws"] —
-        # determine_winner has no other verdict for a game stopped mid-play
-        # — so a nonzero value here means that many "draws" are not results
-        # and the run should be recounted without them.
+        # the verdict has no winner for a game stopped mid-play — so a
+        # nonzero value here means that many "draws" are not results and the
+        # run should be recounted without them.
         "truncated_games": truncated_games,
         "by_a_seat": {str(k): v for k, v in by_a_seat.items()},
         "game_length": {
@@ -478,6 +502,15 @@ def run_evaluation(a_weights, a_encoder, b_weights, b_encoder,
         "games_detail": games_detail,
         "manifest_a": _manifest_summary(a_manifest),
         "manifest_b": _manifest_summary(b_manifest),
+        # The rules the games were played under (the engine's version) beside
+        # the rules each side's weights were trained under (#116 P9): archived
+        # 0.7 weights play 0.8 rules, and a reader must be able to see it.
+        # None for a weights file saved before manifests existed.
+        "game_version": GAME_VERSION,
+        "weights_game_version": {
+            "a": _weights_game_version(a_manifest),
+            "b": _weights_game_version(b_manifest),
+        },
     }
     return summary
 
@@ -512,6 +545,7 @@ def main():
     print(f"B: {args.b}  (encoder={args.b_encoder})")
     print(f"games={args.games}  seed_base={args.seed_base}  epsilon={args.epsilon}")
     print(f"size_preset={SIZE_PRESET}  map_type={MAP_TYPE}  max_turns={DEFAULT_MAX_TURNS}")
+    print(f"engine game_version={GAME_VERSION}")
     print("=" * 72)
 
     t0 = time.perf_counter()
@@ -533,6 +567,8 @@ def main():
 
     print("\n" + "=" * 72)
     print(f"Done: {args.games} games in {elapsed:.0f}s ({elapsed / args.games:.2f}s/game)")
+    print(f"Weights game_version: {summary['weights_game_version']} "
+          f"(engine {summary['game_version']}; a win rate is comparable only within a rules epoch)")
     print(f"Totals: {summary['totals']}")
     print(f"By A's seat: {summary['by_a_seat']}")
     print(f"Game length (turns): {summary['game_length']}")

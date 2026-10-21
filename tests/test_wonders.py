@@ -29,6 +29,7 @@ from civulator.effects import (
     target_matches,
 )
 from civulator.game import districts as districts_mod
+from civulator.game import environment as environment_mod
 from civulator.game.districts import (
     District,
     adjacency_score,
@@ -57,7 +58,8 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 
 def _wonder_table(**extra):
     table = {"kind": "wonder", "era": "Ancient", "production_cost": 100,
-             "cost_model": "fixed", "counts_toward_limit": False, "max_per_city": 1}
+             "cost_model": "fixed", "counts_toward_limit": False, "max_per_city": 1,
+             "max_per_player": 1}
     table.update(extra)
     return table
 
@@ -151,32 +153,40 @@ def test_a_wonder_is_refused_everywhere_once_any_player_completed_it(monkeypatch
 # --- (b) the race: removal and consolation --------------------------------------------
 
 
-def test_completion_removes_every_other_copy_and_refunds_the_consolation(monkeypatch):
+@pytest.mark.parametrize("percent", [None, 50, 37, 100])
+def test_completion_removes_every_other_copy_and_refunds_exactly_the_consolation(monkeypatch, percent):
     """A wonder paid for in process_turn completes through complete_district,
-    which removes every other placed copy -- other players' and the
-    completer's own other cities' -- frees its tile (assign_tiles re-runs, so
-    a good tile is worked again), bumps district_epoch, refunds exactly
-    floor(consolation_percent * locked cost / 100) into that city's
-    production pool and clears its production item only where it pointed
-    at the wonder; the stats count one completion and each lost copy.
-    Breaks if a copy survives, the refund is computed on anything but the
-    locked cost, the epoch or assign_tiles is skipped, or a loser keeps
-    producing a removed wonder."""
+    which removes every other placed copy (one per player, `max_per_player`,
+    so the other player's), frees its tile (assign_tiles re-runs, so a good
+    tile is worked again), bumps district_epoch, and refunds into that
+    city's production pool exactly floor(consolation_percent * locked cost /
+    100) -- nothing else touches the pool -- and clears its production item
+    where it pointed at the wonder; the stats count one completion and one
+    lost copy. Run with the configured percent (`None`; 0 as shipped: the
+    pool is not sunk until completion, so the loser already keeps what it put
+    in and a refund on top was pure gain) and with patched non-zero percents,
+    so the property is the formula, not a value. Breaks if a copy survives,
+    the refund is computed on anything but the locked cost or the configured
+    percent, the pool is otherwise changed, the epoch or assign_tiles is
+    skipped, or a loser keeps producing a removed wonder."""
+    if percent is not None:
+        monkeypatch.setattr(environment_mod, "WONDER_CONSOLATION_PERCENT", percent)
+    expected_percent = environment_mod.WONDER_CONSOLATION_PERCENT
+    if percent is None:
+        assert expected_percent == CONSOLATION, "the engine reads the configured percent"
     synthetic(monkeypatch, Marvel={})
     env = board()
     a = make_city(env, (3, 3))
     b = make_city(env, (3, 11), player_index=1)
-    c = make_city(env, (7, 7))
-    for city in (a, b, c):
+    for city in (a, b):
         assert env.place_district(city, "Marvel", site(env, city))
-    b_copy, c_copy = b.districts[0], c.districts[0]
-    b_copy.cost, c_copy.cost = 101, 37            # odd locked costs: the floor shows
+    b_copy = b.districts[0]
+    b_copy.cost = 101                               # an odd locked cost: the floor shows
     freed = b_copy.coordinates
     env.map.get_tile(freed).set_layers("Grassland", resource="Cattle", map_ref=env.map)
     b.assign_tiles(env)
     assert freed not in b.worked_tiles
-    assert c.produce_unit(land_unit())              # c switched away from its copy
-    b.production, c.production = 7, 3
+    b.production = 7
     epoch = env.map.district_epoch
 
     a.production = a.districts[0].cost
@@ -184,19 +194,34 @@ def test_completion_removes_every_other_copy_and_refunds_the_consolation(monkeyp
     a.process_turn(env)
 
     assert a.districts[0].complete
-    for loser, copy, pool in ((b, b_copy, 7), (c, c_copy, 3)):
-        assert copy not in loser.districts
-        assert env.map.get_tile(copy.coordinates).district is None
-        assert loser.production == pool + copy.cost * CONSOLATION // 100
-    assert b.production == 7 + 101 * CONSOLATION // 100
+    assert b_copy not in b.districts
+    assert env.map.get_tile(b_copy.coordinates).district is None
+    assert b.production == 7 + 101 * expected_percent // 100
     assert b.current_production is None
-    assert c.current_production == {"type": "unit", "unit_type": land_unit()}
     assert freed in b.worked_tiles
-    assert env.map.district_epoch >= epoch + 2
+    assert env.map.district_epoch >= epoch + 1
     assert env.episode_stats[0]["wonders_completed"] == 1
     assert env.episode_stats[1]["wonders_completed"] == 0
     assert env.episode_stats[1]["wonder_races_lost"] == 1
-    assert env.episode_stats[0]["wonder_races_lost"] == 1
+    assert env.episode_stats[0]["wonder_races_lost"] == 0
+
+
+def test_a_race_loser_that_switched_production_away_keeps_its_item(monkeypatch):
+    """The loser's production item is cleared only where it pointed at the
+    removed wonder: a city that had already switched to a unit keeps
+    producing it. Breaks if the race clears every loser's item."""
+    synthetic(monkeypatch, Marvel={})
+    env = board()
+    a = make_city(env, (3, 3))
+    b = make_city(env, (3, 11), player_index=1)
+    for city in (a, b):
+        assert env.place_district(city, "Marvel", site(env, city))
+    assert b.produce_unit(land_unit())              # b switched away from its copy
+    item = dict(b.current_production)
+
+    env.complete_district(a, a.districts[0])
+
+    assert b.districts == [] and b.current_production == item
 
 
 def test_remove_city_and_the_race_share_one_removal_helper():
@@ -230,6 +255,70 @@ def test_remove_city_and_the_race_share_one_removal_helper():
     calls = {n.func.attr for n in ast.walk(remove_city)
              if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)}
     assert "_remove_district" in calls
+
+
+def test_a_second_city_of_one_player_cannot_place_a_wonder_its_first_city_has_placed(monkeypatch):
+    """Civ 6: once one city of a player has broken ground on a wonder, no other
+    city of that player may start it (`max_per_player = 1`, which a wonder
+    table must declare). Another player's city may still place a copy --
+    that is the race -- and the first city's copy being removed frees the
+    player's other cities again. Breaks if `max_per_player` is not enforced
+    for wonders, or counts only completed copies, or refuses other players."""
+    synthetic(monkeypatch, Marvel={})
+    env = board()
+    first = make_city(env, (3, 3))
+    second = make_city(env, (7, 7))
+    rival = make_city(env, (3, 11), player_index=1)
+    sites = {city: site(env, city) for city in (first, second, rival)}
+    assert can_place_district(second, "Marvel", sites[second]), "fixture: placeable before"
+
+    assert env.place_district(first, "Marvel", sites[first])
+
+    assert not any(can_place_district(second, "Marvel", pos)
+                   for pos in env.map.tiles_of_city(second.city_id))
+    assert not env.place_district(second, "Marvel", sites[second])
+    assert can_place_district(rival, "Marvel", sites[rival]), "the race stays open to others"
+    env._remove_district(first, first.districts[0])
+    assert can_place_district(second, "Marvel", sites[second])
+
+
+@pytest.mark.parametrize("door", ["set_owner", "flip"])
+def test_a_captured_slot_granting_wonder_refits_both_loadouts(monkeypatch, door):
+    """A city holding a complete wonder that grants policy slots changes both
+    players' slots when it changes hands -- by force (`set_owner`) or by a
+    loyalty flip -- so `City.set_owner` re-fits both loadouts through the
+    engine's defaults: afterwards each player's loadout is legal for its own
+    slots and fills them. Breaks if the old owner keeps a loadout wider than
+    its slots, or the new owner's new slot stays empty."""
+    synthetic(monkeypatch, Marvel={"effects": [
+        {"kind": "policy_slots", "wildcard": 1, "scope": "player"}]})
+    env = board()
+    old, new = env.players
+    for player in (old, new):
+        player.civics[:] = [QUIET]
+    synthetic_government(monkeypatch, "Synthetic Government", {"wildcard": 1},
+                         requires_civic=QUIET)
+    for name in ("Card A", "Card B", "Card C"):
+        synthetic_policy(monkeypatch, name, [{"kind": "city_ranged_strength", "amount": 1}],
+                         requires_civic=QUIET)
+    holder = make_city(env, (3, 3))
+    make_city(env, (7, 7))                           # the old owner keeps a city
+    make_city(env, (3, 11), player_index=1)
+    for player in (old, new):
+        assert env.set_government(player, "Synthetic Government")
+    assert env.place_district(holder, "Marvel", site(env, holder))
+    env.complete_district(holder, holder.districts[0])
+    assert (len(old.policies), len(new.policies)) == (2, 1), "fixture: the wonder's slot is filled"
+
+    if door == "set_owner":
+        holder.set_owner(new)
+    else:
+        env._flip_city(holder, new)
+
+    assert (slot_counts(old)["wildcard"], slot_counts(new)["wildcard"]) == (1, 2)
+    for player in (old, new):
+        assert effects.loadout_is_legal(player, player.policies), player.name
+        assert len(player.policies) == slot_counts(player)["wildcard"], player.name
 
 
 # --- (c) one-shot effects fire exactly once --------------------------------------------
@@ -575,7 +664,7 @@ def _dress(env, city, pos, source, neighbour):
                                   if s.kind == WONDER])
 def test_every_configured_wonder_loads_and_is_placeable_where_its_rule_holds(name):
     """Every `kind == "wonder"` table carries the wonder invariants (an era
-    of the tree, no slot, fixed cost, one per city, no adjacency) and valid
+    of the tree, no slot, fixed cost, one per city and per player, no adjacency) and valid
     effects, and on a board dressed to meet its own rule -- its `on`, its
     centre rule, one `requires_adjacent` source, every
     `requires_adjacent_all` source -- a city of a player knowing both trees
@@ -583,7 +672,8 @@ def test_every_configured_wonder_loads_and_is_placeable_where_its_rule_holds(nam
     be placed or loads with a district's rules."""
     spec = district_model.DISTRICTS[name]
     assert spec.era in research_model.ERAS
-    assert (spec.counts_toward_limit, spec.cost_model, spec.max_per_city) == (False, "fixed", 1)
+    assert (spec.counts_toward_limit, spec.cost_model, spec.max_per_city,
+            spec.max_per_player) == (False, "fixed", 1, 1)
     assert spec.adjacency_yield == "none" and spec.adjacency == ()
     effects.effects_of(effects.SOURCE_DISTRICT, name)        # validates
 

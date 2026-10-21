@@ -1,6 +1,6 @@
 # Progression (#116): science, civics, gold, faith, wonders, loyalty, winning — design
 
-> **Status: v2 — build contract (2026-10-21).** One critique lens run (systems reuse / regression / determinism, Opus); its seven blockers are resolved in "v2 fixes", which overrides §1–§13 where they differ. Written by Claude as lead game designer on
+> **Status: implemented (P1–P9, 2026-10-21); the Implementation notes section records where the code differs.** Written as the v2 build contract (2026-10-21): one critique lens run (systems reuse / regression / determinism, Opus); its seven blockers are resolved in "v2 fixes", which overrides §1–§13 where they differ. Written by Claude as lead game designer on
 > Erik's delegation ("you are now the lead game designer, and I want you to
 > implement these systems; you have to make all the decisions of where to
 > stop", chat 2026-10-21). Erik's brief is in #116; the earlier sketches are
@@ -1345,3 +1345,191 @@ locked.
 | Palace | `capital_only` means "the city holding a Palace" |
 | Terrain model | improvement yields and `requires_tech` are read through it; `build_improvement` bumps `terrain_epoch` |
 | Action masking | the build mask reads `player_can_build` / `city_can_build_building`; the smoke script draws from the mask |
+
+
+## Implementation notes (P1–P9, 2026-10-21)
+
+The block is implemented and merged as nine patches. The text above is the
+build contract as it stood and is not edited; this section lists, patch by
+patch, every decision that diverges from it or that it left open, so a reader
+of §1–§15 knows where the code differs. The rules, numbers and sources of each
+patch are in `CHANGELOG.md`, v0.8.0 (one section per patch). Where an item
+changes a rule the design states, it says so; items marked **ruling** are
+Claude's calls that Erik may overturn.
+
+### Corrections of the design's own arithmetic and facts
+
+- §4.2: the tech tree sums to **4,065** science at Civ 6 cost, not 4,015, and
+  to **3,043** at 75 % (each cost floored per tech; 3,049 is 75 % of the total
+  before flooring), the sum of `research_model.scaled_tech_cost`.
+- §5.1: the civics sum to **3,330** culture at Civ 6 cost, not 3,100, and to
+  2,494 at 75 %.
+- §12's pacing table rests on the two wrong totals and on a yield model that
+  has not been measured against play. The one observation is a seeded smoke
+  run, not a measurement (random agents choose neither research nor
+  production): seed 4242, 250 rounds, 15 and 17 of the 22 techs and 13 and 13
+  of the 19 civics researched. The "last tech around round 215" target is
+  restated when an evaluation report supplies a measured curve.
+- "v2 fixes", Improvement yields: Camp and Plantation are **+2 gold** in
+  Gathering Storm (the wiki's per-improvement pages), not +1.
+- §14 row "An idle Worker ... steps only along `path_finder`" and §15 P8
+  ("largest (food + production) gain", "one `path_finder` step"): read them as
+  "v2 fixes", Worker default (N18), and the code have them -- the Worker steps
+  through `Unit.move` by `defaults.step_toward`, **never `path_finder`**, and
+  ranks improvements by **food + production + gold** (then housing in tenths,
+  then config order). The property the test pins is "never builds an
+  improvement its owner's techs do not allow, never on a tile its owner does
+  not own, and steps only through the shared one-step rule".
+
+### P1 -- yields and pools
+
+- Food and production building columns are stored in tenths and floored once
+  per city, not per building.
+- `complete_district` raises on a second completion (the design says only that
+  it is the one place a district finishes).
+- The CLAUDE.md rows were amended in P1 (Systems (c) lists them as amended at
+  implementation); Win/score and Victory are P9's.
+- The Palace's Civ 6 +1 culture is not added: v0.7's culture base of 1 per city
+  stays (design §0.3).
+
+### P2 -- tech tree
+
+- `game_progress(None)` is no longer valid: it needs a player.
+- `[units.*]`, `[buildings.*]` and `[improvements.*]` have strict key lists:
+  an unknown key raises.
+- `district_model` validates every building's `requires_district` against the
+  district registry (the design left the owner of that check open).
+- `city_can_build_building` includes the production-cost check ("a costed
+  building"), so the build mask, `produce_building` and `purchase` need no
+  second one.
+- A captured city's in-progress item that its new owner could not start still
+  completes (accepted in "v2 fixes"; recorded because tests pin it).
+
+### P3 -- units
+
+- The Crossbowman takes the archer's cavalry penalty against both cavalry
+  classes, as the Archer it replaces does.
+- `maintenance` is a required column of every `[units.*]` table.
+- A unit's name may not equal a combat class's name (the loader raises: a row
+  matches by name or by class).
+- `_create_unit` raises on an unknown type (it fell back to the bare `Unit`).
+- "Has not attacked", for an upgrade, is `not has_acted` and full movement.
+- Upgrade prices are `[gold] upgrade_per_production * (target cost - unit
+  cost) + upgrade_base` with 2 and 10: Warrior 110, Slinger 60, Archer 250,
+  Spearman 240, Horseman 290, Swordsman 150, Man-At-Arms 170, Catapult 170.
+- The encoder clamps its unit-stat channels at 1.0, so the Knight and the
+  Musketman saturate the melee-strength channel (N21's accepted gap, made
+  concrete).
+
+### P4 -- civics
+
+- `combat_strength`'s class attribute is `applies_to` (not `scope`, which
+  already means where an effect applies).
+- `production_percent` targets also accept `district` and `in_district` (the
+  Veterancy card needs them).
+- `default_government` is the highest tier available, ties by config order.
+- The loadout default runs on civic completion and on a government change
+  only, not every turn.
+- `[city] capital_building` replaces the Palace literal; a `capital_only`
+  effect tests it.
+- The Ilkum policy is never obsolete.
+- The Agoge policy holds Chiefdom's military slot until Feudalism under the
+  default, so the Maneuver policy is never slotted by default.
+
+### P5 -- gold
+
+- A disbanded unit's own upkeep is not charged that turn, so bankruptcy
+  converges.
+- `gold_maintenance` records what actually left the treasury.
+- A city's trade-route capacity from buildings is the largest building amount
+  (a city with both a Market and a Lighthouse adds 1, not 2).
+- Route yields are stored in tenths; `[trade] unit = "Trader"` names the trade
+  unit once.
+- `purchase` buys for the current player and applies the Trader's route-slot
+  rule; buying the building a city is producing clears the production item.
+- `remove_city` ends routes like `set_owner` does.
+- `establish_trade_route` needs the Trader on its origin city but not its full
+  movement.
+- The support class is excluded from faith purchase (it is not "land
+  military").
+- The Settler's population >= 3 rule is mask-only (pre-existing, not changed).
+
+### P6 -- wonders
+
+- **Ruling, applied in P9:** `[wonders] consolation_percent` is 0 (the design
+  says 50) and every wonder table declares `max_per_player = 1` (the design
+  has only `max_per_city`); the Oracle's era is Ancient (the design's §9.4
+  table says Classical).
+- The Statue of Zeus grants no Battering Ram (it is a deferred unit).
+- A placement requirement on a district (Encampment, Campus, ...) is met by a
+  placed, unfinished district and asks for no building in it (Civ 6 asks for a
+  Barracks, a Library, an Arena).
+- "Flat land" is spelled as relief flat plus the five land bases (water is
+  flat too).
+- One-shot effect kinds are accepted on `kind = "wonder"` tables only.
+- `free_*` grants ignore availability.
+- Wonders carry an `era` column and `production_percent` targets read
+  `wonder_era`, so Corvee and Gothic Architecture target by era (the design's
+  Corvee text targeted every wonder).
+
+### P7 -- loyalty
+
+- `[loyalty]` gained `maximum`, `citizen_weight` (10), `drift_gain` (10) and
+  `drift_cap` (20), so no loyalty number is hardcoded.
+- Flip targets are computed from the state at the start of the phase.
+- A flat, unconditional, city-scoped loyalty effect on a building or district
+  is refused: the `loyalty` column says it (one way to say it).
+- A 0 % growth share blocks growth even with a full bucket; the production
+  floor of 1 holds in Unrest; food is never scaled.
+- The Colosseum reaches its owner's cities only.
+- A city at 0 loyalty with a delta of 0 flips (Civ 6: only while falling).
+- The design's consumer name `loyalty_sources` is `loyalty_delta` /
+  `effect_loyalty` in code.
+- `_update_done` is the one end-of-game check, called from `_check_game_end`,
+  after the loyalty phase and at the end of `next_turn`.
+
+### P8 -- Workers
+
+- One improvement per tile is the Worker default's rule and the Worker build
+  offer's, not the engine's: `can_build_improvement_at` still lets improvements
+  stack. Whether the engine should refuse a second one is Erik's open call.
+- A tile an earlier Worker of the same pass chose is a preference with a
+  fallback, not an exclusion (an outright exclusion deadlocked six Workers on
+  36 tiles).
+- `terrain_model.IMPROVEMENT_ORDER` is config order as a tuple (the frozenset
+  `IMPROVEMENT_NAMES` iterates by hash seed).
+- `WorkerUnit.build_improvement` now marks the unit as having acted.
+- The Worker offer counts open tiles, not Workers already on their way.
+- `Unit.move`'s adjacent branch does not itself refuse a foreign-occupied
+  destination; the defaults avoid it.
+
+### P9 -- winning and the release
+
+- `determine_outcome` and `player_score` live in the engine module
+  `civulator/game/victory.py`, not in `trainer.py` ("v2 fixes", Verdict and
+  domination): the engine may import nothing of training, and the verdict now
+  sets `done`. `trainer.py` re-exports `determine_winner`, `determine_outcome`,
+  `player_score` and `CITY_SCORE_WEIGHT`.
+- Domination is tested in `GameEnvironment._update_done` -- which asks
+  `victory.game_over` and is called from `_check_game_end` and from
+  `next_turn` after `_loyalty_phase` -- not in `_check_game_end` alone, so one
+  test sets `done` for elimination, domination and the cap.
+- A living player dominates when it holds every Palace that exists and at
+  least one was granted to another player (`Player.palace_granted`). **Ruling:**
+  a player that has not yet founded its capital does not block a domination,
+  and a Palace gone with a removed city (tools only) is gone while the grant
+  stays recorded.
+- `[game.score]` is read by `victory.py` only, strictly (exactly the five keys,
+  whole numbers >= 0); `city_score_weight` stays under `[game]`. The design's
+  term list is unchanged; `score_counts` / `score_breakdown` expose it term by
+  term, and the smoke script and the viewer HUD show it.
+- `evaluate.py` records the weights' `game_version` per side (`a`, `b`), the
+  design's "each seat's weights" (a side's weights serve both its seats), beside
+  the engine's `game_version`.
+- A loyalty flip or capture of a city holding a slot-granting wonder re-fits
+  both players' loadouts in `City.set_owner` (P6's open ruling).
+- CLAUDE.md: the P1-P8 "Prior" entries of the header are collapsed into one
+  line pointing at the CHANGELOG, and instance lists that crept into the P1-P8
+  rows were removed (a row names the seam, not what plugs into it).
+- `docs/game_overview.md` is 42 lines against the old 34: the block adds the
+  trees, the pools, loyalty, wonders and two ways to win.

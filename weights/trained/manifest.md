@@ -240,3 +240,26 @@ fixed by #83, not here.
 ## Weights — v0.7.0 epoch
 
 (none yet)
+
+---
+
+## Epoch marker — 2026-10-21: v0.8.0 progression (#116, CHANGELOG v0.8.0)
+
+Everything **above** this line was trained under **v0.7.x rules** or earlier.
+Game version 0.8.0 opens a new rules epoch (#78 convention): it adds science,
+gold and faith yields and pools, the tech and civics trees, governments and
+policy cards, new units and buildings, upkeep and bankruptcy, purchasing,
+trade routes, wonders, loyalty, Workers that improve tiles by default, and two
+new ways to end a game — domination (one player holds every Palace) and a
+turn-cap score with more terms (cities ×10 + units + population + techs ×2 +
+civics ×2 + wonders ×10, `[game.score]`). No win rate measured above this line
+is comparable to one measured below it. Weights listed above stay loadable
+(an archived build head at its own saved width, #67) but play 0.8 rules when
+evaluated; `scripts/evaluate.py` records the engine's `game_version` and each
+side's `weights_game_version` so the record says so. No weights have been
+trained under 0.8 rules, and the 0.8 epoch's reference opponent is not chosen
+here.
+
+## Weights — v0.8.0 epoch
+
+(none yet)

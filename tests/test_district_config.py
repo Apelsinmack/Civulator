@@ -35,7 +35,8 @@ def _a_wonder():
 def _wonder(**extra):
     """A minimal valid wonder table (#116 P6, design §9.1)."""
     table = {"kind": "wonder", "era": "Ancient", "production_cost": 100,
-             "cost_model": "fixed", "counts_toward_limit": False, "max_per_city": 1}
+             "cost_model": "fixed", "counts_toward_limit": False, "max_per_city": 1,
+             "max_per_player": 1}
     table.update(extra)
     return table
 
@@ -171,7 +172,8 @@ def test_a_valid_wonder_parses_with_its_columns():
     spec = reg.districts["Probe"]
     assert (spec.kind, spec.era) == (district_model.KIND_WONDER, "Medieval")
     assert spec.counts_toward_limit is False and spec.cost_model == "fixed"
-    assert spec.max_per_city == 1 and spec.adjacency_yield == "none" and spec.adjacency == ()
+    assert spec.max_per_city == 1 and spec.max_per_player == 1
+    assert spec.adjacency_yield == "none" and spec.adjacency == ()
     assert [s.kind for s in spec.requires_adjacent_all] == ["terrain", "district"]
     district = district_model.parse_districts(_with_district(_probe())).districts["Probe"]
     assert (district.kind, district.era, district.requires_adjacent_all) == (
@@ -188,16 +190,20 @@ def test_a_valid_wonder_parses_with_its_columns():
     {"max_per_city": None},
     {"max_per_city": 2},
     {"max_per_city": True},
+    {"max_per_player": None},                   # one per player (#116 P9) must be declared ...
+    {"max_per_player": 2},                      # ... and be one
+    {"max_per_player": True},
     {"adjacency_yield": "culture"},             # no adjacency of its own
     {"adjacency": [{"amount": 1, "district": "any"}]},
     {"discount_percent": 10},
 ])
 def test_a_wonder_table_breaking_the_wonder_rules_raises_at_load(bad):
     """A wonder declares era, counts_toward_limit = false, cost_model =
-    "fixed" and max_per_city = 1, and no adjacency_yield, adjacency or
-    discount (design §9.1); anything else raises at load. Breaks if a
-    wonder could take a population slot, escalate, be built twice in a
-    city or score adjacency."""
+    "fixed", max_per_city = 1 and max_per_player = 1 (#116 P9), and no
+    adjacency_yield, adjacency or discount (design §9.1); anything else
+    raises at load. Breaks if a wonder could take a population slot,
+    escalate, be built twice in a city, be started by two cities of one
+    player or score adjacency."""
     table = _wonder()
     for key, value in bad.items():
         if value is None:

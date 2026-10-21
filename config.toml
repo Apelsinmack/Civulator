@@ -505,7 +505,24 @@ min_city_distance = 4    # Minimum hex distance (steps) between city CENTRES.
                          # legal from `this` steps out: 4 leaves 3 tiles between
                          # centres. Counted centre-to-centre, not border-to-border
                          # (#74). Read only via environment.MIN_CITY_DISTANCE.
-city_score_weight = 10   # Turn-cap tiebreak: score = cities * this + units (#55)
+city_score_weight = 10   # One term of the turn-cap score (#55): cities * this. The other terms
+                         # are [game.score]; civulator/game/victory.py is their only reader.
+
+# The turn-cap score (#55, #116 P9; progression design §11): the sum of one
+# term per kind of thing a player holds, a count times its weight. With
+# city_score_weight above:
+#   score = cities * city_score_weight + units * unit_weight
+#         + population * population_weight (all the player's cities)
+#         + techs * tech_weight + civics * civic_weight
+#         + complete wonders * wonder_weight (kind = "wonder", across its cities)
+# Claude's starting values (a full tech tree is worth about four cities and a
+# wonder one); Erik tunes them while the agents play. Whole non-negative ints.
+[game.score]
+unit_weight = 1
+population_weight = 1
+tech_weight = 2
+civic_weight = 2
+wonder_weight = 10
 
 # =====================================================================
 # Unit stat tables and combat formula constants (issue #64) — moved out of
@@ -1726,7 +1743,9 @@ effects = [{ kind = "loyalty", amount = 1, per_population = true }]
 #   cost_model           "discounted" | "progress" | "fixed" (design §4)
 #   discount_percent     int, for "discounted"
 #   counts_toward_limit  takes a population slot (default true)
-#   max_per_city         default 1;  max_per_player: absent = unlimited
+#   max_per_city         default 1;  max_per_player: absent = unlimited (a wonder
+#                        declares max_per_player = 1: once a city of a player has
+#                        placed one, no other city of that player may -- Civ 6)
 #   adjacency_yield      what the adjacency score becomes (§5): culture,
 #                        production, science, gold, faith or none (default)
 #   adjacency            rows { amount, per (default 1), <one source> } (§1.2);
@@ -1740,9 +1759,9 @@ effects = [{ kind = "loyalty", amount = 1, per_population = true }]
 #   kind                 "district" (default) or "wonder" (#116 P6, progression
 #                        design §9). A wonder declares era (one of [research]'s
 #                        eras), counts_toward_limit = false, cost_model =
-#                        "fixed", max_per_city = 1, and no adjacency_yield,
-#                        adjacency or discount_percent (the loader raises
-#                        otherwise); it is world-unique (refused once any player
+#                        "fixed", max_per_city = 1, max_per_player = 1 and no
+#                        adjacency_yield, adjacency or discount_percent (the
+#                        loader raises otherwise); it is world-unique (refused once any player
 #                        completed it), and when it completes every other copy is
 #                        removed, its city refunded [wonders] consolation_percent
 #                        of that copy's locked cost. Its one-shot effects
@@ -1927,6 +1946,7 @@ requires_tech = "Masonry"
 cost_model = "fixed"
 counts_toward_limit = false
 max_per_city = 1
+max_per_player = 1
 on = { relief = ["flat"], bases = ["Desert", "Plains"] }
 culture = 2
 effects = [{ kind = "free_units", units = [{ unit = "Worker", count = 3 }] }]
@@ -1940,6 +1960,7 @@ requires_tech = "Astrology"
 cost_model = "fixed"
 counts_toward_limit = false
 max_per_city = 1
+max_per_player = 1
 on = { relief = ["flat"], bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] }
 requires_adjacent = [{ terrain = { resources = ["Stone"] } }]
 faith = 4
@@ -1952,6 +1973,7 @@ requires_tech = "Irrigation"
 cost_model = "fixed"
 counts_toward_limit = false
 max_per_city = 1
+max_per_player = 1
 requires_adjacent = [{ river_on_tile = true }]
 housing = 2
 effects = [{ kind = "growth_percent", percent = 15, scope = "player" }]
@@ -1965,6 +1987,7 @@ requires_tech = "Archery"
 cost_model = "fixed"
 counts_toward_limit = false
 max_per_city = 1
+max_per_player = 1
 requires_adjacent = [{ terrain = { resources = ["Cattle", "Sheep", "Deer"] } }]
 food = 4
 housing = 3
@@ -1973,12 +1996,13 @@ housing = 3
 # free civic (design §9.4).
 [districts.Oracle]
 kind = "wonder"
-era = "Classical"
+era = "Ancient"
 production_cost = 290
 requires_civic = "State Workforce"
 cost_model = "fixed"
 counts_toward_limit = false
 max_per_city = 1
+max_per_player = 1
 on = { relief = ["hills"] }
 culture = 2
 faith = 2
@@ -1992,6 +2016,7 @@ requires_civic = "Military Training"
 cost_model = "fixed"
 counts_toward_limit = false
 max_per_city = 1
+max_per_player = 1
 on = { relief = ["flat"], bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] }
 requires_adjacent = [{ district = ["Encampment"] }]
 gold = 3
@@ -2009,6 +2034,7 @@ requires_civic = "Recorded History"
 cost_model = "fixed"
 counts_toward_limit = false
 max_per_city = 1
+max_per_player = 1
 on = { relief = ["flat"], bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] }
 requires_adjacent = [{ district = ["Campus"] }]
 science = 3
@@ -2024,6 +2050,7 @@ requires_tech = "Celestial Navigation"
 cost_model = "fixed"
 counts_toward_limit = false
 max_per_city = 1
+max_per_player = 1
 on = { bases = ["Coast"] }
 requires_adjacent_all = [
     { terrain = { bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] } },
@@ -2045,6 +2072,7 @@ requires_civic = "Games and Recreation"
 cost_model = "fixed"
 counts_toward_limit = false
 max_per_city = 1
+max_per_player = 1
 on = { relief = ["flat"], bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] }
 requires_adjacent = [{ district = ["Entertainment Complex"] }]
 culture = 2
@@ -2059,6 +2087,7 @@ requires_tech = "Castles"
 cost_model = "fixed"
 counts_toward_limit = false
 max_per_city = 1
+max_per_player = 1
 on = { relief = ["hills"] }
 requires_adjacent = [{ district = ["Encampment"] }]
 effects = [
@@ -2074,6 +2103,7 @@ requires_civic = "Medieval Faires"
 cost_model = "fixed"
 counts_toward_limit = false
 max_per_city = 1
+max_per_player = 1
 requires_adjacent = [{ district = ["Aqueduct"] }]
 faith = 2
 effects = [
@@ -2090,6 +2120,7 @@ requires_civic = "Divine Right"
 cost_model = "fixed"
 counts_toward_limit = false
 max_per_city = 1
+max_per_player = 1
 on = { relief = ["flat"], bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] }
 adjacent_to_city_center = true
 culture = 5
@@ -2098,8 +2129,14 @@ effects = [{ kind = "policy_slots", wildcard = 1, scope = "player" }]
 # Losing the race (design §9.2; Erik's March notes: soften the lost race):
 # the share of a removed copy's locked cost refunded into its city's
 # production pool, integer floor. Read only by civulator/district_model.py.
+# 0 since #116 P9: a city's production pool is not sunk until a district
+# completes (one number that a switch keeps, design §2.3), so the city that
+# loses a race already keeps everything it put toward the lost copy and a
+# refund on top was pure gain. The key stays for a future sunk-cost model,
+# in which the pool would be spent at placement and a consolation would
+# mean something.
 [wonders]
-consolation_percent = 50
+consolation_percent = 0
 
 [training]
 episodes = 64

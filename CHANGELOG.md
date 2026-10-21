@@ -5,20 +5,45 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
-## v0.8.0 — Progression: science, civics, gold, faith, wonders, loyalty (in progress, 2026-10-21)
+## v0.8.0 — Progression: science, civics, gold, faith, wonders, loyalty, winning (2026-10-21)
 
 **New rules epoch (#116).** The progression block gives cities science,
 gold and faith beside food, production and culture, and builds on them the
 tech and civics trees, governments and policies, new units and buildings,
-gold upkeep and trade, wonders, loyalty and new victory conditions. Results
-trained or evaluated under 0.7.x rules are not comparable to 0.8 results.
-The version is bumped in the first patch (P1), before most of the content
-exists, so that no artifact saved under 0.8 rules carries a 0.7 manifest;
-this entry grows with each patch of #116 (P1–P9) and is finalised, with the
-epoch marker in `weights/trained/manifest.md`, by the last. Design:
-`docs/progression_design.md` (v2); Civ 6 facts: the Civilization Wiki,
-digested in `docs/civ6_progression_reference.md`. Everything below is a
-**rule change**, not a refactor.
+gold upkeep and trade, wonders, loyalty, Workers that improve tiles by
+default, and two new ways to end a game (domination, and a turn-cap score
+with more terms than cities and units). **Results trained or evaluated under
+0.7.x rules are not comparable to 0.8 results** (epoch marker in
+`weights/trained/manifest.md`; the #78 convention: a win rate is comparable
+only within a rules epoch). Archived 0.6 and 0.7 weights stay loadable and
+playable (the build head at its own saved width, #67) but play 0.8 rules;
+`scripts/evaluate.py` now records the engine's `game_version` and each
+side's weights' `weights_game_version` beside it. The block landed in nine
+patches: P1 yields and pools, P2 the tech tree, P3 units, P4 civics, P5
+gold, P6 wonders, P7 loyalty, P8 Workers, P9 winning and this release. The
+version was bumped in the first, so that no artifact saved under 0.8 rules
+carries a 0.7 manifest, and each section below states the rules as the block
+ends: where a later patch changed a rule an earlier section describes, the
+earlier section says so ("P9:" ...). Design: `docs/progression_design.md`
+(v2; its "Implementation notes (P1–P9)" section lists every place the code
+differs from it); Civ 6 facts: the Civilization Wiki, digested in
+`docs/civ6_progression_reference.md`. Everything below is a **rule change**,
+not a refactor.
+
+**What the block contains at release:** 22 techs, 19 civics, 6 governments,
+26 policy cards, 18 unit types, 16 buildings, 10 districts, 12 wonders, 31
+build options (`BUILD_OPTIONS`, append-only: an archived head keeps its width).
+
+**Nothing in it has been measured on agents.** No network has been trained
+or evaluated under 0.8 rules, so no section claims an effect on play. The one
+whole-game observation is a smoke run, **one seeded random-play game, not a
+measurement**: `python scripts/smoke_random_selfplay.py --seed 4242 --rounds
+250` (duel; both seats draw random valid actions; the engine defaults do the
+rest) ended at round 250 with techs researched 15 and 17, civics 13 and 13,
+wonders completed 1 and 3 (seat 0 lost one wonder race), trade routes opened
+0 and 0, loyalty flips 0, improvements built 6 and 6, and the verdict seat 1
+by score (93 to 113, no Palace changed hands). It says the defaults run
+together; it says nothing about balance.
 
 ### Yields and pools (#116 P1)
 
@@ -35,8 +60,8 @@ digested in `docs/civ6_progression_reference.md`. Everything below is a
   10 × the adjacency score of the complete districts that yield `<name>`.
   `culture(city)` is now an alias of it, and `City.calculate_food` /
   `calculate_production` read it (production keeps its floor of 1).
-  Loyalty scaling (P7), effects (P4) and trade routes (P5) are stubs
-  returning 100 %, 0 and 0.
+  Loyalty scaling (P7), effects (P4) and trade routes (P5) were stubs
+  returning 100 %, 0 and 0 in this patch; each is live from its own patch.
 - **New per-city tables** `[science] base = 0, per_pop = 0.5` (Civ 6: each
   citizen +0.5 science), `[gold] base = 0, per_pop = 0`, `[faith] base = 0,
   per_pop = 0`; `[culture]` is unchanged (1.0, 0.3). Each table must hold
@@ -127,7 +152,9 @@ MediaWiki API.
   through. **No longer buildable from turn 1:** Archer (Archery), Spearman
   (Bronze Working), Horseman (Horseback Riding), Swordsman (Iron Working;
   #67 had admitted it ungated), Catapult (Engineering), Granary (Pottery)
-  and Walls (Masonry). The opening web is Warrior, Slinger and Settler.
+  and Walls (Masonry). The opening web is Warrior, Slinger and Settler
+  (and, from P8, the Worker, which needs no tech but is offered only while
+  there is a tile for it to improve).
   Battering Ram (Masonry) and Siege Tower (Machinery) carry their gates and
   stay deferred (#66). Districts: Campus (Writing), Holy Site (Astrology),
   Encampment (Bronze Working), Commercial Hub (Currency), Harbor (Celestial
@@ -517,12 +544,12 @@ and the build state four more channels; an archived narrower head is loaded
 at its own width and does not see them.
 
 **Accepted gaps.** No agent action chooses a civic, government or card
-until #99. Corvee targets every wonder: Civ 6 limits it to Ancient and
-Classical wonders, and wonders (P6) carry no era yet. The Grand Master's
-Chapel's faith purchase holds in its own city (a building's effect
-defaults to city scope); Civ 6 applies it empire-wide — one config word
-(`scope = "player"`) when P5 consumes it. Veterancy's Harbor buildings
-arrive with the Lighthouse in P5. Governor titles, legacy cards, amenities,
+until #99. Corvee targeted every wonder: Civ 6 limits it to Ancient and
+Classical wonders, and wonders carried no era yet (closed in P6, which gave
+them one). The Grand Master's Chapel's faith purchase held in its own city
+(a building's effect defaults to city scope); Civ 6 applies it empire-wide
+(closed in P5: `scope = "player"`). Veterancy's Harbor buildings arrive
+with the Lighthouse (P5). Governor titles, legacy cards, amenities,
 the Audience Chamber and Warlord's Throne are not modelled. Every
 deferred effect kind above is validated and dormant until its patch.
 
@@ -702,9 +729,9 @@ wonder list and per-wonder pages, Gathering Storm). Erik's March notes
   `"district"` (default) or `"wonder"`. A wonder table declares `era` (one
   of the tree's eras, new; a wonder column only), `counts_toward_limit =
   false` (it takes no population slot), `cost_model = "fixed"` (Civ 6:
-  wonder costs never escalate) and `max_per_city = 1`, and no
-  `adjacency_yield`, `adjacency` or `discount_percent`; anything else raises
-  at load. So placing, paying for and completing a wonder is the district
+  wonder costs never escalate), `max_per_city = 1` and (P9) `max_per_player =
+  1`, and no `adjacency_yield`, `adjacency` or `discount_percent`; anything
+  else raises at load. So placing, paying for and completing a wonder is the district
   path, unchanged: `can_place_district`, `place_district`,
   `produce_district`, the production branch of `process_turn`, and
   `complete_district`. Its yield and `housing` columns count in its city
@@ -716,19 +743,21 @@ wonder list and per-wonder pages, Gathering Storm). Erik's March notes
   district discount's A or B.
 - **World-unique: the race.** `can_place_district` refuses a wonder that
   any player has completed (computed from the live board, every city in
-  id order; no registry). Copies placed but unfinished in other cities --
-  any player's, the completer's own other cities included -- are the race:
-  when one completes (in `complete_district`), every other copy is removed
-  (its tile is freed and worked again, `Map.district_epoch` bumps), its
-  city's production item is cleared if it was that wonder, and
-  `[wonders] consolation_percent = 50` % of the removed copy's LOCKED cost
-  (integer floor) is added to that city's production pool. Civ 6: "the
-  consolation is 50 % of the production invested"; the 50 % is the
-  design's call (§9.2) to keep attempting a wonder a gamble rather than a
-  trap. A city's production pool is one number that a switch keeps (§2.3),
-  so the losing city also keeps everything it had put toward the copy; the
-  refund comes on top, even for a copy that received no production
-  (flagged for review in the P6 report). The race is decided inside the
+  id order; no registry). Copies placed but unfinished in other players'
+  cities are the race (a player may have only one copy of a wonder
+  placed at a time, P9 below): when one completes (in
+  `complete_district`), every other copy is removed (its tile is freed and
+  worked again, `Map.district_epoch` bumps) and its city's production item
+  is cleared if it was that wonder. `[wonders] consolation_percent` of the
+  removed copy's LOCKED cost (integer floor) is added to that city's
+  production pool: P6 shipped 50 % (Civ 6: "the consolation is 50 % of the
+  production invested"; the design's call, §9.2, to keep attempting a
+  wonder a gamble rather than a trap), and **P9 sets it to 0**: a city's
+  production pool is one number that a switch keeps (§2.3), so the losing
+  city already keeps everything it had put toward the copy, and a refund on
+  top -- even for a copy that received no production -- was pure gain. The
+  key and the mechanism stay for a future sunk-cost model, in which the
+  pool would be spent at placement. The race is decided inside the
   completing player's turn, so turn order decides a same-round tie
   (**accepted**). New per-player stats `wonders_completed`,
   `wonder_races_lost`.
@@ -746,7 +775,8 @@ wonder list and per-wonder pages, Gathering Storm). Erik's March notes
   only on a `kind = "wonder"` table and is never among the effects in
   force. When a wonder grants a civic or changes its owner's policy slots,
   the government and loadout defaults re-run at once, so a new slot is
-  filled (design §5.4).
+  filled (design §5.4); and (P9) when a city holding such a wonder changes
+  hands, `City.set_owner` re-fits both players' loadouts the same way.
 - **Growth percent.** The growth bucket is now `food_net * housing_percent
   * growth_share * (100 + growth_percent) // 10000` hundredths (design v2;
   `growth_share` is 100 until loyalty, P7): the summed `growth_percent`
@@ -782,7 +812,7 @@ wonder list and per-wonder pages, Gathering Storm). Erik's March notes
   | Stonehenge | Ancient 180 | Astrology | flat land, adjacent to Stone | faith 4 | +2 faith and a Great Prophet (no prophets here) |
   | Hanging Gardens | Ancient 180 | Irrigation | a river on an edge of its tile | housing 2; +15 % growth in every city of its owner | as Civ 6 |
   | Temple of Artemis | Ancient 180 | Archery | adjacent to Cattle, Sheep or Deer | food 4, housing 3 | next to a Camp; its amenities are not modelled |
-  | Oracle | Classical 290 | State Workforce (civic) | hills | culture 2, faith 2; one free civic | Mysticism (cut), Ancient; a great-person discount with no object here |
+  | Oracle | Ancient 290 | State Workforce (civic) | hills | culture 2, faith 2; one free civic | Mysticism (cut), Ancient; a great-person discount with no object here |
   | Statue of Zeus | Classical 400 | Military Training (civic) | flat land, adjacent to an Encampment | gold 3; 3 free Spearmen and 3 Archers; +50 % toward anti-cavalry units in every city of its owner | Civ 6 also grants a Battering Ram and needs a Barracks in the Encampment |
   | Great Library | Classical 400 | Recorded History (civic) | flat land, adjacent to a Campus | science 3; one free tech | +2 science and boosts for every Ancient/Classical tech; needs a Library |
   | Colossus | Classical 400 | Celestial Navigation | on Coast, adjacent to land AND to a Harbor | gold 3; +1 trade route capacity (owner); 1 free Trader | Shipbuilding (cut); its Great Admiral points are not modelled |
@@ -822,10 +852,10 @@ state's district branch still raises `NotImplementedError` naming #99.
 **Accepted gaps.** Civ 6's "completing a wonder claims two more tiles" is
 not implemented (borders grow only by culture, #87), and no wonder's amenity
 effect exists (no amenities, #96). A wonder cannot be bought (Civ 6 neither).
-Tourism, great-person points, great works and era score do not exist. A
-player may place copies of one wonder in several of its own cities (Civ 6:
-once one city has broken ground, no other city of that player may start
-it); the completing city removes them like any other copy.
+Tourism, great-person points, great works and era score do not exist. (P6
+let a player place copies of one wonder in several of its own cities; P9
+closes that, Civ 6's rule: once one city has broken ground, no other city
+of that player may start it.)
 
 ### Loyalty (#116 P7)
 
@@ -939,8 +969,8 @@ founding cities in a bigger neighbour's shadow.
   `Player.end_turn`, which ends a two-player game.
 - **Engine.** `next_turn`'s round end is `_border_phase` -> `_loyalty_phase`
   -> the end-of-game test (`_update_done`, the same test `_check_game_end`
-  and the end of `next_turn` run; P9 adds domination there) -> `turn_counter
-  += 1`. `unit_model.FIGHTING_CLASSES` names the classes that garrison a
+  and the end of `next_turn` run; since P9 it also tests domination)
+  -> `turn_counter += 1`. `unit_model.FIGHTING_CLASSES` names the classes that garrison a
   city and that are "land military" for faith purchases (P5).
   `effects.Effect` gains `source_city` (set on the entries `active_effects`
   returns; ignored by equality). The smoke script logs per player the lowest
@@ -1081,6 +1111,119 @@ engine's tile predicate should itself forbid a second improvement (above) is
 open. One action per turn, and Civ 6's work-over-several-turns, charges and
 pillaging are not modelled. Nothing removes an improvement from a tile its
 owner loses: it changes hands with the tile.
+
+### Winning (#116 P9)
+
+**Rule change, effect NOT yet measured.** Spec: `docs/progression_design.md`
+§11, §12 and "v2 fixes" (Verdict and domination; Turn order; Wonders), and
+the §14 rows "Domination ..." and "the verdict and the score diverge (#55)".
+This patch closes #100's gap with the two cheapest honest rules, finishes the
+wonder rulings P6 left open, and releases 0.8.0.
+
+- **One verdict.** `determine_outcome(env) -> (winner, victory)` lives in the
+  new engine module `civulator/game/victory.py` (the engine may import nothing
+  of training; `training/trainer.py` re-exports `determine_winner`,
+  `determine_outcome`, `player_score` and `CITY_SCORE_WEIGHT` under their old
+  names, so every caller is unchanged). In this order: **elimination** (one
+  living player), **domination**, then, once the game is done at or past the
+  turn cap (`env.done and env.turn_counter >= env.max_turns`), the **turn-cap
+  score** -- the unique highest `player_score` wins (`"score"`; a dead player
+  ranks -1), a tied top score is `(None, "draw")` -- and otherwise `(None,
+  None)`: the game is running, or a step guard cut it off, and **a truncated
+  game's `victory` is null, never `"draw"`** (#51). `determine_winner(env)` is
+  `determine_outcome(env)[0]`. `GameEnvironment._update_done` -- called by
+  `_check_game_end` after every step that can capture a city, and by
+  `next_turn` after `_loyalty_phase` and before `turn_counter += 1` -- asks
+  the same module (`victory.game_over`: a decisive outcome, nobody alive, or
+  the cap passed), so `done` can never disagree with the verdict.
+- **Domination** (new, outright): a living player that holds **every Palace
+  in the game** -- `[city] capital_building`, the capital marker -- **and** at
+  least one Palace that was granted to another player (`Player.palace_granted`,
+  which outlives the Palace's city) wins the moment it takes the last one,
+  whether or not the others still have cities (Civ 6: capture all capitals).
+  In a Duel, taking the enemy capital now ends the game at once; before this
+  patch it ended when the loser had no city left, which took conquering every
+  city. The second clause is what stops a vacuous win: a board with no Palace
+  (a painted scenario) and the first player to found a capital (the only
+  Palace that exists, no other player yet granted one) both "hold every
+  Palace" and neither wins. A loyalty flip that takes the last Palace ends the
+  game in its own round (the verdict runs after the loyalty phase). Rewards
+  are the existing ones: the capture's own reward, then the terminal win and
+  loss rewards once `done` (so they arrive at the capture, not several turns
+  later). Decisions of this patch, all Claude's: a player that has not yet
+  founded its capital does not block a domination (every Palace that exists
+  is held, one of them granted to the loser); a Palace gone with a removed
+  city (`remove_city`, painter and recorder only; no rule removes a city) is
+  gone, but the grant stays recorded.
+- **The score has terms.** `[game] city_score_weight` stays where it is and a
+  new `[game.score]` holds the rest. `player_score(player)` is the sum of
+  `score_breakdown`, one term per kind of holding, each a count times its
+  weight:
+
+  | Term | Count | Weight (config) | Starting value |
+  |---|---|---|---|
+  | cities | the player's cities | `[game] city_score_weight` | 10 (unchanged) |
+  | units | its units | `unit_weight` | 1 (unchanged) |
+  | population | the population of its cities | `population_weight` | 1 |
+  | techs | techs known | `tech_weight` | 2 |
+  | civics | civics known | `civic_weight` | 2 |
+  | wonders | its complete wonders (`kind = "wonder"`, any city; a placed, unfinished one counts nothing) | `wonder_weight` | 10 |
+
+  The starting weights are Claude's (design §11): a full tech tree (22 techs)
+  is worth about four cities and a wonder one; **Erik tunes them while the
+  agents play** -- the loader accepts whole numbers >= 0, exactly these five
+  keys, and raises otherwise, and `meta.build_manifest` records the table with
+  every artifact. Until P9 the score was `cities * 10 + units`. The viewer
+  HUD shows `player_score` and the verdict's `victory` kind, and the smoke
+  script prints the verdict and each player's score term by term.
+- **The eval record says how a game ended and under which rules.**
+  `scripts/evaluate.py`'s `games_detail[]` gains `victory`
+  (`"elimination" | "domination" | "score" | "draw"`, null when truncated),
+  read from `determine_outcome` and never re-derived there; the summary gains
+  the engine's `game_version` and, per side, `weights_game_version` (the
+  `game_version` of each weights file's manifest, null for a file saved before
+  manifests): archived 0.7 weights play 0.8 rules, and the record must say so.
+  Older summaries lack the keys; readers treat them as absent.
+- **Wonder rulings** (P6 left them for P9; Claude's calls, Erik may overturn
+  them). `[wonders] consolation_percent = 0`: the production pool is not sunk
+  until completion, so a losing city already keeps its production and a
+  refund was pure gain (the key stays for a future sunk-cost model).
+  `max_per_player = 1` on every `kind = "wonder"` table, and the loader
+  requires a wonder table to declare it: once one city of a player has placed
+  a wonder, no other city of that player may (Civ 6; the district placement
+  check already counted placed copies per player). The Oracle's era is
+  Ancient (Civ 6; it was Classical): its effects do not change (Corvee covers
+  both eras). When a city holding a complete wonder that grants policy slots
+  changes hands, by capture or flip, `City.set_owner` re-fits **both**
+  players' loadouts through the engine's government and loadout defaults, so
+  the old owner is not left with a card in a slot it no longer has and the
+  new owner's new slot is filled.
+- **Release.** `__version__` was 0.8.0 since P1; the fixture was regenerated
+  then. This entry is dated and finished, `docs/game_overview.md` describes
+  0.8.0, `weights/trained/manifest.md` carries the 0.8 epoch marker, and
+  CLAUDE.md's rows are brought to the final state (the Victory row is new;
+  Win/score determination is amended).
+
+**What agents see.** Nothing in the encoders or the action space changes. The
+terminal reward now arrives at the moment a capital is taken, not when the
+last city falls, and a policy that takes the enemy capital wins the game. The
+turn-cap tiebreak now weighs techs, civics, population and wonders. No agent
+chooses research or civics until #99 (the engine defaults research the
+trees), so what separates two players at the cap is mostly the science and
+culture their cities yield and how many cities they hold. In the five smoke
+games run for this patch (seeds 4242, 7 and 99 on the duel map; 4242 and 7
+on `--size tiny`; 1 game each, random play) the techs and civics terms were
+56 to 68 of the winner's 91 to 132 points, every game ended on score at round
+250, none ended by domination or elimination, and no city flipped. Five random
+games say nothing about the weights; they are why the weights are Erik's to
+tune.
+
+**Accepted gaps.** No tree victory, religious victory or culture victory (named
+in design §11, not designed). The weights are starting values, never tuned
+against play. A domination can be won before every player has founded a
+capital (the Palaces that exist are all held and one was granted to the
+loser). A `watch.py --eval-json` replay of a pre-0.8 summary plays 0.8 rules,
+so it will not reproduce the recorded game.
 
 ---
 
