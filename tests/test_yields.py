@@ -200,12 +200,16 @@ def test_a_pool_yield_table_must_hold_exactly_base_and_per_pop(monkeypatch):
 
 
 def test_yields_module_names_no_building_district_or_wonder():
-    """civulator/game/yields.py contains no configured building, district
-    or wonder name (wonders are district-registry entries): every source is
-    a column or an effect. Breaks if a source is special-cased in code."""
+    """civulator/game/yields.py contains no configured building, district,
+    wonder (wonders are district-registry entries), policy, government or
+    civic name (#116 P4 adds the last three): every source is a column or an
+    effect. Breaks if a source is special-cased in code."""
+    from civulator import research_model
+
     source = inspect.getsource(yields_mod)
     names = (set(CFG["buildings"]) | set(unit_model.BUILDING_COSTS)
-             | set(district_model.DISTRICTS))
+             | set(district_model.DISTRICTS) | set(research_model.POLICIES)
+             | set(research_model.GOVERNMENTS) | set(research_model.CIVICS))
     assert names, "fixture: something is configured"
     assert [n for n in sorted(names) if n in source] == []
 

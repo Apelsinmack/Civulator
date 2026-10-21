@@ -1,10 +1,16 @@
 """The one housing computation (issue #88, spec docs/housing_design.md s1).
 
-Pure engine code: reads only config-derived tables (unit_model, terrain_model)
-and the live map. All values are integer tenths of a housing point. Nothing is
-cached on the city, so ownership changes need no extra rule.
+Pure engine code: reads only config-derived tables (unit_model, terrain_model),
+the effects in force (`effects.active_effects`, #116 P4) and the live map. All
+values are integer tenths of a housing point. Nothing is cached on the city,
+so ownership changes need no extra rule.
 """
 
+from ..effects import (
+    KIND_HOUSING_IF_DISTRICTS,
+    KIND_HOUSING_WITH_BUILDING,
+    active_effects,
+)
 from ..terrain_model import IMPROVEMENT_HOUSING
 from ..unit_model import (
     BUILDING_HOUSING,
@@ -13,7 +19,7 @@ from ..unit_model import (
     HOUSING_WATER_DRY,
     HOUSING_WATER_FRESH,
 )
-from .districts import district_spec
+from .districts import district_spec, specialty_districts
 
 
 def _water_housing(game_map, coordinates):
@@ -37,13 +43,34 @@ def _district_water(city, water):
     return water
 
 
+def _effect_housing(city):
+    """The housing effects in force for the city, in tenths (#116 P4, design
+    §5.2-§5.3): every `housing_if_districts` entry whose `min_districts` the
+    city's complete specialty districts reach, and every
+    `housing_with_building` entry whose building the city holds. The one
+    consumer of both kinds."""
+    total = 0
+    specialty = None
+    for effect in active_effects(city.player, city):
+        if effect.kind == KIND_HOUSING_IF_DISTRICTS:
+            if specialty is None:
+                specialty = len(specialty_districts(city))
+            if specialty >= effect["min_districts"]:
+                total += effect["amount"]
+        elif effect.kind == KIND_HOUSING_WITH_BUILDING:
+            if effect["building"] in city.buildings:
+                total += effect["amount"]
+    return total
+
+
 def housing(city):
     """Housing a city offers, in integer tenths.
 
     water (adjusted by complete districts) + sum of each complete district's
     flat `housing` + sum of each building's `housing` + sum, over tiles this city owns
     within `[housing] improvement_radius` (centre excluded), of the largest
-    `housing` among that tile's improvements.
+    `housing` among that tile's improvements + the housing effects in force
+    (`_effect_housing`).
     """
     game_map = city.player.game_env.map
     total = _district_water(city, _water_housing(game_map, city.coordinates))
@@ -56,4 +83,4 @@ def housing(city):
             continue
         tile = game_map.get_tile(pos)
         total += max((IMPROVEMENT_HOUSING.get(i, 0) for i in tile.improvements), default=0)
-    return total
+    return total + _effect_housing(city)

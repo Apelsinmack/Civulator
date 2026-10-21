@@ -6,6 +6,7 @@ import random
 import numpy as np
 
 from ..config import CFG
+from ..effects import RULE_FLANKING, combat_strength_amounts, rule_enabled
 from ..terrain_model import can_enter
 from ..unit_model import (
     BASE_COMBAT_STRENGTH as _BASE_COMBAT_STRENGTH,
@@ -393,14 +394,33 @@ class Unit:
             for amount in class_bonus_amounts(STRENGTH_COMBAT, self.unit_type, target_type):
                 strength += amount
 
+        # `combat_strength` effects in force for the owner (#116 P4: a
+        # government's or a policy card's bonus to a combat class, or to
+        # every unit), in BOTH roles like the class bonuses, added one by one.
+        # Matched by class through the effects interpreter, never by a name
+        # written here.
+        for amount in self._effect_strength_amounts():
+            strength += amount
+
         # Flanking (issue #59): the unit that is STRIKING gets a bonus per
         # neighbouring tile of its target that holds one of its own
         # combat-capable units. See flanking_count for the exact rule and for
-        # why it is the striker rather than the defender who gets it.
-        if is_attacking and FLANKING_BONUS:
+        # why it is the striker rather than the defender who gets it. Since
+        # #116 P4 the rule is a civic unlock (Civ 6's Military Tradition):
+        # it holds only while an `enables` effect in force for the striker's
+        # owner names it.
+        if is_attacking and FLANKING_BONUS and rule_enabled(self.player, RULE_FLANKING):
             strength += FLANKING_BONUS * self.flanking_count(target)
 
         return max(0, strength)
+
+    def _effect_strength_amounts(self):
+        """The `combat_strength` effect amounts in force for this unit's owner
+        that apply to its combat class (or to every unit), in order; none
+        without an owner. Read by get_combat_strength and get_ranged_strength."""
+        if self.player is None:
+            return []
+        return combat_strength_amounts(self.player, self.combat_class)
 
     def flanking_count(self, target):
         """How many tiles adjacent to `target` hold a flanking unit of ours.
@@ -470,6 +490,11 @@ class Unit:
         if target_type is not None:
             for amount in class_bonus_amounts(STRENGTH_RANGED, self.unit_type, target_type):
                 strength += amount
+
+        # `combat_strength` effects apply to the shooter's ranged strength
+        # too (#116 P4, design §3: "both roles").
+        for amount in self._effect_strength_amounts():
+            strength += amount
 
         return max(0, strength)
 

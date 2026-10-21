@@ -8,13 +8,21 @@ from .map import Map
 from .. import hexmath, mapgen
 from ..mapgen.starts import StartPlacementError
 from ..rng import PortableRNG
-from ..research_model import TECHS, is_available, scaled_tech_cost
+from ..effects import loadout_is_legal, slot_counts
+from ..research_model import (
+    CIVICS,
+    GOVERNMENTS,
+    TECHS,
+    is_available,
+    scaled_civic_cost,
+    scaled_tech_cost,
+)
 from ..terrain_model import can_enter, improvement_on, matches
 from .player import Player
 from .city import City
 from .availability import player_can_build
 from .city import _create_unit
-from .defaults import default_research
+from .defaults import default_civic, default_government, default_loadout, default_research
 from .districts import (
     YIELD_NAMES as DISTRICT_YIELD_NAMES, District, can_place_district, district_cost,
 )
@@ -27,6 +35,7 @@ from .territory import (
 from .unit import WarriorUnit, calculate_damage, movement_domain
 from .upgrades import can_upgrade, upgrade_cost, upgrade_target
 from ..config import CFG
+from ..unit_model import CAPITAL_BUILDING
 
 logger = logging.getLogger(__name__)
 
@@ -230,6 +239,7 @@ class GameEnvironment:
                 "faith_produced": 0,
                 "growth_slowed_turns": 0,  # city-turns, positive net, band < 100 % (#88)
                 "techs_researched": 0,  # completed techs (#116 P2)
+                "civics_researched": 0,  # completed civics (#116 P4)
                 "units_upgraded": 0,  # units upgraded into their next type (#116 P3)
                 # Summed adjacency score per yield, per city-round (#86 s5)
                 **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
@@ -981,7 +991,7 @@ class GameEnvironment:
         tile.set_city(city)
         player.cities.append(city)
         if not player.palace_granted:
-            city.buildings.append("Palace")
+            city.buildings.append(CAPITAL_BUILDING)  # the Palace (#88, [city] capital_building)
             player.palace_granted = True
 
         changed = {city.city_id} | self._founding_claim(city)
@@ -1132,6 +1142,15 @@ class GameEnvironment:
         district.complete = True
         city.current_production = None
 
+    def _one_shot_effects(self, city, district):
+        """STUB for #116 P6 (design §3, §9.3): where `complete_district` will
+        fire a wonder's one-shot effects -- `free_units` (placed through
+        `complete_unit_production`), `free_tech` / `free_civic` (completed at
+        once, outside the one-per-turn rule), `free_population` -- exactly
+        once, never on load or capture. The kinds are validated since P4
+        (only on district-registry tables); nothing fires yet."""
+        return None
+
     # --- Improvements ---
 
     def can_build_improvement_at(self, coordinates, improvement_type):
@@ -1215,15 +1234,128 @@ class GameEnvironment:
         self.episode_stats[player.player_index]["techs_researched"] += 1
         return tech
 
+    # --- Civics, governments, policies (#116 P4, docs/progression_design.md §5) ---
+
+    def set_civic(self, player, civic):
+        """Choose `civic` as `player`'s current civic. Refused (False, nothing
+        changed) unless it is a civic the player does not know and every
+        prerequisite is known. Switching loses nothing: the culture pool is
+        one number (design §5.1, mirroring `set_research`)."""
+        if not is_available(CIVICS, civic, player.civics):
+            return False
+        player.current_civic = civic
+        return True
+
+    def resolve_civic(self, player):
+        """Civics for one turn of `player`'s, the research rule on the culture
+        pool: with no current civic, the engine default picks one
+        (`defaults.default_civic`); then, if `player.culture` (tenths) holds
+        10 * the scaled cost, pay it, append the civic to `player.civics`,
+        clear `current_civic` and count it in
+        `episode_stats["civics_researched"]`. At most one civic per call, so
+        one per turn; the overflow stays in the pool. Returns the civic
+        completed, or None."""
+        if player.current_civic is None:
+            player.current_civic = default_civic(player)
+        civic = player.current_civic
+        if civic is None:
+            return None  # every civic is known
+        cost = 10 * scaled_civic_cost(civic)
+        if player.culture < cost:
+            return None
+        player.culture -= cost
+        player.civics.append(civic)
+        player.current_civic = None
+        self.episode_stats[player.player_index]["civics_researched"] += 1
+        return civic
+
+    def set_government(self, player, name):
+        """Adopt government `name` for `player`. Refused (False, nothing
+        changed) unless it is a configured government whose civic the player
+        knows. No anarchy and no switching cost (design §5.2). When the
+        adoption changes the player's policy slots, the loadout is re-fitted
+        at once by the engine default (`defaults.default_loadout`), so a
+        loadout is legal after every government change."""
+        spec = GOVERNMENTS.get(name) if isinstance(name, str) else None
+        if spec is None or spec.requires_civic not in player.civics:
+            return False
+        before = slot_counts(player)
+        player.government = name
+        if slot_counts(player) != before:
+            player.policies = default_loadout(player)
+        return True
+
+    def set_policies(self, player, names):
+        """Slot exactly the policy cards `names`, in that order. Refused
+        (False, nothing changed) unless the loadout is legal now
+        (`effects.loadout_is_legal`): every card exists, is unlocked and not
+        obsolete, none appears twice, and together they fit the slots --
+        each card in a slot of its type or a wildcard slot (design §5.3)."""
+        names = list(names)
+        if not loadout_is_legal(player, names):
+            return False
+        player.policies = names
+        return True
+
+    def _government_and_loadout_defaults(self, player, civic_completed):
+        """The engine defaults of design §13 (no agent chooses yet, #99): adopt
+        `defaults.default_government` when it names one (set_government
+        re-fits the loadout if the slots change), and re-run
+        `defaults.default_loadout` when a civic completed this turn -- the one
+        event that unlocks a card or makes one obsolete."""
+        choice = default_government(player)
+        if choice is not None:
+            self.set_government(player, choice)
+        if civic_completed:
+            player.policies = default_loadout(player)
+
+    # --- Hooks for the effect kinds consumed from #116 P5 (validated since P4) ---
+
+    def _unit_maintenance_delta(self, player, unit):
+        """STUB for #116 P5 (design §7.1): where maintenance will add the
+        summed `unit_maintenance_delta` effects in force to each unit's
+        upkeep (floored at 0 per unit). Nothing reads the kind yet."""
+        return 0
+
+    def _purchase_percent(self, player, resource):
+        """STUB for #116 P5 (design §7.3): where `purchase_cost` will sum the
+        `purchase_percent` effects in force for `resource`, applied once.
+        Nothing reads the kind yet."""
+        return 0
+
+    def _faith_purchase_categories(self, player, city):
+        """STUB for #116 P5 (design §7.3): where `can_purchase` will collect
+        the categories the `faith_purchase` effects in force for the city
+        unlock. Nothing reads the kind yet."""
+        return ()
+
+    def _route_capacity_bonus(self, player):
+        """STUB for #116 P5 (design §7.4): where `route_capacity` will add the
+        `trade_route_capacity` effects in force (once per city for a
+        building's). Nothing reads the kind yet."""
+        return 0
+
     def economy_phase(self, player):
         """The player's economy phase (progression design, "v2 fixes", turn
         order): runs once per own turn from `Player.start_turn`, after every
         city has accrued and before the city ranged strike. The only place a
-        tech completes. Steps, in order: research (#116 P2). P4 adds civics
-        and the government/loadout defaults after research; P5 puts
-        maintenance and bankruptcy before it and route expiry and the Trader
-        default after; P8 the Worker default last."""
+        tech or a civic completes. The full order, one step per rule:
+
+        1. maintenance (#116 P5)
+        2. bankruptcy (#116 P5)
+        3. research -- `resolve_research` (#116 P2)
+        4. civics -- `resolve_civic` (#116 P4)
+        5. government and loadout defaults -- `_government_and_loadout_defaults`
+           (#116 P4)
+        6. route expiry and Trader return (#116 P5)
+        7. Trader auto-send (#116 P5)
+        8. Worker default (#116 P8)
+
+        Steps 3-5 exist; a later patch inserts its steps at their place here.
+        """
         self.resolve_research(player)
+        civic = self.resolve_civic(player)
+        self._government_and_loadout_defaults(player, civic is not None)
 
     # --- Upgrades (#116 P3, docs/progression_design.md §6.4) ---
 

@@ -1,6 +1,7 @@
-"""Issue #116 P2: what a player and a city may build (docs/progression_design.md
-§4.1, §6.2, "v2 fixes"; §14 rows "An item with requires_tech is refused ...",
-"A requires_* naming nothing raises at load", "With every tech known ...").
+"""Issue #116 P2, P4: what a player and a city may build (docs/progression_design.md
+§4.1, §5, §6.2, "v2 fixes"; §14 rows "An item with requires_tech is refused
+...", "A requires_* naming nothing raises at load", "With every tech known
+..."). P4 adds the civic and government-tier gates on the same paths.
 
 One test per build path that must read `player_can_build` /
 `city_can_build_building`: the build mask, `produce_unit` /
@@ -17,17 +18,20 @@ from civulator.agents.build_agent import BUILD_OPTIONS, get_valid_build_mask
 from civulator.config import CFG
 from civulator.game.availability import (
     KINDS,
+    NO_GOVERNMENT_TIER,
     city_can_build_building,
+    government_tier,
     player_can_build,
+    required_civic,
     required_tech,
 )
 from civulator.game.city import City
 from civulator.game.districts import District
 from civulator.game.territory import NEUTRAL
 from civulator.game.unit import WorkerUnit
-from civulator.research_model import TECH_ORDER, TECHS
+from civulator.research_model import CIVIC_ORDER, CIVICS, GOVERNMENTS, TECH_ORDER, TECHS
 
-from conftest import grant, grant_all
+from conftest import grant, grant_all, grant_civic
 from test_combat_range import make_flat_env, place
 
 CENTRE = (3, 4)
@@ -64,12 +68,27 @@ def _put_district(env, city, district_type, complete=True, index=0):
     return district
 
 
+def _adopt_tier(env, player, tier):
+    """Adopt the first configured government of at least `tier` (granting its
+    civic): fixture for a `requires_government_tier` (#116 P4)."""
+    name = next(n for n, g in GOVERNMENTS.items() if g.tier >= tier)
+    grant_civic(player, GOVERNMENTS[name].requires_civic)
+    assert env.set_government(player, name)
+
+
 def _satisfy_non_tech_requirements(env, city, building):
     """Give `city` the complete district and the building chain `building`
-    requires, so only research can still refuse it."""
+    requires, its owner the building's civic and a government of its tier
+    (#116 P4), so only research can still refuse it."""
     district = unit_model.BUILDING_REQUIRES_DISTRICT.get(building)
     if district is not None:
         _put_district(env, city, district)
+    civic = unit_model.BUILDING_REQUIRES_CIVIC.get(building)
+    if civic is not None:
+        grant_civic(city.player, civic)
+    tier = unit_model.BUILDING_REQUIRES_GOVERNMENT_TIER.get(building)
+    if tier is not None and government_tier(city.player) < tier:
+        _adopt_tier(env, city.player, tier)
     needed = unit_model.BUILDING_REQUIRES_BUILDING.get(building)
     while needed is not None:
         city.buildings.append(needed)
@@ -222,6 +241,9 @@ def test_a_building_needs_a_complete_required_district_and_its_required_building
     for name in sorted(set(with_district) | set(with_building)):
         env, city = _env_and_city()
         grant_all(city.player)
+        tier = unit_model.BUILDING_REQUIRES_GOVERNMENT_TIER.get(name)
+        if tier is not None:
+            _adopt_tier(env, city.player, tier)
         idx = BUILD_OPTIONS.index(name) if name in BUILD_OPTIONS else None
 
         def refused():
@@ -272,10 +294,11 @@ def test_the_mask_never_offers_an_option_production_would_refuse():
 
 def test_with_every_tech_known_every_gated_item_is_available():
     """Every unit, building, district and improvement is available to a
-    player who knows the whole tree; every costed building is buildable by a
-    city holding its complete district and its building chain; and every
-    `requires_*` a building declares names something a city can hold.
-    Breaks on a dead node or an unreachable item (design §14)."""
+    player who knows both trees; every costed building is buildable by a
+    city holding its complete district and its building chain under a
+    government of its tier; and every `requires_*` a building declares
+    names something a city can hold. Breaks on a dead node or an
+    unreachable item (design §14)."""
     env, city = _env_and_city()
     player = grant_all(city.player)
     items = {
@@ -290,6 +313,8 @@ def test_with_every_tech_known_every_gated_item_is_available():
             assert player_can_build(player, kind, name), (kind, name)
             tech = required_tech(kind, name)
             assert tech is None or tech in TECHS
+            civic = required_civic(kind, name)
+            assert civic is None or civic in CIVICS
     for name in unit_model.BUILDING_COSTS:
         env, city = _env_and_city()
         grant_all(city.player)
@@ -350,6 +375,20 @@ def _buildings(**extra):
         "Probe": {"production_cost": 10, "maintenance": -1}}),
     lambda: terrain_model.parse_improvements({"Probe": {"requires_tech": "Alchemy"}}),
     lambda: terrain_model.parse_improvements({"Probe": {"requires_techs": TECH_ORDER[0]}}),
+    # #116 P4: the civic and government-tier columns name real things
+    lambda: unit_model.parse_unit_gates(_units(requires_civic="Some Civic")),
+    lambda: unit_model.parse_building_gates(_buildings(requires_civic="Some Civic")),
+    lambda: unit_model.parse_building_gates(_buildings(requires_government_tier=-1)),
+    lambda: unit_model.parse_building_gates(_buildings(requires_government_tier=True)),
+    lambda: unit_model.parse_building_gates(_buildings(requires_government_tier=1.5)),
+    lambda: unit_model.parse_building_gates(_buildings(
+        requires_government_tier=1 + max(g.tier for g in GOVERNMENTS.values()))),
+    lambda: unit_model.parse_building_gates(_buildings(purchasable=["gems"])),
+    lambda: unit_model.parse_building_gates(_buildings(purchasable=["gold", "gold"])),
+    lambda: unit_model.parse_building_gates(_buildings(effects={"kind": "x"})),
+    lambda: district_model.parse_districts({
+        **{k: v for k, v in CFG["districts"].items() if not isinstance(v, dict)},
+        "Probe": {"production_cost": 10, "requires_civic": "Some Civic"}}),
 ])
 def test_a_requirement_naming_nothing_raises_at_load(parse):
     """A `requires_tech`, `requires_building` or `requires_district` that
@@ -375,21 +414,118 @@ def test_the_real_requirements_parse_and_name_real_items():
                for b in unit_model.BUILDING_REQUIRES_BUILDING.values())
 
 
-def test_civic_and_government_columns_are_accepted_raw_for_p4():
-    """`requires_civic` (units, buildings, districts) and
-    `requires_government_tier` (buildings) parse without validation until
-    #116 P4 defines what they name. Breaks if the loaders reject P4's
-    columns or drop them."""
-    _, civic = unit_model.parse_unit_gates(_units(requires_civic="Some Civic"))
-    assert civic == {"Probe": "Some Civic"}
+def test_civic_and_government_columns_parse_when_they_name_real_things():
+    """`requires_civic` (units, buildings, districts) names a civic and
+    `requires_government_tier` (buildings) a tier some government reaches;
+    both are kept as declared (#116 P4; P2 accepted them raw). Breaks if a
+    loader drops the columns."""
+    civic = CIVIC_ORDER[-1]
+    tier = max(g.tier for g in GOVERNMENTS.values())
+    _, civics = unit_model.parse_unit_gates(_units(requires_civic=civic))
+    assert civics == {"Probe": civic}
     gates = unit_model.parse_building_gates(
-        _buildings(requires_civic="Some Civic", requires_government_tier=1))
-    assert gates["requires_civic"] == {"Probe": "Some Civic"}
-    assert gates["requires_government_tier"] == {"Probe": 1}
+        _buildings(requires_civic=civic, requires_government_tier=tier))
+    assert gates["requires_civic"] == {"Probe": civic}
+    assert gates["requires_government_tier"] == {"Probe": tier}
     reg = district_model.parse_districts({
         **{k: v for k, v in CFG["districts"].items() if not isinstance(v, dict)},
-        "Probe": {"production_cost": 10, "requires_civic": "Some Civic"}})
-    assert reg.districts["Probe"].requires_civic == "Some Civic"
+        "Probe": {"production_cost": 10, "requires_civic": civic}})
+    assert reg.districts["Probe"].requires_civic == civic
+
+
+# --- (k) civic and government-tier gates on every build path (#116 P4) ---------------
+
+
+def _civic_gated(kind_names):
+    return [(kind, name) for kind, names in kind_names for name in names
+            if required_civic(kind, name) is not None]
+
+
+def test_every_civic_gate_refuses_until_the_civic_is_known_on_mask_and_production():
+    """For every unit and building with a `requires_civic`, with every tech
+    known, every other requirement met and every OTHER civic known, the
+    build mask (when it is an option) and produce_unit / produce_building
+    refuse it; with its civic they accept it. Breaks if a build path skips
+    the civic in player_can_build (the mask invariant, #51)."""
+    gated = _civic_gated([("unit", sorted(unit_model.UNIT_NAMES)),
+                          ("building", sorted(unit_model.BUILDING_COSTS))])
+    assert gated, "fixture: some unit or building is civic-gated"
+    for kind, name in gated:
+        env, city = _env_and_city()
+        grant_all(city.player)
+        if kind == "building":
+            _satisfy_non_tech_requirements(env, city, name)
+        civic = required_civic(kind, name)
+        city.player.civics.remove(civic)
+        produce = city.produce_building if kind == "building" else city.produce_unit
+        idx = BUILD_OPTIONS.index(name) if name in BUILD_OPTIONS else None
+        before = dict(city.current_production)
+        assert not player_can_build(city.player, kind, name), name
+        if idx is not None:
+            assert get_valid_build_mask(city)[idx] == 0.0, name
+        assert produce(name) is False and city.current_production == before, name
+        city.player.civics.append(civic)
+        if idx is not None:
+            assert get_valid_build_mask(city)[idx] == 1.0, name
+        assert produce(name) is True, name
+
+
+def test_every_government_tier_gate_refuses_below_the_tier_and_without_a_government():
+    """For every building with a `requires_government_tier`, with both trees
+    known and every other requirement met: refused with no government
+    (below every tier) and under every government of a lower tier, by the
+    mask and by produce_building; accepted under every government of that
+    tier or above. Breaks if the tier is not read, read from the wrong
+    government, or compared the wrong way."""
+    gated = sorted(unit_model.BUILDING_REQUIRES_GOVERNMENT_TIER)
+    assert gated, "fixture: some building is gated on a government tier"
+    for name in gated:
+        tier = unit_model.BUILDING_REQUIRES_GOVERNMENT_TIER[name]
+        env, city = _env_and_city()
+        grant_all(city.player)
+        _satisfy_non_tech_requirements(env, city, name)
+        idx = BUILD_OPTIONS.index(name) if name in BUILD_OPTIONS else None
+        city.player.government = None
+        assert government_tier(city.player) == NO_GOVERNMENT_TIER < tier
+        for government, spec in [(None, None), *GOVERNMENTS.items()]:
+            if government is not None:
+                assert env.set_government(city.player, government)
+            allowed = spec is not None and spec.tier >= tier
+            assert city_can_build_building(city, name) is allowed, (name, government)
+            if idx is not None:
+                assert get_valid_build_mask(city)[idx] == float(allowed), (name, government)
+            if not allowed:
+                assert city.produce_building(name) is False, (name, government)
+        assert city.produce_building(name) is True, name
+
+
+def test_the_mask_never_offers_an_option_production_would_refuse_across_civics():
+    """For civic states from none to the whole tree (every tech known), with
+    and without every district, an offered option is accepted by
+    production. Breaks if mask and production read different civic gates."""
+    for known in range(0, len(CIVIC_ORDER) + 1, 4):
+        for with_districts in (False, True):
+            env, city = _env_and_city()
+            city.player.techs[:] = TECH_ORDER
+            city.player.civics[:] = CIVIC_ORDER[:known]
+            if with_districts:
+                for i, district in enumerate(district_model.DISTRICTS):
+                    _put_district(env, city, district, index=i)
+            mask = get_valid_build_mask(city)
+            for idx, option in enumerate(BUILD_OPTIONS):
+                if mask[idx] == 1.0:
+                    produce = (city.produce_building if _kind(option) == "building"
+                               else city.produce_unit)
+                    assert produce(option) is True, (option, known, with_districts)
+
+
+def test_purchasable_is_parsed_for_every_building():
+    """Every building carries a purchasable tuple (default gold), and the
+    configured column is honoured exactly. Breaks if the column is dropped
+    or the default changes silently."""
+    assert set(unit_model.BUILDING_PURCHASABLE) == set(unit_model.BUILDING_NAMES)
+    for name, table in CFG["buildings"].items():
+        assert unit_model.BUILDING_PURCHASABLE[name] == tuple(table.get("purchasable", ["gold"]))
 
 
 def test_maintenance_is_parsed_into_tenths_and_stored():

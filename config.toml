@@ -775,8 +775,8 @@ range = 1
 production_cost = 240
 
 # Trader: a civilian (slot 1, land) that makes and keeps one trade route
-# (#116 P5; docs/progression_design.md §7.4). Gated on the Foreign Trade CIVIC,
-# kept raw until P4 defines civics. Its table exists now, but it stays in
+# (#116 P5; docs/progression_design.md §7.4). Gated on the Foreign Trade CIVIC
+# (validated against [civics.*] since #116 P4). Its table exists now, but it stays in
 # game/unit.py's DEFERRED_BUILD_UNITS until P5 gives it routes: a build option
 # that cannot pay off is the #67 failure.
 [units.Trader]
@@ -836,9 +836,10 @@ heal_normal = 10                 # HP healed per turn otherwise
 # that holds a combat-capable friendly unit of the striking unit's player.
 # Civ 6 uses +2 per flanking unit and our strength scale is Civ 6's, so the
 # value transfers directly. Set to 0 to disable flanking entirely — the rule
-# then costs nothing, not even the adjacency scan. Erik wants this gated
-# behind tech/culture eventually (#41/#76); a config value is the minimum
-# version of that gate and keeps this epoch's behaviour reproducible.
+# then costs nothing, not even the adjacency scan. Since #116 P4 the rule is
+# also gated behind culture, as Erik wanted (#41/#76): it applies only for a
+# player who knows a civic whose effects say `enables = ["flanking"]`
+# ([civics."Military Tradition"], Civ 6's own unlock).
 #
 # Lives in [combat], not [game], despite the issue's wording: combat modifiers
 # are read by civulator/unit_model.py, which is the only interpreter of the
@@ -867,6 +868,11 @@ defense_strength = 20
 # The building named here is the one that unlocks the bombard; it must be a
 # key of [buildings.*].
 ranged_building = "Walls"
+# The building that marks a player's capital (#88): GameEnvironment.create_city
+# grants it to a player's first city, and a `city_yield` effect with
+# `capital_only = true` (#116 P4) applies only in a city holding it -- gameplay
+# never reads "capital", it reads this building. A key of [buildings.*].
+capital_building = "Palace"
 # Civ 6 derives City Ranged Strength from the strongest ranged unit the
 # civilization has built. There is no tech tree here (#41/#76), so the value
 # is the Ancient-era stand-in for that: [units.Archer] ranged_strength.
@@ -953,7 +959,7 @@ p = 1.3
 #   era        Ancient | Classical | Medieval | Renaissance
 #   requires   tech names (absent = available from the start); every name
 #              must exist, the graph must be acyclic and every tech reachable
-#   effects    optional, kept raw for #116 P4's effects interpreter
+#   effects    optional; interpreted by civulator/effects.py (#116 P4)
 # Names, eras and costs are Civ 6 Gathering Storm's
 # (docs/civ6_progression_reference.md §1); prerequisites are this design's,
 # differing from Civ 6 only where a cut tech sat in between (design §4.2).
@@ -961,6 +967,7 @@ p = 1.3
 # column of the unlocked item's own table.
 [research]
 tech_cost_percent = 75   # every tech costs cost * this // 100 whole science (design §12)
+civic_cost_percent = 75  # every civic costs cost * this // 100 whole culture (design §12)
 
 [techs.Pottery]
 cost = 25
@@ -1068,6 +1075,376 @@ cost = 600
 era = "Renaissance"
 requires = ["Apprenticeship", "Stirrups", "Military Engineering"]
 
+# --- Culture: the civics tree (issue #116 P4, docs/progression_design.md §5.1) ---
+# Read only by civulator/research_model.py, with the same parser as the techs
+# (parse_tree): cost (Civ 6 Gathering Storm culture, Standard speed), era,
+# requires (civics; absent = available from the start), optional effects
+# (interpreted by civulator/effects.py). Culture (Player.culture, tenths) pays
+# for one civic at a time: GameEnvironment.resolve_civic. Names, eras and
+# costs are Civ 6's (docs/civ6_progression_reference.md §2); prerequisites
+# are this design's where a cut civic (Mysticism, Naval Tradition, the
+# Renaissance) sat in between. What a civic unlocks is never declared here:
+# it is the `requires_civic` column of the unlocked item's own table
+# (units, buildings, districts, governments, policies).
+[civics."Code of Laws"]
+cost = 20
+era = "Ancient"
+
+[civics.Craftsmanship]
+cost = 40
+era = "Ancient"
+requires = ["Code of Laws"]
+
+[civics."Foreign Trade"]
+cost = 40
+era = "Ancient"
+requires = ["Code of Laws"]
+effects = [{ kind = "trade_route_capacity", amount = 1 }]   # Civ 6: +1 Trade Route capacity (consumed from #116 P5)
+
+[civics."Military Tradition"]
+cost = 50
+era = "Ancient"
+requires = ["Craftsmanship"]
+# Civ 6: grants the flanking (and support) combat bonus. Flanking (#59) is
+# off until a player knows this civic (the `flanking` rule's gate,
+# Unit.get_combat_strength); support bonuses are not modelled.
+effects = [{ kind = "enables", rules = ["flanking"] }]
+
+[civics."State Workforce"]
+cost = 70
+era = "Ancient"
+requires = ["Craftsmanship"]
+
+[civics."Early Empire"]
+cost = 70
+era = "Ancient"
+requires = ["Foreign Trade"]
+
+[civics."Games and Recreation"]
+cost = 110
+era = "Classical"
+requires = ["State Workforce"]
+
+[civics."Political Philosophy"]
+cost = 110
+era = "Classical"
+requires = ["State Workforce", "Early Empire"]
+
+[civics."Drama and Poetry"]
+cost = 110
+era = "Classical"
+requires = ["Early Empire"]
+
+[civics."Military Training"]
+cost = 120
+era = "Classical"
+requires = ["Military Tradition"]   # Civ 6: + Games and Recreation
+
+[civics.Theology]
+cost = 120
+era = "Classical"
+requires = ["Drama and Poetry"]     # Civ 6: + Mysticism (cut)
+
+[civics."Defensive Tactics"]
+cost = 175
+era = "Classical"
+requires = ["Games and Recreation", "Political Philosophy"]
+
+[civics."Recorded History"]
+cost = 175
+era = "Classical"
+requires = ["Drama and Poetry", "Political Philosophy"]
+
+[civics.Feudalism]
+cost = 300
+era = "Medieval"
+requires = ["Defensive Tactics"]
+
+[civics."Civil Service"]
+cost = 300
+era = "Medieval"
+requires = ["Defensive Tactics", "Recorded History"]
+
+[civics.Mercenaries]
+cost = 340
+era = "Medieval"
+requires = ["Feudalism", "Military Training"]
+
+[civics."Divine Right"]
+cost = 340
+era = "Medieval"
+requires = ["Civil Service", "Theology"]
+
+[civics."Medieval Faires"]
+cost = 420
+era = "Medieval"
+requires = ["Feudalism"]
+
+[civics.Guilds]
+cost = 420
+era = "Medieval"
+requires = ["Feudalism", "Civil Service"]
+
+# --- Effects (issue #116 P4, docs/progression_design.md §3 and "v2 fixes") ----
+# Any [techs.*], [civics.*], [governments.*], [policies.*], [buildings.*] or
+# [districts.*] table may carry `effects = [ { kind = ..., ... }, ... ]`. The
+# only interpreter is civulator/effects.py; the kinds are a closed set and each
+# has exactly one consumer (effects.CONSUMERS). Unknown kinds or attributes, a
+# name that is no unit / building / district / class / era / civic / rule, and
+# a `city_yield` effect on a building (say it with a column) raise at load.
+# Every entry may carry `scope = "player" | "city"`: buildings and districts
+# default to "city" (the effect holds in that city), every other table to
+# "player" (it holds everywhere); a policy, government, civic or tech may not
+# declare "city". Effects of one kind are summed, then applied once with one
+# integer floor (+50 % and +50 % = +100 %).
+#   city_yield            science/culture/gold/faith/food/production = N (any subset,
+#                         multiples of 0.1); capital_only = true (only in the city
+#                         holding [city] capital_building); per_district = true
+#                         (times the city's complete specialty districts)
+#   production_percent    percent; target = { unit | unit_class | unit_era |
+#                         building | district | in_district | kind } (a name or a
+#                         list each; every key given must match the item being
+#                         produced; in_district = buildings that require that
+#                         district; kind = "unit" | "building" | "district" | "wonder")
+#   adjacency_percent     district, percent (the district's adjacency yield)
+#   combat_strength       applies_to (combat classes, "all" units, or "city"), amount
+#   city_ranged_strength  amount
+#   upgrade_cost_percent  percent
+#   policy_slots          military / economic / wildcard = N (never on a policy)
+#   housing_if_districts  amount, min_districts (complete specialty districts; 0 = any city)
+#   housing_with_building building, amount
+#   enables               rules = ["flanking"]
+#   unit_maintenance_delta (amount), purchase_percent (resource, percent),
+#   faith_purchase (categories = ["land_military"]), trade_route_capacity
+#   (amount), route_yield (gold/culture/science/food/production = N,
+#   international_only), loyalty (amount, range, requires_garrison,
+#   per_population), growth_percent (percent), free_units (units = [{ unit,
+#   count }]), free_tech / free_civic (count), free_population (amount,
+#   all_cities): validated now, consumed from #116 P5-P7.
+
+# --- Governments (issue #116 P4, docs/progression_design.md §5.2) ------------
+# Read only by civulator/research_model.py: requires_civic (the civic that
+# unlocks it), tier (int >= 0; a building's requires_government_tier compares
+# with the current government's), effects (its policy slots as a
+# `policy_slots` effect, then its inherent bonus). Civ 6 Gathering Storm slots,
+# with the diplomatic slot folded into wildcard (no city-states, no diplomatic
+# cards); legacy bonuses, envoys and favour are dropped. Player.government is
+# None until a government is adopted (set_government; the engine default
+# adopts the first of a higher tier, game/defaults.py). No anarchy.
+[governments.Chiefdom]
+requires_civic = "Code of Laws"
+tier = 0
+effects = [{ kind = "policy_slots", military = 1, economic = 1 }]
+
+# Civ 6 vanilla's Autocracy bonus (the capital +1 to every yield; Gathering
+# Storm counts Government Plaza buildings instead, design §5.2).
+[governments.Autocracy]
+requires_civic = "Political Philosophy"
+tier = 1
+effects = [
+    { kind = "policy_slots", military = 1, economic = 1, wildcard = 2 },
+    { kind = "city_yield", food = 1, production = 1, science = 1, culture = 1, gold = 1, faith = 1, capital_only = true },
+    { kind = "production_percent", target = { kind = "wonder" }, percent = 10 },
+]
+
+# Civ 6 GS: +1 housing (and +1 amenity, not modelled) in every city with a
+# district -- read here as a specialty district.
+[governments."Classical Republic"]
+requires_civic = "Political Philosophy"
+tier = 1
+effects = [
+    { kind = "policy_slots", economic = 2, wildcard = 2 },
+    { kind = "housing_if_districts", amount = 1, min_districts = 1 },
+]
+
+# Civ 6 GS: land melee and anti-cavalry +4 combat strength (naval melee: no navy).
+[governments.Oligarchy]
+requires_civic = "Political Philosophy"
+tier = 1
+effects = [
+    { kind = "policy_slots", military = 2, economic = 1, wildcard = 1 },
+    { kind = "combat_strength", applies_to = ["melee", "anti_cavalry"], amount = 4 },
+]
+
+# Civ 6: +1 housing per level of Walls; +50 % production toward them (the
+# vanilla infobox's defensive-building bonus).
+[governments.Monarchy]
+requires_civic = "Divine Right"
+tier = 2
+effects = [
+    { kind = "policy_slots", military = 2, economic = 1, wildcard = 3 },
+    { kind = "housing_with_building", building = "Walls", amount = 1 },
+    { kind = "housing_with_building", building = "Medieval Walls", amount = 1 },
+    { kind = "production_percent", target = { building = ["Walls", "Medieval Walls"] }, percent = 50 },
+]
+
+# Civ 6 vanilla Theocracy (Reformed Church, cut, so Divine Right here): land
+# military units may be bought with faith, faith purchases 15 % cheaper.
+[governments.Theocracy]
+requires_civic = "Divine Right"
+tier = 2
+effects = [
+    { kind = "policy_slots", military = 2, economic = 2, wildcard = 2 },
+    { kind = "faith_purchase", categories = ["land_military"] },
+    { kind = "purchase_percent", resource = "faith", percent = -15 },
+]
+
+# --- Policy cards (issue #116 P4, docs/progression_design.md §5.3) -----------
+# Read only by civulator/research_model.py: type (military | economic |
+# wildcard), requires_civic, optional obsolete_with (the civic that retires
+# it: once known, the card can no longer be slotted and is dropped), effects
+# (player scope only). Player.policies is the list of slotted cards; a
+# loadout is legal when every card is unlocked and not obsolete, no card twice,
+# and the cards fit the government's slots (each card in a slot of its type or
+# a wildcard slot): GameEnvironment.set_policies. Civ 6 Gathering Storm cards
+# kept where their effect has a consumer here (docs/civ6_progression_reference.md §4).
+[policies."God King"]
+type = "economic"
+requires_civic = "Code of Laws"
+obsolete_with = "Theology"
+effects = [{ kind = "city_yield", faith = 1, gold = 1, capital_only = true }]
+
+[policies."Urban Planning"]
+type = "economic"
+requires_civic = "Code of Laws"
+effects = [{ kind = "city_yield", production = 1 }]
+
+[policies.Ilkum]
+type = "economic"
+requires_civic = "Craftsmanship"
+effects = [{ kind = "production_percent", target = { unit = "Worker" }, percent = 30 }]   # Civ 6: Builders
+
+[policies.Agoge]
+type = "military"
+requires_civic = "Craftsmanship"
+obsolete_with = "Feudalism"
+effects = [{ kind = "production_percent", target = { unit_class = ["melee", "ranged", "anti_cavalry"], unit_era = ["Ancient", "Classical"] }, percent = 50 }]
+
+[policies.Caravansaries]
+type = "economic"
+requires_civic = "Foreign Trade"
+effects = [{ kind = "route_yield", gold = 2 }]   # +2 gold per trade route (consumed from #116 P5)
+
+[policies.Maneuver]
+type = "military"
+requires_civic = "Military Tradition"
+obsolete_with = "Divine Right"
+effects = [{ kind = "production_percent", target = { unit_class = ["light_cavalry", "heavy_cavalry"], unit_era = ["Ancient", "Classical"] }, percent = 50 }]
+
+[policies.Conscription]
+type = "military"
+requires_civic = "State Workforce"
+effects = [{ kind = "unit_maintenance_delta", amount = -1 }]   # per unit (consumed from #116 P5)
+
+# Civ 6: Ancient and Classical wonders. Wonders arrive in #116 P6 with no era
+# column yet, so this targets every wonder; P6 restates it if wonders gain an era.
+[policies.Corvee]
+type = "economic"
+requires_civic = "State Workforce"
+obsolete_with = "Divine Right"
+effects = [{ kind = "production_percent", target = { kind = "wonder" }, percent = 15 }]
+
+[policies.Colonization]
+type = "economic"
+requires_civic = "Early Empire"
+effects = [{ kind = "production_percent", target = { unit = "Settler" }, percent = 50 }]
+
+[policies.Limitanei]
+type = "military"
+requires_civic = "Early Empire"
+effects = [{ kind = "loyalty", amount = 2, requires_garrison = true }]   # consumed from #116 P7
+
+[policies.Insulae]
+type = "economic"
+requires_civic = "Games and Recreation"
+obsolete_with = "Medieval Faires"
+effects = [{ kind = "housing_if_districts", amount = 1, min_districts = 2 }]
+
+# Civ 6 GS: Encampment and Harbor districts and their buildings.
+[policies.Veterancy]
+type = "military"
+requires_civic = "Military Training"
+effects = [
+    { kind = "production_percent", target = { district = ["Encampment", "Harbor"] }, percent = 30 },
+    { kind = "production_percent", target = { in_district = ["Encampment", "Harbor"] }, percent = 30 },
+]
+
+[policies.Scripture]
+type = "economic"
+requires_civic = "Theology"
+effects = [{ kind = "adjacency_percent", district = "Holy Site", percent = 100 }]
+
+[policies.Bastions]
+type = "military"
+requires_civic = "Defensive Tactics"
+effects = [
+    { kind = "combat_strength", applies_to = "city", amount = 6 },
+    { kind = "city_ranged_strength", amount = 5 },
+]
+
+# Civ 6: +100 % production toward defensive buildings (the walls).
+[policies.Limes]
+type = "military"
+requires_civic = "Defensive Tactics"
+effects = [{ kind = "production_percent", target = { building = ["Walls", "Medieval Walls"] }, percent = 100 }]
+
+[policies."Natural Philosophy"]
+type = "economic"
+requires_civic = "Recorded History"
+effects = [{ kind = "adjacency_percent", district = "Campus", percent = 100 }]
+
+[policies."Feudal Contract"]
+type = "military"
+requires_civic = "Feudalism"
+effects = [{ kind = "production_percent", target = { unit_class = ["melee", "ranged", "anti_cavalry"], unit_era = ["Ancient", "Classical", "Medieval", "Renaissance"] }, percent = 50 }]
+
+# The Civ 6 vanilla card (removed in Rise and Fall): +1 culture per specialty district.
+[policies.Meritocracy]
+type = "economic"
+requires_civic = "Civil Service"
+effects = [{ kind = "city_yield", culture = 1, per_district = true }]
+
+[policies."Professional Army"]
+type = "military"
+requires_civic = "Mercenaries"
+effects = [{ kind = "upgrade_cost_percent", percent = -50 }]
+
+[policies."Trade Confederation"]
+type = "economic"
+requires_civic = "Mercenaries"
+effects = [{ kind = "route_yield", culture = 1, science = 1, international_only = true }]   # consumed from #116 P5
+
+[policies.Aesthetics]
+type = "economic"
+requires_civic = "Medieval Faires"
+effects = [{ kind = "adjacency_percent", district = "Theater Square", percent = 100 }]
+
+[policies."Medina Quarter"]
+type = "economic"
+requires_civic = "Medieval Faires"
+effects = [{ kind = "housing_if_districts", amount = 2, min_districts = 3 }]
+
+[policies.Craftsmen]
+type = "economic"
+requires_civic = "Guilds"
+effects = [{ kind = "adjacency_percent", district = "Industrial Zone", percent = 100 }]
+
+[policies."Town Charters"]
+type = "economic"
+requires_civic = "Guilds"
+effects = [{ kind = "adjacency_percent", district = "Commercial Hub", percent = 100 }]
+
+# Civ 6: Industrial era and earlier, i.e. every era of this block.
+[policies.Chivalry]
+type = "military"
+requires_civic = "Divine Right"
+effects = [{ kind = "production_percent", target = { unit_class = ["light_cavalry", "heavy_cavalry"] }, percent = 50 }]
+
+[policies."Gothic Architecture"]
+type = "economic"
+requires_civic = "Divine Right"
+effects = [{ kind = "production_percent", target = { kind = "wonder" }, percent = 15 }]
+
 # --- Buildings (issue #7) ---------------------------------------------------
 # One table per building: `production_cost` is what a city pays for it, and
 # `defense_bonus` (optional, default 0) is added to the city's defensive combat
@@ -1085,11 +1462,16 @@ requires = ["Apprenticeship", "Stirrups", "Military Engineering"]
 #   requires_district  a [districts.*] name: a COMPLETE district of that type
 #                      must stand in the city
 #   requires_building  a [buildings.*] name the city must already own
-#   requires_civic, requires_government_tier
-#                      accepted for #116 P4 (civics, governments); they pass
-#                      until P4 defines what they name
+#   requires_civic     a [civics.*] name the owner must know (#116 P4)
+#   requires_government_tier
+#                      the owner's current government must be of at least this
+#                      tier (no government = below every tier; #116 P4)
 #   maintenance        gold per turn (multiple of 0.1, default 0); parsed and
 #                      stored now, deducted from #116 P5 on
+#   purchasable        resources that may buy it, default ["gold"]; [] = never
+#                      bought (#116 P4 parses it, P5 consumes it)
+#   effects            optional; city scope by default (see Effects above). A
+#                      yield is a column, never a `city_yield` effect.
 # Civ 6 Gathering Storm values (docs/civ6_progression_reference.md §7);
 # design: docs/progression_design.md §6.2. The Factory is removed (v0.8.0):
 # it is beyond the tree (Industrialization).
@@ -1110,6 +1492,7 @@ culture = 2         # optional column (default 0); Civ 6 Monument. A multiple of
 production_cost = 100
 requires_tech = "Masonry"
 defense_bonus = 30
+purchasable = []    # Civ 6: walls cannot be bought
 
 # Workshop: Civ 6's cost and yield (v0.8.0; it was 120 and inert).
 [buildings.Workshop]
@@ -1141,6 +1524,44 @@ requires_tech = "Astrology"
 requires_district = "Holy Site"
 faith = 2
 maintenance = 1
+purchasable = ["gold", "faith"]
+
+[buildings.Temple]
+production_cost = 120
+requires_civic = "Theology"
+requires_district = "Holy Site"
+requires_building = "Shrine"
+faith = 4
+maintenance = 2
+purchasable = ["gold", "faith"]
+
+[buildings.Amphitheater]
+production_cost = 150
+requires_civic = "Drama and Poetry"
+requires_district = "Theater Square"
+culture = 2
+maintenance = 1
+
+# Government Plaza buildings (Civ 6 Rise and Fall): one per tier of
+# government adopted. Their Civ 6 governor titles and the Tier-1 siblings
+# (Audience Chamber, Warlord's Throne) are not modelled; neither can be bought.
+[buildings."Ancestral Hall"]
+production_cost = 150
+requires_government_tier = 1
+requires_district = "Government Plaza"
+maintenance = 1
+purchasable = []
+effects = [{ kind = "production_percent", target = { unit = "Settler" }, percent = 50 }]   # in this city
+
+[buildings."Grand Master's Chapel"]
+production_cost = 290
+requires_government_tier = 2
+requires_district = "Government Plaza"
+requires_building = "Ancestral Hall"
+faith = 5
+maintenance = 2
+purchasable = []
+effects = [{ kind = "faith_purchase", categories = ["land_military"] }]   # consumed from #116 P5
 
 [buildings.Barracks]
 production_cost = 90
@@ -1157,11 +1578,13 @@ production_cost = 220
 requires_tech = "Castles"
 requires_building = "Walls"
 defense_bonus = 30
+purchasable = []
 
 # Palace (#88): granted to a player's first city by GameEnvironment.create_city,
 # never built (no production_cost, so City.produce_building refuses it).
 [buildings.Palace]
 housing = 1
+purchasable = []
 # Rule change v0.8.0 (#116 P1): the Civ 6 Palace's yields, +2 Science, +5 Gold,
 # +2 Production (docs/civ6_progression_reference.md §7). Its +1 Culture stays
 # in [culture] base, which every city already gets (design §0.3).
@@ -1191,7 +1614,8 @@ production = 2
 #                        none declared today
 #   requires_tech        a [techs.*] name the owner must know to place it
 #                        (#116 P2; checked through can_place_district)
-#   requires_civic       accepted for #116 P4 (civics); passes until then
+#   requires_civic       a [civics.*] name the owner must know to place it (#116 P4)
+#   effects              optional, city scope by default (see Effects above)
 #   maintenance          gold per turn (multiple of 0.1, default 0; Civ 6:
 #                        the gold districts pay for themselves); parsed and
 #                        stored now, deducted from #116 P5 on
@@ -1201,7 +1625,7 @@ production = 2
 # (adjacency only), river_edge_not_shared_with_center = true (requires_adjacent only).
 [districts]
 population_per_district = 3   # specialty districts allowed = 1 + floor((pop - 1) / 3)
-cost_progress_factor = 9      # cost = base * (1 + 9 * P); P = techs known / techs in the tree (#116 P2)
+cost_progress_factor = 9      # cost = base * (1 + 9 * P); P = the larger of techs known / techs and civics known / civics (#116 P2, P4)
 removable_features = ["Woods", "Rainforest", "Marsh"]   # cleared on placement
 allowed_features = ["Floodplains"]                      # kept on placement
 
@@ -1235,6 +1659,7 @@ adjacency = [
 
 [districts."Theater Square"]
 production_cost = 54
+requires_civic = "Drama and Poetry"
 maintenance = 1
 cost_model = "discounted"
 discount_percent = 40
@@ -1304,12 +1729,14 @@ adjacent_to_city_center = false
 
 [districts."Entertainment Complex"]
 production_cost = 54
+requires_civic = "Games and Recreation"
 maintenance = 1
 cost_model = "discounted"
 discount_percent = 40
 
 [districts."Government Plaza"]
 production_cost = 30
+requires_civic = "State Workforce"
 cost_model = "discounted"
 discount_percent = 25
 max_per_player = 1

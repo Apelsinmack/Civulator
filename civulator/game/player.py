@@ -40,17 +40,25 @@ class Player:
         # engine default picks one in GameEnvironment.resolve_research).
         self.techs = []
         self.current_tech = None
-        # Declared for later #116 patches; nothing reads them yet.
-        self.civics = []         # completed civics, in completion order (P4)
-        self.current_civic = None  # P4
-        self.government = None   # P4
-        self.policies = []       # slotted policy cards (P4)
+        # Civics (#116 P4): completed civics in completion order (membership
+        # tests only) and the civic the culture pool is spent on (None: the
+        # engine default picks one in GameEnvironment.resolve_civic); the
+        # government (a [governments.*] name, None until one is adopted) and
+        # the slotted policy cards, in slotting order -- written only by
+        # GameEnvironment.set_government / set_policies and the engine
+        # defaults.
+        self.civics = []
+        self.current_civic = None
+        self.government = None
+        self.policies = []
+        # Declared for a later #116 patch; nothing reads it yet.
         self.routes = []         # trade routes from this player's cities (P5)
 
     def start_turn(self):
         """Process the start of a player's turn: exploration -> unit reset and
-        heal -> cities -> economy phase (#116: research; later patches add
-        their steps inside it) -> city ranged strike -> queued units."""
+        heal -> cities -> economy phase (#116: research, civics, government
+        and loadout defaults; later patches add their steps inside it) ->
+        city ranged strike -> queued units."""
         self.game_env.update_exploration(self.player_index)
 
         for unit in self.units:

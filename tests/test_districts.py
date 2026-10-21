@@ -721,15 +721,46 @@ def test_a_district_is_refused_until_its_tech_is_known():
     assert exercised, "fixture: no gated district fits the board"
 
 
+def test_a_district_is_refused_until_its_civic_is_known():
+    """Every district with a `requires_civic` that this board can host is
+    refused by can_place_district -- and place_district changes nothing --
+    while its owner lacks that civic, and placed once it is known, on the
+    same tile (#116 P4). Breaks if can_place_district skips the civic."""
+    gated = [n for n, s in DISTRICTS.items() if s.requires_civic is not None]
+    assert gated, "fixture: some district is civic-gated"
+    exercised = 0
+    for name in gated:
+        env = board()
+        city = make_city(env, CENTRE, population=10)
+        for d in (1, 2):
+            for pos in ring(env, CENTRE, d):
+                own(env, city, pos)
+        site = next((pos for pos in sorted(env.map.tiles_of_city(city.city_id))
+                     if can_place_district(city, name, pos)), None)
+        if site is None:
+            continue
+        exercised += 1
+        civic = DISTRICTS[name].requires_civic
+        city.player.civics.remove(civic)
+        epoch = env.map.district_epoch
+        assert not can_place_district(city, name, site), name
+        assert not env.place_district(city, name, site), name
+        assert city.districts == [] and env.map.district_epoch == epoch
+        city.player.civics.append(civic)
+        assert env.place_district(city, name, site), name
+    assert exercised, "fixture: no civic-gated district fits the board"
+
+
 # --- Cost (§4, v3 one integer rule) ------------------------------------------------
 
 
-def _player_with_completed(types, techs=()):
-    """A Player stand-in: its cities' districts and its `techs` (every Player
-    has the list since #116 P1; game_progress reads it since P2)."""
+def _player_with_completed(types, techs=(), civics=()):
+    """A Player stand-in: its cities' districts, its `techs` and its `civics`
+    (every Player has both lists since #116 P1; game_progress reads techs
+    since P2 and civics since P4)."""
     city = SimpleNamespace(districts=[District(t, 0, (0, i), complete=True)
                                       for i, t in enumerate(types)])
-    return SimpleNamespace(cities=[city], techs=list(techs))
+    return SimpleNamespace(cities=[city], techs=list(techs), civics=list(civics))
 
 
 def test_discount_follows_the_integer_rule_a9_b10(monkeypatch):
@@ -777,9 +808,10 @@ def test_discount_needs_completed_discounted_districts_only():
 
 def test_escalation_is_integer_and_fixed_never_scales(monkeypatch):
     """escalated = base * (den + factor * num) // den; "fixed" is the base.
-    A player with no techs is (0, total), so it pays the base (restated by
-    #116 P2 from `game_progress(None) == (0, 1)`, the pre-tree stub). Breaks
-    if float arithmetic or scaling of fixed creeps in."""
+    A player with no techs and no civics is (0, techs in the tree), so it
+    pays the base (restated by #116 P2 from `game_progress(None) == (0, 1)`,
+    the pre-tree stub; a tie of the two fractions is the tech fraction since
+    P4). Breaks if float arithmetic or scaling of fixed creeps in."""
     assert districts_mod.game_progress(_player_with_completed([])) == (0, len(TECHS))
     monkeypatch.setattr(districts_mod, "game_progress", lambda player: (1, 7))
     factor = district_model.COST_PROGRESS_FACTOR
@@ -853,6 +885,7 @@ def _place_everything(seed):
     env = GameEnvironment(8, 16, num_players=2, map_type="basic")
     env.reset(seed=seed)
     for player in env.players:
+        grant_all(player)  # #116 P4: every district is tech- or civic-gated
         for city in player.cities:
             city.population = 10
             for pos in env.map.tiles_of_city(city.city_id):

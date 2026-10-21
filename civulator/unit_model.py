@@ -30,13 +30,17 @@ table). `NUM_UNIT_SLOTS`/`UNIT_SLOT` and `MOVEMENT_DOMAIN` are deliberately
 NOT here — see the comments on those tables in game/unit.py for why.
 
 Availability columns (#116 P2, progression design "v2 fixes", load order):
-this module parses `requires_tech` on units and buildings and
-`requires_district`, `requires_building`, `maintenance` on buildings, and
-keeps `requires_civic` / `requires_government_tier` raw for P4. A
-`requires_tech` is checked against `research_model.TECHS`, which loads
+this module parses `requires_tech` and `requires_civic` on units and
+buildings and `requires_district`, `requires_building`,
+`requires_government_tier`, `maintenance` and `purchasable` on buildings
+(#116 P4 validates the civic and government columns and adds
+`purchasable`). A `requires_tech` / `requires_civic` /
+`requires_government_tier` is checked against `research_model`, which loads
 first; a `requires_district` names the district registry, which loads after
-this module, so `district_model` checks those names against itself.
-Unknown keys in a `[units.*]` or `[buildings.*]` table raise.
+this module, so `district_model` checks those names against itself. A
+building's `effects` list is kept raw here and validated by
+`civulator/effects.py`, which loads after every registry. Unknown keys in a
+`[units.*]` or `[buildings.*]` table raise.
 
 Combat classes, upgrades and unit prices (#116 P3, progression design §6 and
 "v2 fixes"): every `[units.*]` table declares `combat_class` and `era` (both
@@ -57,7 +61,12 @@ config.toml, so these moves are provably refactors and not balance changes.
 from typing import NamedTuple
 
 from .config import CFG
-from .research_model import ERAS, validate_tech_name
+from .research_model import (
+    ERAS,
+    validate_civic_name,
+    validate_government_tier,
+    validate_tech_name,
+)
 
 _UNITS_CFG = CFG.get("units", {})
 _COMBAT_CFG = CFG.get("combat", {})
@@ -101,6 +110,10 @@ CITY_DEFENSE_STRENGTH = _CITY_CFG["defense_strength"]
 # [buildings.*] entry that unlocks the bombard -- Civ 6 gates it on Walls, and
 # a garrison alone does not unlock it.
 CITY_RANGED_BUILDING = _CITY_CFG["ranged_building"]
+# The building that marks a player's capital (#88; `[city] capital_building`):
+# granted by GameEnvironment.create_city, read by `capital_only` effects
+# (#116 P4). Validated against [buildings.*] below.
+CAPITAL_BUILDING = _CITY_CFG["capital_building"]
 CITY_RANGED_STRENGTH = _CITY_CFG["ranged_strength"]
 CITY_RANGED_RANGE = _CITY_CFG["ranged_range"]
 CITY_HEAL_PER_TURN = _CITY_CFG["heal_per_turn"]
@@ -266,6 +279,7 @@ BUILDING_KEYS = frozenset({
     "production_cost", "defense_bonus", "housing", *YIELD_COLUMNS,
     "requires_tech", "requires_district", "requires_building",
     "requires_civic", "requires_government_tier", "maintenance",
+    "purchasable", "effects",  # #116 P4
 })
 
 
@@ -291,22 +305,41 @@ def _name_column(tables, column, table_name):
 def parse_unit_gates(units_cfg):
     """`[units.*]` availability columns -> (requires_tech, requires_civic),
     each name -> value for the units declaring it. `requires_tech` must name a
-    tech; `requires_civic` is kept raw until P4 defines civics."""
+    tech and `requires_civic` a civic (#116 P4)."""
     _check_keys(units_cfg, UNIT_KEYS, "units")
     requires_tech = {
         name: validate_tech_name(tech, f"[units.{name}]")
         for name, tech in _name_column(units_cfg, "requires_tech", "units").items()
     }
-    requires_civic = {n: t["requires_civic"] for n, t in units_cfg.items() if "requires_civic" in t}
+    requires_civic = {
+        name: validate_civic_name(civic, f"[units.{name}]")
+        for name, civic in _name_column(units_cfg, "requires_civic", "units").items()
+    }
     return requires_tech, requires_civic
+
+
+def _purchasable(table, where):
+    """A `purchasable` column -> tuple of PURCHASE_RESOURCES, default
+    `("gold",)`; `[]` = never bought. Distinct entries only."""
+    resources = table.get("purchasable", ["gold"])
+    if (not isinstance(resources, list)
+            or any(r not in PURCHASE_RESOURCES for r in resources)
+            or len(set(resources)) != len(resources)):
+        raise ValueError(
+            f"{where}: purchasable must be a list of distinct entries of {PURCHASE_RESOURCES}, "
+            f"got {resources!r}")
+    return tuple(resources)
 
 
 def parse_building_gates(buildings_cfg):
     """`[buildings.*]` availability columns -> a dict of name -> value maps:
     `requires_tech` (a tech), `requires_district` (a district name, checked by
     district_model), `requires_building` (another configured building; the
-    chain may not loop back), `requires_civic` / `requires_government_tier`
-    (raw until P4) and `maintenance` (int tenths of gold per turn)."""
+    chain may not loop back), `requires_civic` (a civic) and
+    `requires_government_tier` (an int some government reaches; #116 P4),
+    `maintenance` (int tenths of gold per turn), `purchasable` (every
+    building, default `("gold",)`) and `effects` (the raw list, for every
+    building declaring one; effects.py validates it)."""
     _check_keys(buildings_cfg, BUILDING_KEYS, "buildings")
     requires_tech = {
         name: validate_tech_name(tech, f"[buildings.{name}]")
@@ -334,13 +367,27 @@ def parse_building_gates(buildings_cfg):
         "requires_tech": requires_tech,
         "requires_district": _name_column(buildings_cfg, "requires_district", "buildings"),
         "requires_building": requires_building,
-        "requires_civic": {n: t["requires_civic"] for n, t in buildings_cfg.items()
-                           if "requires_civic" in t},
-        "requires_government_tier": {n: t["requires_government_tier"]
-                                     for n, t in buildings_cfg.items()
-                                     if "requires_government_tier" in t},
+        "requires_civic": {
+            name: validate_civic_name(civic, f"[buildings.{name}]")
+            for name, civic in _name_column(buildings_cfg, "requires_civic", "buildings").items()
+        },
+        "requires_government_tier": {
+            name: validate_government_tier(table["requires_government_tier"], f"[buildings.{name}]")
+            for name, table in buildings_cfg.items() if "requires_government_tier" in table
+        },
         "maintenance": maintenance,
+        "purchasable": {name: _purchasable(table, f"[buildings.{name}]")
+                        for name, table in buildings_cfg.items()},
+        "effects": {name: _raw_effects(table, f"[buildings.{name}]")
+                    for name, table in buildings_cfg.items() if "effects" in table},
     }
+
+
+def _raw_effects(table, where):
+    effects = table["effects"]
+    if not isinstance(effects, list):
+        raise ValueError(f"{where}: effects must be a list, got {effects!r}")
+    return tuple(effects)
 
 
 # --- Combat classes, prices and upgrades (#116 P3, docs/progression_design.md §6) ---
@@ -413,14 +460,7 @@ def parse_unit_columns(units_cfg):
             raise ValueError(f"{where}: maintenance must be >= 0")
         if tenths:
             maintenance[name] = tenths
-        resources = table.get("purchasable", ["gold"])
-        if (not isinstance(resources, list)
-                or any(r not in PURCHASE_RESOURCES for r in resources)
-                or len(set(resources)) != len(resources)):
-            raise ValueError(
-                f"{where}: purchasable must be a list of distinct entries of {PURCHASE_RESOURCES}, "
-                f"got {resources!r}")
-        purchasable[name] = tuple(resources)
+        purchasable[name] = _purchasable(table, where)
     upgrades_to = _name_column(units_cfg, "upgrades_to", "units")
     for name, target in upgrades_to.items():
         if target not in units_cfg:
@@ -541,3 +581,12 @@ BUILDING_REQUIRES_GOVERNMENT_TIER = _BUILDING_GATES["requires_government_tier"]
 # Gold per turn in int tenths (the treasury's unit), nonzero entries only.
 # Parsed and stored now; #116 P5 deducts it.
 BUILDING_MAINTENANCE = _BUILDING_GATES["maintenance"]
+# Resources each building may be bought with (#116 P4, design §7.3): every
+# configured building, default ("gold",), () = never bought. Consumed by P5.
+BUILDING_PURCHASABLE = _BUILDING_GATES["purchasable"]
+# Raw `effects` lists (building -> tuple of dicts), for the buildings that
+# declare one; validated and interpreted only by civulator/effects.py.
+BUILDING_EFFECTS = _BUILDING_GATES["effects"]
+
+if CAPITAL_BUILDING not in BUILDING_NAMES:
+    raise ValueError(f"[city] capital_building {CAPITAL_BUILDING!r} is not a building")

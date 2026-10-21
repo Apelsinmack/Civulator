@@ -1,5 +1,16 @@
 """City class with production, population, and buildings."""
 
+from ..effects import (
+    APPLIES_CITY,
+    ITEM_BUILDING,
+    ITEM_UNIT,
+    KIND_CITY_RANGED_STRENGTH,
+    KIND_PRODUCTION_PERCENT,
+    active_effects,
+    combat_strength_amounts,
+    percent_sum,
+    target_matches,
+)
 from ..terrain_model import can_enter
 from ..unit_model import (
     BUILDING_COSTS as _BUILDING_COSTS,
@@ -15,7 +26,7 @@ from ..unit_model import (
 from . import territory
 from .availability import city_can_build_building, player_can_build
 from .culture import culture
-from .districts import district_yields
+from .districts import district_spec, district_yields
 from .housing import housing
 from .yields import city_yield
 from .unit import (
@@ -79,14 +90,18 @@ class City:
         """Return the defensive combat strength of the city.
 
         Base defence plus every standing building's `defense_bonus` from
-        config.toml `[buildings.*]` (issue #7). This is the number
-        `Unit.attack` reads as the defender's strength when the target is a
-        city, so a building's defensive effect is applied by the one combat
-        path and not re-derived anywhere.
+        config.toml `[buildings.*]` (issue #7), plus every `combat_strength`
+        effect in force for this city with `applies_to` "city" (#116 P4, e.g.
+        a policy card's +6). This is the number `Unit.attack` reads as the
+        defender's strength when the target is a city, so a building's or an
+        effect's defensive bonus is applied by the one combat path and not
+        re-derived anywhere.
         """
         strength = self.defense_strength
         for building in self.buildings:
             strength += BUILDING_DEFENSE_BONUS.get(building, 0)
+        for amount in combat_strength_amounts(self.player, APPLIES_CITY, city=self):
+            strength += amount
         return strength
 
     def can_make_ranged_attack(self):
@@ -102,7 +117,9 @@ class City:
         return self.health > 0 and CITY_RANGED_BUILDING in self.buildings
 
     def get_ranged_strength(self):
-        """The city's ranged strength (issue #84), `[city] ranged_strength`.
+        """The city's ranged strength (issue #84), `[city] ranged_strength`,
+        plus every `city_ranged_strength` effect in force for this city
+        (#116 P4; the one consumer of that kind).
 
         A flat number, unlike a unit's: Civ 6 derives it from the strongest
         ranged unit the civilization has built, which is not modelled (the
@@ -111,7 +128,10 @@ class City:
         city shoots as hard as a fresh one. Both simplifications are named in
         the CHANGELOG.
         """
-        return CITY_RANGED_STRENGTH
+        strength = CITY_RANGED_STRENGTH
+        for effect in active_effects(self.player, self, KIND_CITY_RANGED_STRENGTH):
+            strength += effect["amount"]
+        return strength
 
     def get_range(self):
         """Range of the city's ranged strike (`[city] ranged_range`)."""
@@ -207,13 +227,55 @@ class City:
         environment, which city_yield reads through `self.player`."""
         return city_yield(self, "food")
 
+    def _production_item(self):
+        """(item kind, type name) of what the city is producing, the input of
+        a `production_percent` target (`effects.target_matches`); None when
+        it produces nothing. A district's kind is its registry entry's
+        (`district` or, from #116 P6, `wonder`)."""
+        production = self.current_production
+        if not production:
+            return None
+        if production["type"] == "unit":
+            return ITEM_UNIT, production["unit_type"]
+        if production["type"] == "building":
+            return ITEM_BUILDING, production["building_type"]
+        if production["type"] == "district":
+            name = production["district_type"]
+            return district_spec(name).kind, name
+        return None
+
+    def production_percent(self):
+        """The summed `percent` of every `production_percent` effect in force
+        for this city whose target matches its current production item (#116
+        P4, design §2.3): unit name, unit class, unit era, building name,
+        district, or item kind. 0 when nothing matches."""
+        item = self._production_item()
+        if item is None:
+            return 0
+        return percent_sum(
+            effect for effect in active_effects(self.player, self, KIND_PRODUCTION_PERCENT)
+            if target_matches(effect["target"], *item)
+        )
+
     def calculate_production(self, game_env):
         """Production this turn, whole points: `city_yield(city,
         "production")` -- centre plus worked tiles plus declared sources
         (building and district columns, the adjacency of complete districts
-        yielding production; #116) -- with a floor of 1, so a city can always
-        build, slowly."""
-        return max(1, city_yield(self, "production"))
+        yielding production, `city_yield` effects; #116) -- raised by the
+        summed `production_percent` effects toward the current item, applied
+        once with one integer floor (`base * (100 + percent) // 100`; the one
+        consumer of that kind, #116 P4), with a floor of 1, so a city can
+        always build, slowly."""
+        base = city_yield(self, "production")
+        return max(1, base * (100 + self.production_percent()) // 100)
+
+    def _growth_percent(self):
+        """STUB for #116 P6 (design §3, "v2 fixes" yields): where the summed
+        `growth_percent` effects in force for this city will scale the growth
+        bucket (`food_net * housing_percent * growth_share * (100 + this) //
+        10000`). The kind is validated since P4; nothing reads it yet and
+        this adds nothing."""
+        return 0
 
     def get_growth_threshold(self):
         """Food surplus needed to grow to next population level.

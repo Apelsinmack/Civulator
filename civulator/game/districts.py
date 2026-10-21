@@ -21,10 +21,11 @@ from ..district_model import (
     COST_PROGRESS_FACTOR,
     DISCOUNTED_TYPES,
     DISTRICTS,
+    KIND_DISTRICT,
     POPULATION_PER_DISTRICT,
     REMOVABLE_FEATURES,
 )
-from ..research_model import TECHS
+from ..research_model import CIVICS, TECHS
 from ..terrain_model import matches, resource_class
 # A module reference (availability reads district_spec back from here).
 from . import availability
@@ -57,6 +58,21 @@ def district_spec(district_type):
     time, so a synthetic registry patched in here is the one every reader sees.
     """
     return DISTRICTS[district_type]
+
+
+def specialty_districts(city):
+    """The city's COMPLETE specialty districts, in placement order: registry
+    entries with `kind == "district"` that take a population slot
+    (`counts_toward_limit`) -- progression design "v2 fixes", District
+    registry readers. The one definition every rule counting "specialty
+    districts" reads (Meritocracy, Classical Republic, Insulae, Medina
+    Quarter, `housing_if_districts`; #116 P5's trade rule)."""
+    result = []
+    for district in city.districts:
+        spec = district_spec(district.type)
+        if district.complete and spec.kind == KIND_DISTRICT and spec.counts_toward_limit:
+            result.append(district)
+    return result
 
 
 # --- Source matching (design §1.2) ------------------------------------------
@@ -227,10 +243,15 @@ def can_place_district(city, district_type, coords):
 
 
 def game_progress(player):
-    """The player's progress through the trees as a fraction (num, den):
-    techs known over techs in the tree (#116 P2, design §4.3, the #86 hook).
-    #116 P4 makes it the larger of this and the civic fraction."""
-    return (len(player.techs), len(TECHS))
+    """The player's progress through the trees as a fraction (num, den): the
+    larger of (techs known, techs in the tree) and (civics known, civics in
+    the tree), compared by cross-multiplication so no float is involved;
+    a tie is the tech fraction (#116 P2, P4; design §4.3, the #86 hook)."""
+    techs = (len(player.techs), len(TECHS))
+    civics = (len(player.civics), len(CIVICS))
+    if civics[0] * techs[1] > techs[0] * civics[1]:
+        return civics
+    return techs
 
 
 def _completed_discounted(player):

@@ -355,8 +355,9 @@ def test_a_seeded_game_with_no_research_choice_researches_and_reproduces():
 
 
 def test_grant_all_knows_the_whole_tree():
-    """The shared test helper (tests/conftest.py) grants every tech. Breaks
-    if the helper drifts from the tree."""
+    """The shared test helper (tests/conftest.py) grants every tech (and,
+    since #116 P4, every civic: tests/test_civics.py). Breaks if the helper
+    drifts from the tree."""
     env = board()
     player = _fresh_player(env)
     grant_all(player)
