@@ -836,9 +836,10 @@ heal_normal = 10                 # HP healed per turn otherwise
 # that holds a combat-capable friendly unit of the striking unit's player.
 # Civ 6 uses +2 per flanking unit and our strength scale is Civ 6's, so the
 # value transfers directly. Set to 0 to disable flanking entirely — the rule
-# then costs nothing, not even the adjacency scan. Erik wants this gated
-# behind tech/culture eventually (#41/#76); a config value is the minimum
-# version of that gate and keeps this epoch's behaviour reproducible.
+# then costs nothing, not even the adjacency scan. Since #116 P4 the rule is
+# also gated behind culture, as Erik wanted (#41/#76): it applies only for a
+# player who knows a civic whose effects say `enables = ["flanking"]`
+# ([civics."Military Tradition"], Civ 6's own unlock).
 #
 # Lives in [combat], not [game], despite the issue's wording: combat modifiers
 # are read by civulator/unit_model.py, which is the only interpreter of the

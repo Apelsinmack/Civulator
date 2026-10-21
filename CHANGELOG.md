@@ -338,6 +338,194 @@ in play yet. Maintenance and `purchasable` are stored, not used, until P5. The
 upgrade-cost effect hook is 0 until P4. The Trader cannot be built until P5.
 The Musketman and Knight saturate the strength channel (above).
 
+### Civics, governments and policy cards (#116 P4)
+
+**Rule change, effect NOT yet measured.** Spec: `docs/progression_design.md`
+§3, §5, §6.2 (the four buildings), §13 and "v2 fixes". Civ 6 facts:
+`docs/civ6_progression_reference.md` §2 (civics), §3 (governments), §4
+(policy cards) and §7 (buildings), Gathering Storm values where the wiki
+splits them.
+
+- **A civics tree.** 19 civics from Code of Laws to Guilds in `[civics.*]`,
+  with Civ 6's names, eras and Gathering Storm culture costs and this
+  design's prerequisites where a cut civic sat in between (Mysticism, Naval
+  Tradition and the Renaissance civics are cut: Military Training requires
+  only Military Tradition, Theology only Drama and Poetry; design §5.1).
+  Each costs `cost * [research] civic_cost_percent // 100` whole culture,
+  75 % (design §12). The table sums to 3,330 culture at Civ 6 cost, 2,494 at
+  75 % (design §5.1 states 3,100, an arithmetic slip). Parsed by the techs'
+  own parser (`research_model.parse_tree`): a cycle, an unreachable civic,
+  an unknown prerequisite, era or key raise at load.
+- **Civics develop like techs.** The culture pool (`Player.culture`, tenths;
+  borders keep their own per-city pools, #87) pays for one current civic.
+  Each own turn the economy phase resolves it after research: with no
+  current civic the engine picks the cheapest available one, by scaled cost
+  and then config order; when the pool holds 10 × the scaled cost the civic
+  completes, exactly that is paid and the overflow stays; at most one civic
+  per turn. `GameEnvironment.set_civic(player, civic)` chooses one (refused
+  unless every prerequisite is known and the civic is not); switching keeps
+  the pool. New per-player stat `civics_researched`.
+- **Six governments** in `[governments.*]` (`requires_civic`, `tier`,
+  `effects`), Civ 6's slots with the diplomatic slot folded into a wildcard
+  slot (there are no city-states or diplomatic cards), legacy bonuses, envoys
+  and favour dropped. Slots are military / economic / wildcard:
+  Chiefdom (tier 0, Code of Laws) 1 / 1 / 0, no bonus; Autocracy (1,
+  Political Philosophy) 1 / 1 / 2, the city holding the Palace +1 food,
+  production, science, culture, gold and faith, +10 % production toward
+  wonders (Civ 6 vanilla's bonus; no wonder exists until P6); Classical Republic (1, Political
+  Philosophy) 0 / 2 / 2, +1 housing in every city with at least one specialty
+  district; Oligarchy (1, Political Philosophy) 2 / 1 / 1, melee and
+  anti-cavalry units +4 combat strength; Monarchy (2, Divine Right) 2 / 1 /
+  3, +1 housing per Walls and per Medieval Walls, +50 % production toward
+  both; Theocracy (2, Divine Right; Civ 6's Reformed Church is cut) 2 / 2 /
+  2, land military units may be bought with faith and faith purchases cost
+  15 % less (both consumed from P5). `Player.government` is None until one is
+  adopted; `GameEnvironment.set_government(player, name)` adopts one whose
+  civic is known, with no anarchy and no switching cost (design §5.2).
+- **26 policy cards** in `[policies.*]` (`type`, `requires_civic`, optional
+  `obsolete_with`, `effects`), each a rule: God King (economic, Code of Laws;
+  obsolete with Theology) +1 faith and +1 gold in the city holding the
+  Palace; Urban Planning (E, Code of Laws) +1 production in every city; Ilkum
+  (E, Craftsmanship) +30 % production toward Workers (Civ 6: Builders;
+  Workers are not a build option until P8);
+  Agoge (military, Craftsmanship; obsolete with Feudalism) +50 % toward
+  Ancient and Classical melee, ranged and anti-cavalry units; Caravansaries
+  (E, Foreign Trade) +2 gold per trade route (P5); Maneuver (M, Military
+  Tradition; obsolete with Divine Right) +50 % toward Ancient and Classical
+  light and heavy cavalry; Conscription (M, State Workforce) unit upkeep −1
+  per unit (P5); Corvee (E, State Workforce; obsolete with Divine Right)
+  +15 % toward wonders (P6; see the gaps); Colonization (E, Early Empire)
+  +50 % toward Settlers; Limitanei (M, Early Empire) +2 loyalty in a
+  garrisoned city (P7); Insulae (E, Games and Recreation; obsolete with
+  Medieval Faires) +1 housing in a city with at least two specialty
+  districts; Veterancy (M, Military Training) +30 % toward Encampment and
+  Harbor districts and the buildings that require them; Scripture (E,
+  Theology) +100 % Holy Site adjacency; Bastions (M, Defensive Tactics) +6
+  city defence and +5 city ranged strength; Limes (M, Defensive Tactics)
+  +100 % toward Walls and Medieval Walls; Natural Philosophy (E, Recorded
+  History) +100 % Campus adjacency; Feudal Contract (M, Feudalism) +50 %
+  toward melee, ranged and anti-cavalry units of every era here; Meritocracy
+  (E, Civil Service; the Civ 6 vanilla card) +1 culture per specialty
+  district in every city; Professional Army (M, Mercenaries) −50 % upgrade
+  gold; Trade Confederation (E, Mercenaries) +1 culture and +1 science per
+  international route (P5); Aesthetics (E, Medieval Faires) +100 % Theater
+  Square adjacency; Medina Quarter (E, Medieval Faires) +2 housing in a city
+  with at least three specialty districts; Craftsmen (E, Guilds) +100 %
+  Industrial Zone adjacency; Town Charters (E, Guilds) +100 % Commercial Hub
+  adjacency; Chivalry (M, Divine Right) +50 % toward light and heavy
+  cavalry; Gothic Architecture (E, Divine Right) +15 % toward wonders (P6).
+  Dropped from Civ 6's span (design §5.3): the barbarian, naval,
+  great-person, tile-purchase, builder-charge, amenity, governor, pillage,
+  strategic-resource and diplomatic cards.
+- **Loadouts.** `Player.policies` is the list of slotted cards. A loadout is
+  legal when every card is unlocked (its civic known) and not obsolete (its
+  `obsolete_with` civic unknown), no card appears twice, and the cards fit
+  the slots: each card in a slot of its type or in a wildcard slot.
+  `GameEnvironment.set_policies(player, names)` slots exactly a legal
+  loadout and refuses anything else. A card's effects hold only while it is
+  slotted and legal: an unlocked card that is not slotted, and a card that
+  became obsolete, do nothing. Slots = the government's plus every other
+  slot effect in force (none yet; the Alhambra and the Forbidden City in
+  P6); a card can never add slots.
+- **One effects interpreter.** `civulator/effects.py` is the only reader of
+  `effects = [...]` lists on techs, civics, governments, policies, buildings
+  and districts. The kinds are a closed set and each has exactly one
+  consumer (`effects.CONSUMERS`): `city_yield` (`city_yield`; `capital_only`
+  = the city holding `[city] capital_building`, the Palace;
+  `per_district` = times the city's complete specialty districts),
+  `production_percent` (`calculate_production`; a target names units, unit
+  classes, unit eras, buildings, districts, the buildings that require a
+  district, or a kind of item), `adjacency_percent` (`city_yield`, per
+  district through `district_yields`), `combat_strength` (unit strength in
+  both roles and in the shooter's ranged strength, by class or every unit;
+  or the city's defence), `city_ranged_strength`, `upgrade_cost_percent`,
+  `policy_slots`, `housing_if_districts`, `housing_with_building` (`housing`)
+  and `enables` (a rule's gate) are consumed now;
+  `unit_maintenance_delta`, `purchase_percent`, `faith_purchase`,
+  `trade_route_capacity`, `route_yield` (P5), `growth_percent`, `free_units`,
+  `free_tech`, `free_civic`, `free_population` (P6) and `loyalty` (P7) are
+  validated now and read by nothing until their patch. Effects of one kind
+  are summed and then applied once with one integer floor: two +50 % cards
+  are +100 %, never 1.5 × 1.5. Every entry has a scope: a building's or a
+  district's holds in its own city unless it says `scope = "player"`; every
+  other source's holds for the player. At load, an unknown kind, attribute
+  or name (unit, building, district, class, era, rule, resource), a
+  `city_yield` effect on a building (a building says it with a column),
+  city scope on a card, government, civic or tech, slots on a card and a
+  one-shot effect off a wonder raise.
+- **Flanking is a civic unlock** — #59's "gate it behind culture
+  eventually", done. Military Tradition (Civ 6's civic that grants the
+  flanking and support bonuses; support is not modelled) carries
+  `enables = ["flanking"]`; the +2 per flanking tile (`[combat]
+  flanking_bonus`, unchanged) applies to a striker only while its owner
+  knows the civic. Before this patch flanking applied from turn 1; every #59
+  number holds once the civic is known (`tests/test_flanking_bonus.py`).
+- **Civic and government gates.** `requires_civic` is enforced on units,
+  buildings and districts by `player_can_build`, and a building's
+  `requires_government_tier` by `city_can_build_building` (the current
+  government's tier; no government is below every tier), on every build
+  path (the build mask, `produce_unit` / `produce_building`,
+  `can_place_district`). **No longer available from the start:** the Theater
+  Square (Drama and Poetry), the Entertainment Complex (Games and
+  Recreation) and the Government Plaza (State Workforce). The Trader needs
+  Foreign Trade (and stays deferred until P5).
+- **Four buildings,** Civ 6's costs and yields: Temple (120 production,
+  upkeep 2, +4 faith; Theology, a Holy Site and a Shrine), Amphitheater (150,
+  1, +2 culture; Drama and Poetry, a Theater Square), Ancestral Hall (150,
+  1; a tier-1 government, a Government Plaza; +50 % production toward
+  Settlers in its city) and Grand Master's Chapel (290, 2, +5 faith; a
+  tier-2 government, a Government Plaza and an Ancestral Hall; land
+  military units may be bought with faith, P5). Buildings gain
+  `purchasable` (default gold, consumed from P5): the Shrine and the Temple
+  may be bought with gold or faith; the Walls, Medieval Walls, Palace,
+  Ancestral Hall and Grand Master's Chapel never.
+- **District costs escalate with civics too.** `game_progress(player)` is
+  the larger of (techs known, techs) and (civics known, civics), compared by
+  cross-multiplication, a tie to the tech fraction.
+- **Engine defaults** (no agent chooses yet, #99; design §13 as amended by
+  v2): each economy phase, after research and civics, the engine adopts the
+  highest-tier government whose civic is known when it is above the current
+  one (ties by config order: Chiefdom on Code of Laws, Autocracy on
+  Political Philosophy, Monarchy on Divine Right), and re-fits the loadout
+  whenever a civic completes or the slots change (`set_government` does it
+  too, so an agent's government change keeps a legal loadout): the legal
+  cards stay in their order, the newest-slotted falling out when slots
+  shrink; each empty typed slot takes the newest unlocked card of its type,
+  then each wildcard slot the newest of any type ("newest": unlocked by the
+  later civic, then config order).
+- **Engine.** `Player.civics` (completion order), `current_civic`,
+  `government` and `policies` are declared in `Player.reset_state`. The
+  economy phase is research → civics → government and loadout defaults
+  (P5 puts maintenance and bankruptcy before research and the route steps
+  after). `[city] capital_building = "Palace"` names the capital marker
+  once (`create_city` grants it; `capital_only` reads it). Build options
+  appended, the #67 contract: Temple, Amphitheater, Ancestral Hall, Grand
+  Master's Chapel. The smoke script logs civics, governments and slotted
+  cards; one seeded run (`python scripts/smoke_random_selfplay.py --seed
+  4242`, duel, 250 rounds, random valid actions, 1 game) completed 13 and
+  13 civics (and 16 and 18 techs); both players had adopted Chiefdom and
+  slotted two cards by round 50, one player Autocracy by round 150 and both
+  by round 200, and each ended under Autocracy with four cards slotted (log
+  checkpoints at rounds 50, 100, 150, 200 and 250).
+
+**What agents see.** No encoder channel reads civics, governments or cards
+(#99, #111): the engine defaults drive them, and their effects reach agents
+only through what they change — yields, production (the build state's
+turns-to-complete channels read `calculate_production`), housing, combat
+strengths and flanking. At full width the build head has four more outputs
+and the build state four more channels; an archived narrower head is loaded
+at its own width and does not see them.
+
+**Accepted gaps.** No agent action chooses a civic, government or card
+until #99. Corvee targets every wonder: Civ 6 limits it to Ancient and
+Classical wonders, and wonders (P6) carry no era yet. The Grand Master's
+Chapel's faith purchase holds in its own city (a building's effect
+defaults to city scope); Civ 6 applies it empire-wide — one config word
+(`scope = "player"`) when P5 consumes it. Veterancy's Harbor buildings
+arrive with the Lighthouse in P5. Governor titles, legacy cards, amenities,
+the Audience Chamber and Warlord's Throne are not modelled. Every
+deferred effect kind above is validated and dormant until its patch.
+
 ---
 
 ## v0.7.0 — Borders and culture; city combat and the other post-0.6.2 rule changes (2026-10-11)
