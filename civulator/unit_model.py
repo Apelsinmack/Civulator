@@ -218,11 +218,16 @@ def growth_percent(margin_tenths, bands=None):
     return 0
 
 
-def _pool_yield_table(name, extra=()):
+# Keys a pool table holds beside `base` / `per_pop`, read by this module itself:
+# `[gold]` carries the unit-upgrade price (#116 P3, see base_upgrade_cost).
+_POOL_TABLE_EXTRA_KEYS = {"gold": ("upgrade_per_production", "upgrade_base")}
+
+
+def _pool_yield_table(name):
     """(base, per_pop) of `[<name>]` in int tenths; exactly those two keys
-    plus the `extra` ones the caller reads itself (`[gold]`'s upgrade keys)."""
+    plus the ones `_POOL_TABLE_EXTRA_KEYS` declares for that table."""
     table = CFG[name]
-    keys = {"base", "per_pop", *extra}
+    keys = {"base", "per_pop", *_POOL_TABLE_EXTRA_KEYS.get(name, ())}
     if set(table) != keys:
         raise ValueError(f"[{name}] must have exactly the keys {sorted(keys)}, got {sorted(table)}")
     return (to_tenths(table["base"], f"[{name}] base"),
@@ -233,8 +238,7 @@ def _pool_yield_table(name, extra=()):
 # yields base + per_pop * population of each, before its sources.
 CULTURE_BASE, CULTURE_PER_POP = _pool_yield_table("culture")
 SCIENCE_BASE, SCIENCE_PER_POP = _pool_yield_table("science")
-GOLD_BASE, GOLD_PER_POP = _pool_yield_table(
-    "gold", extra=("upgrade_per_production", "upgrade_base"))
+GOLD_BASE, GOLD_PER_POP = _pool_yield_table("gold")
 FAITH_BASE, FAITH_PER_POP = _pool_yield_table("faith")
 YIELD_BASE = {"science": SCIENCE_BASE, "culture": CULTURE_BASE,
               "gold": GOLD_BASE, "faith": FAITH_BASE}
@@ -347,8 +351,12 @@ COMBAT_CLASSES = ("melee", "anti_cavalry", "ranged", "light_cavalry",
                   "heavy_cavalry", "siege", "support", "civilian")
 # The resources a unit or building may be bought with (consumed by #116 P5).
 PURCHASE_RESOURCES = ("gold", "faith")
-# Which strength a [combat] class_bonuses row modifies.
-STRENGTH_KINDS = ("combat", "ranged")
+# Which strength a [combat] class_bonuses row modifies: `Unit.get_combat_strength`
+# reads the STRENGTH_COMBAT rows, `Unit.get_ranged_strength` the STRENGTH_RANGED
+# ones. Named so the combat code carries no string literal of its own.
+STRENGTH_COMBAT = "combat"
+STRENGTH_RANGED = "ranged"
+STRENGTH_KINDS = (STRENGTH_COMBAT, STRENGTH_RANGED)
 _CLASS_BONUS_KEYS = frozenset({"unit", "target", "amount", "strength"})
 
 
@@ -488,8 +496,8 @@ def _matches(spec, unit_type):
 
 
 def class_bonus_amounts(strength, unit_type, target_type):
-    """The amounts, in config order, of every `strength` ("combat" or
-    "ranged") row of CLASS_BONUSES that applies to `unit_type` acting against
+    """The amounts, in config order, of every `strength` (STRENGTH_COMBAT or
+    STRENGTH_RANGED) row of CLASS_BONUSES that applies to `unit_type` acting against
     `target_type`. The caller adds them one by one, so the float arithmetic is
     the same as applying the modifiers sequentially, as before #116 P3."""
     return [

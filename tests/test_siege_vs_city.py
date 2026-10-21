@@ -98,7 +98,7 @@ def test_siege_class_membership_is_config_declared():
     declared = {name for name, table in CFG["units"].items() if table["combat_class"] == "siege"}
     assert unit_model.SIEGE_CLASS == declared
     assert "Catapult" in unit_model.SIEGE_CLASS
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="unknown key"):
         unit_model.parse_unit_columns({"Probe": {**CFG["units"]["Catapult"], "siege_class": True}})
 
 

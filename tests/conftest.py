@@ -27,3 +27,16 @@ def grant(player, *techs):
     one gate."""
     player.techs.extend(t for t in techs if t not in player.techs)
     return player
+
+
+def stand(env, unit_type, player_index, coordinates):
+    """A real unit of `unit_type` standing on the board for player
+    `player_index` (#116 P3): built through the engine's one factory
+    (`_create_unit`), so the class, slot and subclass are the real ones, and
+    registered in its player's list and on its tile like a produced unit."""
+    from civulator.game.city import _create_unit
+
+    unit = _create_unit(unit_type, env.players[player_index], coordinates)
+    env.players[player_index].units.append(unit)
+    env.add_unit_to_tile(unit, coordinates)
+    return unit

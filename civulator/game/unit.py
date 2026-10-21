@@ -24,7 +24,8 @@ from ..unit_model import (
     PRODUCTION_COST as _PRODUCTION_COST,
     RANGED_CITY_PENALTY,
     RANGE_VALUES as _RANGE_VALUES,
-    SIEGE_CLASS,
+    STRENGTH_COMBAT,
+    STRENGTH_RANGED,
     ZOC_FROM_RANGED,
     class_bonus_amounts,
 )
@@ -309,8 +310,10 @@ class Unit:
         further siege unit is a config line rather than a name in an `if`.
         The class decides both siege rules: exemption from the flat ranged
         penalty against cities, and the movement the bombard needs (`attack`).
+        Read from the class registry at call time, with `is_civilian`: the two
+        queries whose whole job is to name a class.
         """
-        return self.unit_type in SIEGE_CLASS
+        return self.combat_class == "siege"
 
     def reset_movement(self):
         """Reset movement points at the start of a new turn.
@@ -387,7 +390,7 @@ class Unit:
         # written here. Ranged-strength rows are get_ranged_strength's.
         target_type = getattr(target, "unit_type", None)
         if target_type is not None:
-            for amount in class_bonus_amounts("combat", self.unit_type, target_type):
+            for amount in class_bonus_amounts(STRENGTH_COMBAT, self.unit_type, target_type):
                 strength += amount
 
         # Flanking (issue #59): the unit that is STRIKING gets a bonus per
@@ -465,7 +468,7 @@ class Unit:
         # (see the note in get_combat_strength).
         target_type = getattr(target, "unit_type", None)
         if target_type is not None:
-            for amount in class_bonus_amounts("ranged", self.unit_type, target_type):
+            for amount in class_bonus_amounts(STRENGTH_RANGED, self.unit_type, target_type):
                 strength += amount
 
         return max(0, strength)
