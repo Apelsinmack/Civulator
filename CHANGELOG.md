@@ -5,6 +5,92 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
+## v0.8.0 — Progression: science, civics, gold, faith, wonders, loyalty (in progress, 2026-10-21)
+
+**New rules epoch (#116).** The progression block gives cities science,
+gold and faith beside food, production and culture, and builds on them the
+tech and civics trees, governments and policies, new units and buildings,
+gold upkeep and trade, wonders, loyalty and new victory conditions. Results
+trained or evaluated under 0.7.x rules are not comparable to 0.8 results.
+The version is bumped in the first patch (P1), before most of the content
+exists, so that no artifact saved under 0.8 rules carries a 0.7 manifest;
+this entry grows with each patch of #116 (P1–P9) and is finalised, with the
+epoch marker in `weights/trained/manifest.md`, by the last. Design:
+`docs/progression_design.md` (v2); Civ 6 facts: the Civilization Wiki,
+digested in `docs/civ6_progression_reference.md`. Everything below is a
+**rule change**, not a refactor.
+
+### Yields and pools (#116 P1)
+
+**Rule change, effect NOT yet measured.** Spec: `docs/progression_design.md`
+§2.1–§2.2 and "v2 fixes". Civ 6 values: `docs/civ6_progression_reference.md`
+§7 (Palace, Granary) and the Science (Civ6) wiki page (per-citizen science).
+
+- **One yield computation.** `city_yield(city, name)` (`game/yields.py`) is
+  the only computation of a city's science, culture, gold and faith (integer
+  tenths) and of its food and production (whole points). Terms:
+  `[<name>] base + per_pop * population` for the four pool yields, or the
+  centre plus the worked tiles for food and production; the `<name>` column
+  of each building; the `<name>` column of each complete district; and
+  10 × the adjacency score of the complete districts that yield `<name>`.
+  `culture(city)` is now an alias of it, and `City.calculate_food` /
+  `calculate_production` read it (production keeps its floor of 1).
+  Loyalty scaling (P7), effects (P4) and trade routes (P5) are stubs
+  returning 100 %, 0 and 0.
+- **New per-city tables** `[science] base = 0, per_pop = 0.5` (Civ 6: each
+  citizen +0.5 science), `[gold] base = 0, per_pop = 0`, `[faith] base = 0,
+  per_pop = 0`; `[culture]` is unchanged (1.0, 0.3). Each table must hold
+  exactly `base` and `per_pop`, or loading raises.
+- **The Palace yields** +2 science, +5 gold and +2 production per turn in the
+  city holding it (Civ 6). Its Civ 6 +1 culture is not added: every city
+  keeps v0.7's culture base of 1 instead (design §0.3).
+- **The Granary yields +1 food** per turn (Civ 6), beside its housing 2.
+- **District adjacency is consumed.** A complete district's adjacency score
+  now reaches its yield: Theater Square → culture (into `culture()`, so into
+  the border pool and the civic pool), Industrial Zone → production (into
+  `calculate_production`), Campus → science, Holy Site → faith, Commercial
+  Hub and Harbor → gold (into the pools). This closes the #86 accepted gap
+  "a complete Theater Square or Industrial Zone produces no culture or
+  production in play". A placed, unfinished district still yields nothing.
+  District tables may also declare flat `science`, `culture`, `gold`,
+  `faith`, `food` and `production` columns (none does yet), and
+  `district_yields(city, percent_by_district)` takes per-district percent
+  raises, floored per district (for P4's policy cards; nothing passes one
+  yet).
+- **Four player pools**, all integer tenths: `Player.science`,
+  `Player.culture` (unchanged), `Player.gold` (the treasury) and the new
+  `Player.faith`. The culture phase of `City.process_turn` is now the
+  **yield phase**: after growth and before production, once per city per
+  round (the existing round stamp, so a city captured mid-round still
+  accrues once), it adds all four yields to the owner's pools. Only culture
+  is spent so far (border growth, #87); science waits for the tech tree
+  (P2), culture's civic pool for civics (P4), gold and faith for upkeep and
+  purchases (P5).
+- **Episode stats**: new per-player `science_produced`, `gold_produced`,
+  `faith_produced` (int tenths) beside `culture_produced`;
+  `district_yield_<name>` stays the raw, unscaled adjacency score.
+- **Engine.** `Player.reset_state()` holds every per-episode Player field
+  and is called by the constructor and by `reset` when it keeps its players,
+  in place of a field-by-field list; it declares the later patches'
+  placeholders `techs` and `civics` (lists, replacing the unused
+  `technologies`), `current_tech`, `current_civic`, `government`,
+  `policies` and `routes`. `GameEnvironment.complete_district` is now the
+  one place a district finishes (P6 hangs wonder effects there).
+- **Version 0.8.0** (`civulator.__version__`). The version gate
+  (`meta.check_version`) now refuses 0.7 scenario and recording manifests
+  unless `override=True`; `tests/fixtures/scenario_fixture.json` was
+  regenerated with `scripts/make_fixture_scenario.py`.
+
+**What agents see.** No encoder channel reads a pool or a yield (#99,
+#111). The build agent's turns-to-complete channels read
+`calculate_production`, so archived weights get different inputs for a
+capital (+2 production) and for a city with a complete Industrial Zone.
+
+**Accepted gaps.** Science, gold and faith accumulate without a consumer
+until P2 and P5; nothing passes `percent_by_district` until P4.
+
+---
+
 ## v0.7.0 — Borders and culture; city combat and the other post-0.6.2 rule changes (2026-10-11)
 
 **New rules epoch (#78).** Borders (#87) are the first change that gives

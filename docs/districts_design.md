@@ -248,6 +248,12 @@ wires it in has a measured baseline.
 **ACCEPTED GAP:** a complete Theater Square or Industrial Zone produces no
 culture or production in play.
 
+**Update (#116 P1, 2026-10-21):** the gap is closed. `city_yield`
+(`game/yields.py`) consumes `district_yields` for every yield, so culture
+reaches `culture()` and production `calculate_production`; science, gold and
+faith go to the player pools. Spec: `docs/progression_design.md` §2.1 and
+its "v2 fixes".
+
 The score is recomputed from the live map on every call, never cached, so a
 later district next door raises an old one's yield (Civ 6).
 

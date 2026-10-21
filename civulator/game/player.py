@@ -5,22 +5,44 @@ class Player:
     """Represents a player in the game."""
 
     def __init__(self, name, player_index, game_env):
+        # Identity: survives `GameEnvironment.reset` when players are kept.
         self.name = name
         self.player_index = player_index
         self.game_env = game_env
+        self.reset_state()
+
+    def reset_state(self):
+        """Set every per-episode field to its start-of-game value.
+
+        The one list of per-episode Player state (progression design, v2
+        fixes, B3): called by `__init__` and by `GameEnvironment.reset` when
+        it keeps its Player objects, so a field added here can never leak
+        from one episode into the next. Every field other than the three
+        identity fields set in `__init__` belongs here.
+        """
         self.cities = []
         self.units = []
         self.queued_units = []
         self.is_dead = False
-        self.gold = 0
-        self.science = 0
-        self.culture = 0  # civic pool, integer tenths (issue #87)
         self.palace_granted = False  # create_city grants the Palace once (#88)
-        self.technologies = []
-        self.policies = []
         # Fog-of-war memory: (n, m) bool array of ever-seen tiles, owned by
         # the environment (see GameEnvironment.update_exploration)
         self.explored = None
+        # The four pools, integer tenths (#87 culture; #116 P1 the rest),
+        # filled by the yield phase in City.process_turn. Culture is the civic
+        # pool; borders keep their own per-city pools.
+        self.science = 0
+        self.culture = 0
+        self.gold = 0  # the treasury
+        self.faith = 0
+        # Declared for later #116 patches; nothing reads them yet.
+        self.techs = []          # completed techs, in completion order (P2)
+        self.current_tech = None  # P2
+        self.civics = []         # completed civics, in completion order (P4)
+        self.current_civic = None  # P4
+        self.government = None   # P4
+        self.policies = []       # slotted policy cards (P4)
+        self.routes = []         # trade routes from this player's cities (P5)
 
     def start_turn(self):
         """Process the start of a player's turn."""

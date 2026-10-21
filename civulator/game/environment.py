@@ -225,6 +225,10 @@ class GameEnvironment:
                 "civilians_captured": 0,
                 "tiles_claimed_by_culture": 0,
                 "culture_produced": 0,  # int tenths of a culture point
+                # The other three pool yields, int tenths, same guard (#116 P1)
+                "science_produced": 0,
+                "gold_produced": 0,
+                "faith_produced": 0,
                 "growth_slowed_turns": 0,  # city-turns, positive net, band < 100 % (#88)
                 # Summed adjacency score per yield, per city-round (#86 s5)
                 **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
@@ -334,17 +338,7 @@ class GameEnvironment:
                 self.players.append(player)
         else:
             for player in self.players:
-                player.units = []
-                player.cities = []
-                player.queued_units = []
-                player.is_dead = False
-                player.gold = 0
-                player.science = 0
-                player.culture = 0
-                player.palace_granted = False
-                player.technologies = []
-                player.policies = []
-                player.explored = None
+                player.reset_state()
 
         # Starting locations come from mapgen (design doc §6, D13, §11 P5):
         # `self.map.starts` is `MapData.starts`, verbatim — fertility-scored,
@@ -1119,6 +1113,22 @@ class GameEnvironment:
         city.assign_tiles(self)
         city.current_production = {"type": "district", "district_type": district_type}
         return True
+
+    def complete_district(self, city, district):
+        """The one place a district finishes (progression design, Systems):
+        marks `district` complete and clears the city's production. Called by
+        `City.process_turn` once the locked cost is paid; the payment stays
+        there. One-shot wonder effects will hang here (#116 P6).
+
+        Raises ValueError for a district that is not the city's or is
+        already complete, so nothing can complete twice.
+        """
+        if not any(d is district for d in city.districts):
+            raise ValueError(f"complete_district: {district.type} is not a district of {city.name}")
+        if district.complete:
+            raise ValueError(f"complete_district: {district.type} at {district.coordinates} is already complete")
+        district.complete = True
+        city.current_production = None
 
     # --- Improvements ---
 

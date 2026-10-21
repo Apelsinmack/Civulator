@@ -24,8 +24,8 @@
   ],
   "cities": [],
   "manifest": {
-    "game_version": "0.7.0",
-    "git_commit": "7e4fa79",
+    "game_version": "0.8.0",
+    "git_commit": "a03bbbd",
     "git_dirty": false,
     "civulator_core_commit": null,
     "config": {
@@ -593,6 +593,7 @@
       },
       "improvements": {
         "Farm": {
+          "housing": 0.5,
           "on": [
             {
               "bases": [
@@ -631,6 +632,7 @@
           ]
         },
         "Plantation": {
+          "housing": 0.5,
           "on": {
             "bases": [
               "Plains",
@@ -643,6 +645,7 @@
           }
         },
         "Camp": {
+          "housing": 0.5,
           "on": {
             "bases": [
               "Plains",
@@ -656,6 +659,7 @@
           }
         },
         "Pasture": {
+          "housing": 0.5,
           "on": {
             "bases": [
               "Plains",
@@ -682,6 +686,7 @@
           }
         },
         "Fishing Boats": {
+          "housing": 0.5,
           "on": {
             "bases": [
               "Coast",
@@ -828,14 +833,54 @@
         "base": 1.0,
         "per_pop": 0.3
       },
+      "science": {
+        "base": 0.0,
+        "per_pop": 0.5
+      },
+      "gold": {
+        "base": 0.0,
+        "per_pop": 0.0
+      },
+      "faith": {
+        "base": 0.0,
+        "per_pop": 0.0
+      },
+      "housing": {
+        "water_fresh": 5,
+        "water_coastal": 3,
+        "water_dry": 2,
+        "improvement_radius": 3,
+        "growth_bands": [
+          [
+            2.0,
+            100
+          ],
+          [
+            1.0,
+            50
+          ],
+          [
+            -4.9,
+            25
+          ]
+        ]
+      },
       "territory": {
         "claim_radius": 5,
         "work_radius": 3,
-        "founding_ring": 1
+        "founding_ring": 1,
+        "border_cost": {
+          "curve": "civ6_community",
+          "a": 10,
+          "b": 6,
+          "p": 1.3
+        }
       },
       "buildings": {
         "Granary": {
-          "production_cost": 60
+          "production_cost": 60,
+          "housing": 2,
+          "food": 1
         },
         "Monument": {
           "production_cost": 50,
@@ -850,6 +895,304 @@
         },
         "Factory": {
           "production_cost": 240
+        },
+        "Palace": {
+          "housing": 1,
+          "science": 2,
+          "gold": 5,
+          "production": 2
+        }
+      },
+      "districts": {
+        "population_per_district": 3,
+        "cost_progress_factor": 9,
+        "removable_features": [
+          "Woods",
+          "Rainforest",
+          "Marsh"
+        ],
+        "allowed_features": [
+          "Floodplains"
+        ],
+        "Campus": {
+          "production_cost": 54,
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacency_yield": "science",
+          "adjacency": [
+            {
+              "amount": 1,
+              "terrain": {
+                "relief": [
+                  "mountain"
+                ]
+              }
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "terrain": {
+                "features": [
+                  "Rainforest"
+                ]
+              }
+            },
+            {
+              "amount": 2,
+              "terrain": {
+                "features": [
+                  "Reef"
+                ]
+              }
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "district": "any"
+            },
+            {
+              "amount": 1,
+              "district": [
+                "Government Plaza"
+              ]
+            }
+          ]
+        },
+        "Commercial Hub": {
+          "production_cost": 54,
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacency_yield": "gold",
+          "adjacency": [
+            {
+              "amount": 2,
+              "river_on_tile": true
+            },
+            {
+              "amount": 2,
+              "district": [
+                "Harbor"
+              ]
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "district": "any"
+            },
+            {
+              "amount": 1,
+              "district": [
+                "Government Plaza"
+              ]
+            }
+          ]
+        },
+        "Theater Square": {
+          "production_cost": 54,
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacency_yield": "culture",
+          "adjacency": [
+            {
+              "amount": 2,
+              "district": [
+                "Entertainment Complex"
+              ]
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "district": "any"
+            },
+            {
+              "amount": 1,
+              "district": [
+                "Government Plaza"
+              ]
+            }
+          ]
+        },
+        "Holy Site": {
+          "production_cost": 54,
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacency_yield": "faith",
+          "adjacency": [
+            {
+              "amount": 1,
+              "terrain": {
+                "relief": [
+                  "mountain"
+                ]
+              }
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "terrain": {
+                "features": [
+                  "Woods"
+                ]
+              }
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "district": "any"
+            },
+            {
+              "amount": 1,
+              "district": [
+                "Government Plaza"
+              ]
+            }
+          ]
+        },
+        "Industrial Zone": {
+          "production_cost": 54,
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacency_yield": "production",
+          "adjacency": [
+            {
+              "amount": 2,
+              "district": [
+                "Aqueduct"
+              ]
+            },
+            {
+              "amount": 1,
+              "improvement": [
+                "Quarry"
+              ]
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "improvement": [
+                "Mine"
+              ]
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "district": "any"
+            },
+            {
+              "amount": 1,
+              "district": [
+                "Government Plaza"
+              ]
+            }
+          ]
+        },
+        "Harbor": {
+          "production_cost": 54,
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacency_yield": "gold",
+          "on": {
+            "bases": [
+              "Coast",
+              "Lake"
+            ]
+          },
+          "requires_adjacent": [
+            {
+              "terrain": {
+                "bases": [
+                  "Grassland",
+                  "Plains",
+                  "Desert",
+                  "Tundra",
+                  "Snow"
+                ]
+              }
+            }
+          ],
+          "adjacency": [
+            {
+              "amount": 2,
+              "district": [
+                "City Center"
+              ]
+            },
+            {
+              "amount": 1,
+              "terrain": {
+                "bases": [
+                  "Coast",
+                  "Lake",
+                  "Ocean"
+                ],
+                "resources": [
+                  "any"
+                ]
+              }
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "district": "any"
+            },
+            {
+              "amount": 1,
+              "district": [
+                "Government Plaza"
+              ]
+            }
+          ]
+        },
+        "Encampment": {
+          "production_cost": 54,
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacent_to_city_center": false
+        },
+        "Entertainment Complex": {
+          "production_cost": 54,
+          "cost_model": "discounted",
+          "discount_percent": 40
+        },
+        "Government Plaza": {
+          "production_cost": 30,
+          "cost_model": "discounted",
+          "discount_percent": 25,
+          "max_per_player": 1
+        },
+        "Aqueduct": {
+          "production_cost": 36,
+          "cost_model": "progress",
+          "counts_toward_limit": false,
+          "adjacent_to_city_center": true,
+          "requires_adjacent": [
+            {
+              "river_edge_not_shared_with_center": true
+            },
+            {
+              "terrain": {
+                "bases": [
+                  "Lake"
+                ]
+              }
+            },
+            {
+              "terrain": {
+                "features": [
+                  "Oasis"
+                ]
+              }
+            },
+            {
+              "terrain": {
+                "relief": [
+                  "mountain"
+                ]
+              }
+            }
+          ],
+          "water_housing_min": 6,
+          "water_housing_boost": 2
         }
       },
       "training": {
@@ -882,7 +1225,7 @@
         }
       }
     },
-    "date": "2026-10-11T14:56:34.649638+00:00",
+    "date": "2026-10-21T15:46:03.162521+00:00",
     "mapgen_params": {
       "seed": 11986318432899689386,
       "rows": 10,

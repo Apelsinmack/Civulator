@@ -13,7 +13,10 @@ stream CONTRACT (world identity + the seeded-then-unseeded replay sequence),
 which is orthogonal to which generator produced the world.
 """
 
+import numpy as np
+
 from civulator.game.environment import GameEnvironment
+from civulator.game.player import Player
 from civulator.game.unit import ArcherUnit, WarriorUnit
 
 from test_combat_range import make_flat_env, place
@@ -71,6 +74,62 @@ def test_seeded_reset_sequence_is_reproducible():
         return worlds
 
     assert three_worlds() == three_worlds()
+
+
+# The fields a Player keeps across `reset` when the env keeps its players;
+# every other attribute is per-episode (Player.reset_state).
+PLAYER_IDENTITY_FIELDS = {"name", "player_index", "game_env"}
+_BACK_REFERENCES = {"player", "game_env"}
+
+
+def _data(value):
+    """Plain comparable data: objects by their fields, back-references to the
+    owning player/environment dropped (they would recurse)."""
+    if isinstance(value, np.ndarray):
+        return ("ndarray", value.shape, value.tolist())
+    if isinstance(value, dict):
+        return {key: _data(v) for key, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_data(v) for v in value]
+    if hasattr(value, "__dict__"):
+        return (type(value).__name__,
+                {k: _data(v) for k, v in vars(value).items() if k not in _BACK_REFERENCES})
+    return value
+
+
+def episode_fingerprint(env):
+    """The world plus every Player field (whatever fields Player has), the
+    episode counters, the round and the ownership grid."""
+    players = [
+        {k: _data(v) for k, v in vars(p).items() if k != "game_env"} for p in env.players
+    ]
+    return (world_fingerprint(env), players, _data(env.episode_stats),
+            env.turn_counter, env.current_player_index, sorted(env.city_by_id),
+            env.map.owner_city.tolist())
+
+
+def test_reset_after_play_equals_a_fresh_reset_including_every_player_field():
+    """Play rounds on a seeded env (pools fill, units heal, explored grows),
+    then dirty every Player field except its identity, then reset(seed): the
+    result equals a fresh environment's reset(seed) field for field. Breaks
+    if a per-episode field is left out of Player.reset_state (it would leak
+    from one episode into the next), or reset keeps players some other way."""
+    seed = 31
+    env = GameEnvironment(8, 16, num_players=2, map_type="basic").reset(seed=seed)
+    for _ in range(2 * 6):
+        env.next_turn()
+    assert any(p.science > 0 and p.culture > 0 and p.gold > 0 for p in env.players), \
+        "fixture: the rounds filled the pools"
+    fresh_fields = set(vars(Player("probe", 0, env)))
+    assert fresh_fields - PLAYER_IDENTITY_FIELDS, "fixture: Player has per-episode state"
+    sentinel = object()
+    for player in env.players:
+        for key in set(vars(player)) - PLAYER_IDENTITY_FIELDS:
+            setattr(player, key, sentinel)
+
+    env.reset(seed=seed)
+    fresh = GameEnvironment(8, 16, num_players=2, map_type="basic").reset(seed=seed)
+    assert episode_fingerprint(env) == episode_fingerprint(fresh)
 
 
 def test_same_seed_same_combat_outcome():
