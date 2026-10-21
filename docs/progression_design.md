@@ -1,6 +1,6 @@
 # Progression (#116): science, civics, gold, faith, wonders, loyalty, winning — design
 
-> **Status: v1 complete, critique pending (2026-10-21).** Written by Claude as lead game designer on
+> **Status: v2 — build contract (2026-10-21).** One critique lens run (systems reuse / regression / determinism, Opus); its seven blockers are resolved in "v2 fixes", which overrides §1–§13 where they differ. Written by Claude as lead game designer on
 > Erik's delegation ("you are now the lead game designer, and I want you to
 > implement these systems; you have to make all the decisions of where to
 > stop", chat 2026-10-21). Erik's brief is in #116; the earlier sketches are
@@ -55,7 +55,7 @@ the day it merges**, not dormant until #99.
 | #58 / #92: **culture pressure** — enough culture makes enemy cities defect | **Loyalty** (§8), a per-city pressure model driven by population and distance, not by culture | Erik asked for loyalty from the ground up, Civ 6-inspired (2026-10-21). Culture keeps its two consumers (borders, civics); loyalty is the non-military way to take a city. |
 | #90: "every current unit is tier 0 except Archer, tier 2" | Slinger → Archer → Crossbowman is one chain; Archer is simply the Classical ranged unit | follows from the first row |
 | #58: Campus science "buys +x% upgrades to yields" | Science buys **techs**; the +% to yields are **policy cards** unlocked by civics (Natural Philosophy +100 % Campus adjacency, etc.) | keeps science and culture distinct trees, as Erik's March notes left open and his 2026-10-21 brief assumes |
-| #67 (CHANGELOG): the Swordsman admitted ungated "as the natural answer to Spearman dominance"; Horseman and Catapult buildable from turn 1 | Swordsman, Horseman and Catapult are **tech-gated** (Iron Working, Horseback Riding, Engineering) | a tech tree with the three strongest early units outside it would be decoration; the Ancient counter-web is Warrior / Slinger / Archer / Spearman until the first Classical tech, as in Civ 6. The #60 Spearman question is re-measured after this block (`matchup_matrix`, the ladder) |
+| #67 (CHANGELOG): the Swordsman admitted ungated "as the natural answer to Spearman dominance"; Horseman and Catapult buildable from turn 1 | every unit but Warrior, Slinger, Settler and Worker is **tech-gated**: Archer and Spearman by Ancient techs, Swordsman, Horseman and Catapult by Classical ones (Iron Working, Horseback Riding, Engineering) | a tech tree with the strongest early units outside it would be decoration; the opening web is Warrior and Slinger, as in Civ 6. The #60 Spearman question is re-measured after this block (`matchup_matrix`, the ladder) |
 | #88: the Palace is a housing-only marker | the Palace gets its Civ 6 yields (science 2, gold 5, production 2) and +1 loyalty per citizen | the capital needs its yields for the trees to start and its loyalty for §8; culture keeps the v0.7 per-city base rather than moving to the Palace (no retune) |
 
 ---
@@ -969,6 +969,250 @@ normal ending with a score.
 Defaults live in `civulator/game/defaults.py` and are called from
 `GameEnvironment` only, so a future agent action replaces one call.
 
+## v2 fixes (critique round 1, lens: systems reuse / regression / determinism)
+
+Where this section and §1–§13 differ, **this section wins**. Numbers refer
+to the critic's findings (B = blocker, N = non-blocking).
+
+**Load order and config ownership (B4, B5, i)**
+- Import order: (1) `research_model` parses `[research]`, `[techs.*]`,
+  `[civics.*]`, `[governments.*]`, `[policies.*]`: names, costs,
+  prerequisites, raw `effects` lists — it validates nothing that names a
+  unit, building or district. (2) `unit_model`, `terrain_model`,
+  `district_model` parse their own new columns (`requires_tech`,
+  `requires_civic`, `requires_district`, `requires_building`,
+  `requires_government_tier`, `maintenance`, `purchasable`, `combat_class`,
+  `era`, `upgrades_to`, `kind`, yield and loyalty columns, raw `effects`),
+  validating `requires_*` names against `research_model`'s name sets.
+  (3) `effects.py` validates every spec's `effects` **from those parsed
+  specs**, never from `CFG`, and resolves targets against the three
+  registries. (4) `game/`. No cycle.
+- One interpreter per new table: `[science]`, `[gold]`, `[faith]` →
+  `unit_model` (beside `[culture]`, `[housing]`, `[buildings]`);
+  `[wonders]` → `district_model`; `[trade]` → `game/trade.py`;
+  `[loyalty]` → `game/loyalty.py`; `[game.score]` → `training/trainer.py`
+  (beside `city_score_weight`, which **stays** in `[game]`; the new weights
+  go in `[game.score]`).
+- Improvement gating: `terrain_model` parses `requires_tech` on
+  `[improvements.*]` into an accessor; `environment.py`'s direct
+  `CFG["improvements"]` read is replaced by that accessor in the same patch
+  (P2). `can_build_improvement_at(coords, name)` stays the **tile predicate**
+  (unchanged, so `test_terrain_repoint` holds); new
+  `GameEnvironment.can_player_build_improvement_at(player, coords, name)` =
+  tile owned by one of the player's cities (`Map.owner_city`) and
+  `player_can_build` and the tile predicate. `WorkerUnit.build_improvement`
+  and the worker default call the new one.
+
+**Improvement yields (B6)** — improvements yield nothing today, so a tech
+that unlocks one would be a dead node. `[improvements.*]` gains optional
+`food`, `production`, `gold` columns, parsed by `terrain_model` and added to
+`Tile.yields` (the sum over the tile's improvements, read live: improvements
+are not layers). Civ 6 base values, to be checked by the implementer on the
+wiki improvement pages: Farm food 1; Mine, Quarry, Pasture production 1;
+Camp, Plantation gold 1; Fishing Boats food 1. `build_improvement` bumps
+`terrain_epoch` (Claude's call: it changes a tile's gameplay numbers, and
+every yield cache keys on that epoch; improvements are rare events).
+`gold` on a tile is a new tile yield dimension read by `city_yield(city,
+"gold")` over worked tiles — the one place tile gold is summed.
+The worker default ranks by (food + production + gold) gain, ties by
+config order.
+
+**Player state and reset (B3)** — `Player.reset_state()` holds every
+per-episode field (pools, `techs`, `civics`, `current_tech`,
+`current_civic`, `government`, `policies`, `routes`, `queued_units`,
+`palace_granted`, …) and is called from `__init__` and from
+`_reset_attempt`'s `recreate_players=False` path in place of the field-by-
+field list. Env-level registries (none are added: wonder uniqueness is
+computed from live state, N9) reset in `_reset_city_registry`. New test:
+play N rounds, `reset(seed)`, fingerprint (new state included) equals a
+fresh environment's `reset(seed)`.
+
+**`Player.techs` / `civics` are lists in completion order (N2)**, replacing
+the unused `Player.technologies`; membership tests only; registries are
+iterated in config order; the auto-pick key is `(scaled cost, config
+index)`; "newest" means last in the list.
+
+**Combat classes and the bit-identity gate (B2, N14)**
+- A `class_bonuses` row has `strength = "combat" | "ranged"`: combat rows
+  are read by `get_combat_strength` (both roles, as today's +10/+5), ranged
+  rows only by `get_ranged_strength` (the shooter). Today's archer rule is
+  the row `{ unit = "Archer", target = "light_cavalry", amount = -5,
+  strength = "ranged" }` — Archer by name, shooter only, exactly as
+  `unit.py` applies it now; the heavy-cavalry extension is a second row
+  with the same shape. The Slinger gets no penalty (today it has none).
+- The gate: `scripts/matchup_matrix.py --units Warrior Slinger Archer
+  Swordsman Spearman Horseman Catapult` with one seed before and after;
+  `test_unit_config_identity` rewritten as literal per-pair strengths
+  (attacker, defender, role, combat/ranged), Slinger included, in place of
+  the three constants it pins today.
+- Keyed on class from now on: the siege "needs movement to fire" rule
+  (`unit.py:560`), `is_siege_class`, civilian capture
+  (`environment.py:624`: class `civilian`, so the Trader is captured, not
+  killed), `flanking_count`'s "combat-capable" test (base strength > 0 is
+  fine as is).
+- `UNIT_CLASSES` (name → subclass) becomes one exported dict in
+  `game/city.py` next to `_create_unit`; `scripts/matchup_matrix.py` and
+  `civulator/tools/recording.py` import it, and recording's silent
+  `WarriorUnit` fallback becomes a raise.
+
+**Yields: units, scaling and adjacency (N4, N5, N22)**
+- `city_yield` returns science/culture/gold/faith in tenths **scaled by
+  loyalty**, and food/production in whole points **unscaled**. Loyalty is
+  applied once, at the consumer: production = `max(1, (tiles + columns +
+  routes) * (100 + production_percent_sum) // 100 * loyalty_percent //
+  100)`; growth bucket (hundredths, as today) `food_surplus += food_net *
+  housing_percent * growth_share * (100 + growth_percent_sum) // 10000`.
+- The district term is `10 * district_yields(city, percent_by_district)
+  [name]`; `adjacency_percent` is keyed by **district**, and
+  `district_yields` applies it per district before summing — still the one
+  conversion of adjacency into yields. §2.1's `adjacency_percent(name)` is
+  withdrawn.
+- Effects of one kind are **summed, then applied once** with an integer
+  floor (N3): `production_percent`, `purchase_percent`,
+  `upgrade_cost_percent`, `growth_percent`, `adjacency_percent`.
+- `episode_stats` values stay ints; `district_yield_<name>` stays the raw
+  adjacency score, unscaled.
+
+**District registry readers (N6, N7, N8, N23)**
+- Every reader of the registry outside `district_model` goes through
+  `game/districts.py`'s accessor `district_spec(type)` (so the synthetic
+  fixture in `test_district_yields` keeps working).
+- A **specialty district** is `kind == "district" and counts_toward_limit`;
+  Meritocracy, Classical Republic, Insulae, Medina Quarter, trade's
+  "complete district" rule and `housing_if_districts` count exactly those.
+- `requires_adjacent_all` (every listed source must match some neighbour)
+  joins `requires_adjacent` (any); Colossus = `on` Coast,
+  `requires_adjacent_all` [land base, Harbor]. `river_on_tile` is accepted
+  as a tile test in `requires_adjacent`. `_DISTRICT_KEYS` lists every new
+  key.
+- The discount's A stays "configured discounted types" (**ACCEPTED GAP**:
+  Civ 6 counts unlocked types).
+
+**Wonders (N9, N19, N25, e)** — uniqueness is computed from live state
+(every city's districts, in `city_by_id` order), no registry. Race losers
+are removed through one helper `GameEnvironment._remove_district(city,
+district)` shared with `remove_city`. `free_tech` / `free_civic` complete
+at once, outside the one-per-turn rule; `free_population` re-runs
+`assign_tiles` in every city. The race is decided inside the completing
+player's turn, so turn order can decide a same-round tie — accepted and
+stated in the CHANGELOG. `test_districts.py:735`'s "every entry escalates"
+is restated as "every `kind == "district"` entry escalates; `fixed` never".
+
+**Flips, captures and `set_owner` (f, N17, N26)**
+- `City.set_owner` is **the one place a city changes hands**; it also
+  resets `loyalty` to `captured`, ends every trade route touching the city
+  (Traders of the player who keeps a city return to it; others are lost),
+  and drops `queued_units` entries for the city. `_capture_city` (force) and
+  `_flip_city` (loyalty) are its only callers — the City combat row is
+  amended accordingly (B7). An unavailable in-progress item is kept and may
+  complete (it was paid for; **accepted**).
+- A flip pays **no reward** (there is no reward channel at round end) and
+  increments only `cities_flipped_*`, not `cities_captured`. Whether the
+  training objective should see flips is Erik's call, listed in the report.
+- `Player.queued_units` is revived for every unit that cannot be placed
+  (free units, purchases, returning Traders): entries are `(city_id,
+  unit_type)`, placed at the owner's turn start as today.
+- After the loyalty phase, `next_turn` runs the one verdict function (below)
+  so a flip can end the game.
+
+**Turn order (g)** — `Player.start_turn`: exploration → unit reset and heal
+→ cities → **economy phase** in this order: maintenance; bankruptcy;
+research; civics; government and loadout defaults; route expiry and Trader
+return; Trader auto-send; Worker default → `city_ranged_attack` → queued
+units. Round end in `next_turn`: `_border_phase` → `_loyalty_phase` → the
+verdict → `turn_counter += 1`. A player whose last city flips plays one
+more turn and dies in `end_turn`, as after a capture.
+
+**Loyalty arithmetic (N1, N13)** — drift truncates toward zero:
+`q = (20 * abs(own - foreign)) // (2 * min(own, foreign) + 1)`, `drift =
+clamp(sign * q, -20, 20)` (the wiki's example gives −4, the Duel example
+−19). Loyalty is clamped to 0..100 after the delta. §14's "the Palace city
+never flips" is withdrawn: the capital is protected by the Palace's +1 per
+citizen only (§8.5).
+
+**Upgrades and bankruptcy (N15, N16)** — an upgrade replaces the unit
+object through `_create_unit` at the same `player.units` index and the same
+tile slot (health copied, movement 0, fortification 0). "Oldest" is the
+index in `player.units`.
+
+**Worker default (N18)** — moves through `Unit.move` to the adjacent
+enterable tile that minimises the canonical distance to the chosen target
+tile, ties by coordinates; never `path_finder`. Target = the nearest owned
+tile (by `distance_function`, ties by coordinates, candidates from
+`Map.tiles_of_city` over the player's cities in city-id order) where
+`can_player_build_improvement_at` holds for some improvement.
+
+**Verdict and domination (N12)** — `determine_outcome(env) -> (winner,
+victory)` in `trainer.py` is the one verdict: elimination; domination
+(P holds every Palace in the game **and** at least one Palace granted to
+another player — so a painted board with no Palace, or a lone player, never
+wins vacuously); turn-cap score; else `(None, None)`. `determine_winner`
+wraps it. Called from `_check_game_end` and from `next_turn` after the
+loyalty phase. A truncated game's `victory` is `null`, never `"draw"`
+(#51). `evaluate.py` records each seat's weights `game_version` beside the
+engine's in the summary (archived 0.7 weights play 0.8 rules; the record
+must say so).
+
+**Patch sequencing (N10, N11)**
+- P1 also bumps `__version__` to 0.8.0, regenerates the fixture and opens
+  the CHANGELOG entry, so no artifact saved under 0.8 rules carries a 0.7
+  manifest.
+- P2 gates districts on **techs only** and ships only the buildings whose
+  gates it can validate: Library, University, Shrine, Barracks, Medieval
+  Walls, the Workshop change, Granary/Monument/Walls gates, Factory removed.
+- P3 adds the Trader's table but keeps it in `DEFERRED_BUILD_UNITS` (a
+  build option that cannot pay off, #67) until P5 un-defers it.
+- P4 adds the civic and government gates (Theater Square, Entertainment
+  Complex, Government Plaza; Temple, Amphitheater, Ancestral Hall, Grand
+  Master's Chapel) with the effects interpreter.
+- P5 adds Market and Lighthouse (their `trade_route_capacity` effect needs
+  P4's interpreter and P5's routes).
+- P8's smoke script draws production from `get_valid_build_mask`, never
+  `random.choice(BUILD_OPTIONS)` (N20).
+
+**Encoder (N21)** — the class channels clamp at the existing `MAX_*`
+constants; Knight (50) and Musketman (55) saturate the melee channel.
+**ACCEPTED GAP**: the constants stay (changing them shifts every trained
+`.pth`'s inputs); #111 revisits the input space.
+
+**Gating list reconciled (N24)** — the opening web is Warrior and Slinger;
+Archer (Archery), Spearman (Bronze Working), Granary (Pottery) and Walls
+(Masonry) arrive with Ancient techs; Horseman, Swordsman and Catapult with
+Classical ones. §0.3's row is corrected to say so. The build-mask docstring
+in `build_agent.py` changes with it.
+
+**Pre-existing tests the design changes (B1)** — a failing pre-existing
+test is a finding, never a target; each one below is restated so that its
+property keeps its strength. A shared `grant_all(player)` helper in
+`tests/conftest.py` (every tech and civic known) serves tests whose subject
+is not availability. Three inversions are intentional and named:
+
+| Test | Today it asserts | Restated as |
+|---|---|---|
+| `test_district_yields.py:144 test_districts_do_not_change_culture_or_production` | district yields reach nothing | **inverted (P1)**: a complete district raises exactly its yield; an incomplete one nothing |
+| `test_flanking_bonus.py` (8 tests, `flanking_on` fixture) | flanking is always on | **inverted (P4)**: with Military Tradition known, the #59 numbers; without it, 0; the fixture grants the civic |
+| `test_player_score.py:20-34` | `cities * weight + units` | **inverted (P9)**: the `[game.score]` sum, with every new term exercised |
+| `test_districts.py` (20 placement tests via `placeable_type()`), `test_district_yields.py` (7, incl. the seeded-completion test) | any district is placeable | `grant_all` in the fixture; one new test asserts refusal without the tech (P2) |
+| `test_build_options.py` Swordsman mask/produce tests | offered from turn 1 | offered **once Iron Working is known**, refused before (P2) |
+| `test_build_options.py:230` civilian exemption `{"Settler","Worker"}` | two civilians | every `combat_class == "civilian"` unit (P3) |
+| `test_city_walls.py` (2) | Walls always offered | with Masonry known (P2) |
+| `test_housing.py::test_the_palace_cannot_be_produced` | `produce_building("Granary")` is True | with Pottery known (P2) |
+| `test_terrain_repoint.py::test_improvement_validity_reads_the_on_constraints` | tile predicate on an unowned board | unchanged: `can_build_improvement_at` stays the tile predicate (B5) |
+| `test_districts.py:735 test_escalation_is_integer_and_fixed_never_scales` | `game_progress(None) == (0, 1)`; every entry escalates | a player with no techs is `(0, total)`; every `kind == "district"` entry escalates, `fixed` never (P2, P6) |
+| `test_unit_config_identity.py:137-146` | three modifier constants | per-pair literal strengths, both strengths, Slinger included (P3) |
+| `test_district_yields.py:228` capture test | `== 3` after `set_owner` | holds: the stat stays unscaled (N22); a new assertion checks loyalty reset to `captured` (P7) |
+
+## Critique (lens table)
+
+| Lens | Verdict | Blockers |
+|---|---|---|
+| Systems reuse, regression and determinism (Opus, 2026-10-21) | survives with fixes | B1 pre-existing tests unnamed; B2 class table not bit-identical (archer penalty is shooter-only, Archer-only) and the matrix excludes the Slinger; B3 new Player state leaks across `reset()`; B4 config ownership / cyclic import order; B5 `can_build_improvement_at` has no player; B6 worker default ranks by yields that do not exist; B7 CLAUDE.md rows contradicted without amendment. 26 non-blocking points, all folded in above. Full text: the session scratchpad `critique_lens1_systems.md` |
+| Rules semantics (not run) | — | Erik reads the rules himself (he is the rules authority); implementers report semantic contradictions as findings |
+
+**Synthesis (v2).** One lens, survives with fixes; all seven blockers
+resolved in "v2 fixes" above, the non-blocking points folded in. v2 is the
+build contract.
+
 ## 14. Tests (properties, each naming the change that breaks it)
 
 Written from this section, never from the implementation. No test pins the
@@ -999,7 +1243,8 @@ member obeys.
 | A trade route needs a Trader, a destination within range, and free capacity; its yields reach the origin's `city_yield`; it ends after `duration_turns` with a Trader back at the origin; capture of either city ends it | route bookkeeping drifts |
 | A wonder is refused anywhere once any player completed it; completion removes other players' copies, refunds `consolation_percent` of their locked cost, bumps `district_epoch`; one-shot effects fire exactly once, never on load or capture | the race or the one-shot discipline breaks |
 | Wonders are not `district = "any"` sources; `wonder = "any"` counts complete wonders only | adjacency double-counts wonders |
-| Loyalty: pressure per §8.2 (own city counted, largest foreign), drift clamped, garrison and sources added; bands scale yields and production and block growth; a city at 0 flips to the largest foreign presser through `set_owner`; the Palace city never flips; all deltas from phase-start state (turn-order independence, as in `test_border_growth`) | any term or the phase discipline drifts |
+| Loyalty: pressure per §8.2 (own city counted, foreign summed), drift truncated toward zero and clamped, garrison and sources added, the Palace's per-citizen term included; bands scale yields and production and growth; a city at 0 flips to the largest foreign presser through `set_owner`; all deltas from phase-start state (turn-order independence, as in `test_border_growth`) | any term or the phase discipline drifts |
+| After N rounds of play, `reset(seed)` reproduces exactly what a fresh environment's `reset(seed)` gives, every new Player field included | a per-episode field is left out of `Player.reset_state` |
 | Domination: a player holding every Palace is the winner even while other cities stand; `player_score` sums the `[game.score]` terms | the verdict and the score diverge (#55) |
 | Defaults: with no agent choice a seeded game researches techs and civics, adopts governments, slots policies, sends Traders and improves tiles — all counters positive by round 150 of the smoke run — and two same-seed games produce identical pools, techs, loyalty and flips | a default is non-deterministic or dormant |
 | An idle Worker never builds an improvement its owner's techs do not allow, never on a tile its owner does not own, and steps only along `path_finder` | the worker default bypasses `can_build_improvement_at` or the hex kernels |
@@ -1078,4 +1323,25 @@ locked.
 | Wonders | `kind = "wonder"` in the district registry; `GameEnvironment.complete_district` | A wonder is a district table; uniqueness, the race and one-shot effects live in `complete_district`, the one place a district finishes |
 | Loyalty | `game/loyalty.py` (`pressure`, `loyalty_delta`, `loyalty_percent`), `City.loyalty`, `_loyalty_phase`, `_flip_city` | The only loyalty computation and the only non-combat change of a city's owner; it goes through `City.set_owner` like a capture. Amenities, governors and ages do not exist here |
 | Engine defaults | `game/defaults.py` | The deterministic choice the engine makes where no agent action exists yet (research, civic, government, loadout, Trader); each default is one function `GameEnvironment` calls, replaced one-for-one by an agent action in #99 |
-| Victory | `determine_winner` (elimination, domination, score), `[game.score]` | unchanged seam, two new rules; `victory` is recorded per game |
+| Victory | `determine_outcome(env) -> (winner, victory)` with `determine_winner` as its wrapper (elimination, domination, score), `[game.score]` | the one verdict, called from `_check_game_end` and from `next_turn` after the loyalty phase; `victory` is recorded per game, `null` when truncated |
+| Combat classes | `combat_class` column, `[combat] class_bonuses` (rows with `strength`), `UNIT_CLASSES` in `game/city.py` | the one class registry: combat modifiers, the encoder's `CLASS_INDEX`, civilian capture, the siege rules, the matchup matrix and the recorder all read it; no name-keyed combat rule remains |
+| Building availability | `city_can_build_building(city, name)` beside `player_can_build` | the one building-availability predicate (tech, civic, government tier, district, prerequisite building); `produce_building`, the mask and `purchase` call it |
+| Round-end phases | `next_turn`: `_border_phase` → `_loyalty_phase` → verdict → `turn_counter += 1` | every round-end rule computes from phase-start state in city-id order; a new one is a new phase here, never inside a player's turn |
+
+### (c) Existing rows amended at implementation (B7)
+
+| Row | Amendment |
+|---|---|
+| City combat | `City.set_owner` is the one place a city changes hands; `_capture_city` (force) and `_flip_city` (loyalty) are its only callers |
+| District placement | `_remove_district` (race losers, `remove_city`) is the only other writer of `Tile.district` / `City.districts` |
+| Culture yield | merged into the City yields row (`culture()` is an alias) |
+| Housing | effects `housing_if_districts` / `housing_with_building` are declared sources, read through `active_effects` |
+| District yields | consumed by `city_yield` and `calculate_production`; `percent_by_district` applied inside |
+| City economy | phase order per v2; completion in `GameEnvironment.complete_district`; loyalty and growth scaling |
+| Win/score | `determine_outcome`; weights in `[game.score]` beside `[game] city_score_weight` |
+| Combat | `combat_class` replaces `siege_class`; class bonuses from config rows |
+| Buildings | yield, maintenance, `purchasable`, `requires_*` columns |
+| Unit system | the touch list gains `combat_class`, `era`, `maintenance`, `purchasable`, `requires_tech`; `CLASS_INDEX` and `UNIT_CLASSES` are derived, never edited |
+| Palace | `capital_only` means "the city holding a Palace" |
+| Terrain model | improvement yields and `requires_tech` are read through it; `build_improvement` bumps `terrain_epoch` |
+| Action masking | the build mask reads `player_can_build` / `city_can_build_building`; the smoke script draws from the mask |
