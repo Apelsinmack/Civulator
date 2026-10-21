@@ -429,7 +429,100 @@ lost). No plunder, no path on the map.
 
 ## 8. Loyalty
 
-*(the model — §8.1–8.5 — is written against the digest's Civ 6 numbers)*
+Designed from the ground up on Erik's request, Civ 6-inspired: a city whose
+people are surrounded by a larger foreign population drifts away from its
+owner, and a city that reaches zero loyalty **changes hands without a
+fight**. It is the non-military way to take a city that #58 wanted from
+"culture pressure", and it is a direct counter to the one strategy the
+ladder measured (win by founding cities, #58): a city planted next to a big
+foreign neighbour must be held — by a garrison, a Monument, policies — or it
+is lost.
+
+### 8.1 State
+
+`City.loyalty`, an integer 0..100, in `[loyalty]`: `founded = 100` for a
+new city; `captured = 50` for a city taken by force or by a flip (Claude's
+call: a conquest must be consolidated, which is what gives Limitanei,
+garrisons and the Colosseum a job). Travels with the city.
+
+### 8.2 Pressure (the Civ 6 shape, our numbers)
+
+For a city C and a player P, the **pressure** P exerts on C is the sum over
+P's cities c within `[loyalty] range` (9, Civ 6) of
+
+```
+population(c) * (range + 1 - distance(c, C))        # canonical wrap distance
+```
+
+C itself counts for its owner (distance 0, the heaviest weight). No age
+multiplier: there are no eras of fortune here.
+
+Per round, with `own` = the owner's pressure and `foreign` = the **largest**
+single other player's pressure (Claude's call: Civ 6 sums all foreign
+pressure; taking the largest means two weak neighbours cannot flip a city
+between them that neither could take, and names the flip target in §8.5):
+
+```
+drift   = clamp( [loyalty] pressure_scale * (own - foreign) // max(own + foreign, 1),
+                 -[loyalty] max_drift, +max_drift )          # pressure_scale 10, max_drift 10
+sources = [loyalty] garrison (2) if a combat unit of the owner stands on the centre
+        + sum of `loyalty` effects in force for the city (§3): Monument +1; Colosseum +2
+          to every own city within 6; Limitanei +2 with a garrison; Retainers …
+delta   = drift + sources
+```
+
+A city alone (foreign 0) drifts up by `max_drift` and sits at 100. Example,
+Duel map: a pop-1 city five tiles from a pop-6 enemy capital: own 10,
+foreign 30 → drift −5; a garrison and a Monument make it −2; it flips in
+roughly 25 rounds unless it grows or the neighbour shrinks. That is the
+intended cost of forward settling.
+
+### 8.3 Phase
+
+`GameEnvironment._loyalty_phase`, run from `next_turn` after `_border_phase`
+(same round-end discipline: every city, whoever owns it, from the state at
+phase start, so turn order cannot decide a contest). Deltas are computed for
+all cities first, then applied, then flips are resolved in city-id order.
+Integers only, no RNG.
+
+### 8.4 Bands
+
+`[loyalty] bands = [[min, yield_percent, can_grow], ...]`, first match wins,
+same shape as housing's growth bands:
+
+| loyalty | yields (science, culture, gold, faith, production) | growth |
+|---|---|---|
+| 76–100 | 100 % | yes |
+| 51–75 | 75 % | yes |
+| 26–50 | 50 % | yes |
+| 1–25 | 25 % | no |
+
+`loyalty_percent(city)` is read by `city_yield` (§2.1) and
+`calculate_production`; the growth flag by `process_turn`. Food is not
+scaled (starvation is a separate punishment).
+
+### 8.5 Revolt
+
+At phase end a city at loyalty 0 **flips to the player exerting the largest
+foreign pressure** (there always is one: own pressure alone never reaches
+0). The flip is `GameEnvironment._flip_city(city, new_player)`: the old
+owner's units on the centre tile are deleted (counted as its `losses`),
+`City.set_owner` moves the city, its tiles, districts and wonders exactly as
+a capture does, loyalty resets to `captured`, `episode_stats` records
+`cities_flipped_out` / `cities_flipped_in`. `_capture_city` is untouched:
+capture and flip are two doors, `set_owner` is the one room behind both.
+
+The city holding a player's **Palace never flips** (loyalty is tracked but
+the band floor is 1): a player is eliminated by arms, not by arithmetic
+(Claude's call; Civ 6 protects capitals through the Palace's loyalty bonus,
+we protect it outright because a one-city player losing the capital to drift
+would be elimination by an invisible hand).
+
+### 8.6 What loyalty is not
+
+No free cities (no neutral owner exists in the engine and every system
+would need one); no governors; no amenities term until #96 exists (the
+schema takes one more source then); no effect on units, trade or borders.
 
 ---
 
@@ -500,17 +593,119 @@ religion.
 
 ### 10.2 Suggestion: religion as shared augmentation (not implemented)
 
-*(written out in §10.2 below, after the digest)*
+Erik's constraints (#93, 2026-10-21): not a copy of Civ 6; religion
+**augments** other systems ("the Campus gives culture as well as science");
+a religion that spreads gives its bonus **to the receiving civ too**; no
+missionary micromanagement; Holy Sites and faith stay. A design that fits
+all four, for a later session:
+
+1. **Pantheon** (faith sink one): at `[religion] pantheon_cost` faith a
+   player picks one pantheon from a short config list; a pantheon is an
+   `effects` list (§3), player-scoped, permanent. Examples: *God of the
+   Forge* (+25 % production toward Ancient/Classical military); *Fertility
+   Rites* (+10 % growth); *Scholars' Patron* (every Campus also yields
+   culture equal to half its science — an `adjacency_percent`-style kind,
+   `cross_yield`, one new effect kind); *Religious Settlements* (border
+   claims cost 20 % less).
+2. **Religion** (faith sink two): a player with a Holy Site and a Temple
+   founds a religion at `[religion] found_cost`, choosing two **follower
+   beliefs** from a list of effects that apply **to every city that follows
+   the religion, whoever owns it**, plus one **founder belief** that pays
+   the founder per foreign follower city (gold, science or culture per
+   turn). The follower beliefs are the augmentations Erik describes; the
+   founder belief is why spreading pays even though it strengthens the
+   neighbour.
+3. **Spread is pressure, not units.** Each city carries `religion`
+   (None or a name). Religious pressure is computed exactly like loyalty
+   pressure (§8.2) from cities that follow a religion, with a Holy Site
+   weighting its city up and a Temple more; a city converts when a
+   religion's pressure exceeds its current religion's by `[religion]
+   conversion_margin` for `conversion_turns` consecutive rounds. Resolved
+   in the loyalty phase. No missionaries, no apostles, no theological
+   combat; faith can be spent on **Inquisition** (reset a city's religion
+   to the owner's) as the one active counter.
+4. **Victory hook:** a religious win = a majority of all living players'
+   cities following your religion (§11 takes it as a config flag when the
+   mechanic exists).
+
+Everything above is config tables plus one pressure function already
+written for loyalty; the only new engine state is `City.religion` and
+`Player.religion`. It is a one-patch mechanic once this block is in.
 
 ---
 
 ## 11. Winning
 
-*(§11 — domination and the score terms)*
+#100's gap closes with the two cheapest honest rules; the richer victory
+types wait until agents play the trees and we can see what they do.
+
+1. **Elimination** — unchanged (`determine_winner`).
+2. **Domination** (new, outright): a player who holds **every Palace in the
+   game** wins at the end of any turn, whether or not the other players still
+   have cities (Civ 6: capture all capitals). In a Duel this is "take the
+   enemy capital"; it rewards the decisive strike over the grind, and it is
+   the first win condition that does not require killing every last city.
+   Checked in `_check_game_end` beside elimination; the Palace is the only
+   capital marker (#88 rule).
+3. **Turn-cap score** (`player_score`, the one formula, #55) grows terms, all
+   weights in `[game.score]`:
+
+   ```
+   score = cities * city_weight (10) + units * unit_weight (1)
+         + population * population_weight (1)
+         + techs * tech_weight (2) + civics * civic_weight (2)
+         + wonders * wonder_weight (10)
+   ```
+
+   Starting weights are Claude's; they make a full tech tree worth about
+   four cities and a wonder worth one. Erik tunes while the agents play.
+
+Not now, named so the next pass does not re-derive them: a **tree victory**
+(first to complete the tech tree) and a **religious victory** (§10.2) as
+config flags; a culture victory needs tourism or an equivalent and is not
+designed.
+
+`scripts/evaluate.py`, the trainer and the viewer HUD all keep calling
+`determine_winner` / `player_score`; `games_detail[]` gains `victory`
+(`"elimination" | "domination" | "score" | "draw"`) so the eval record says
+how a game was won.
 
 ## 12. Game length and cost scaling
 
-*(§12 — the turn-count model behind `tech_cost_percent`)*
+#101 asked for the target before any paced content lands. The target is
+**the training cap, 250 rounds** (`[training] max_turns`): the trees should
+be *nearly* exhausted by a strong player around round 200 and well short of
+that for an ordinary one, so that tree choices matter for the whole game
+and the end of the tree is a late-game event, not a mid-game one.
+
+A back-of-the-envelope yield model on the Duel preset (one player, cities
+founded at rounds 1, 40, 80, 120; population growing one point per twelve
+rounds to the housing cap; a Campus with a Library by round 90, a second
+Campus by 140, a University by 180):
+
+| rounds | science / round | cumulative science | culture / round | cumulative culture |
+|---|---|---|---|---|
+| 1–50 | 2–4 | ~150 | 2–4 | ~150 |
+| 50–100 | ~10 | ~650 | ~7 | ~500 |
+| 100–150 | ~18 | ~1550 | ~12 | ~1100 |
+| 150–200 | ~26 | ~2850 | ~17 | ~1950 |
+| 200–250 | ~32 | ~4450 | ~22 | ~3050 |
+
+The tree in §4.2 sums to about 3000 science at Civ 6 costs and the civics in
+§5.1 to about 2400 culture, so **Civ 6 costs are kept as they are**
+(`[research] tech_cost_percent = 100`, `civic_cost_percent = 100`): the
+model puts the last tech around round 205 and the last civic around round
+215. The two knobs exist so the balancing pass has one dial per tree; a
+measured curve replaces this table in the first evaluation report after the
+block merges (`techs_researched` / `civics_researched` per game are in the
+episode stats for exactly that).
+
+District costs escalate from this block on (`game_progress`, §4.3): a
+Campus placed with half the tree known costs `54 * (1 + 9 * 0.5) = 297`
+(Civ 6's own curve). Wonder and unit costs do not escalate (Civ 6).
+
+Truncation stays a bug (#51): the step guard is unchanged; the turn cap is a
+normal ending with a score.
 
 ## 13. Engine defaults where no agent chooses yet
 
