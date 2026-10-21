@@ -137,7 +137,9 @@ MediaWiki API.
   and Camp (Animal Husbandry), Plantation (Irrigation), Fishing Boats
   (Celestial Navigation; Civ 6: Sailing, cut); the Farm is ungated. An
   improvement may now be built only on a tile one of the builder's cities
-  owns. Captured cities keep whatever they hold.
+  owns. Captured cities keep whatever they hold, and an item in production
+  that the new owner could not start still completes (design "v2 fixes":
+  it was paid for).
 - **Buildings.** A building may require a complete district of a type in
   its city (`requires_district`) and a building the city owns
   (`requires_building`), checked with the tech by one predicate,
@@ -189,10 +191,10 @@ MediaWiki API.
 
 **What agents see.** No encoder channel reads techs or research (#99,
 #111). The build mask hides unresearched options, so an archived build head
-(10 options, loaded at its own width) starts each game choosing among
-Warrior, Slinger and Settler only. At full width the build state has 7 more
-turns-to-complete channels. The terrain-aware encoders' tile-yield channels
-include improvement yields.
+(10 options, loaded at its own width) can choose only Warrior, Slinger and
+Settler until its owner's research opens the rest. At full width the build
+state has 7 more turns-to-complete channels. The terrain-aware encoders'
+tile-yield channels include improvement yields.
 
 **Accepted gaps.** `requires_civic` and `requires_government_tier` are
 parsed and pass until P4. Maintenance is stored, not paid, until P5.
