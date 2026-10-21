@@ -21,18 +21,19 @@ from ..torch_env import resolve_device
 # is the gate for that, and for the converse — a statted unit is either here or
 # named in game/unit.py's DEFERRED_BUILD_UNITS with a reason (issue #67).
 #
-# Availability (#116 P2, P4, P5): an option is offered only when the city could
-# start it -- the owner's techs and civics, for buildings the required
-# government tier, district and building, for the Trader a free route slot
-# (get_valid_build_mask) -- so the mask invariant (CLAUDE.md) holds: an offered
-# option always changes the city's production.
+# Availability (#116 P2, P4, P5, P8): an option is offered only when the city
+# could start it -- the owner's techs and civics, for buildings the required
+# government tier, district and building, for the Trader a free route slot, for
+# the Worker a tile to improve (get_valid_build_mask) -- so the mask invariant
+# (CLAUDE.md) holds: an offered option always changes the city's production.
 #
 # Changing this list changes the BuildNetwork output width and therefore
 # invalidates previously saved build-agent weights. APPEND ONLY (#67): the
 # #116 P2 buildings follow the v0.7 list, the #116 P3 units follow them, the
-# #116 P4 civic- and government-gated buildings follow those, and #116 P5
-# appends the Market, the Lighthouse and the Trader (which left game/unit.py's
-# DEFERRED_BUILD_UNITS with the trade routes it makes).
+# #116 P4 civic- and government-gated buildings follow those, #116 P5 appends
+# the Market, the Lighthouse and the Trader (which left game/unit.py's
+# DEFERRED_BUILD_UNITS with the trade routes it makes), and #116 P8 appends the
+# Worker (which left it with the engine default that builds improvements).
 BUILD_OPTIONS = [
     "Warrior", "Spearman", "Archer", "Horseman", "Catapult",
     "Settler", "Granary", "Slinger", "Swordsman", "Walls",
@@ -41,7 +42,7 @@ BUILD_OPTIONS = [
     "Man-At-Arms", "Pikeman", "Crossbowman", "Knight", "Trebuchet",
     "Musketman",
     "Temple", "Amphitheater", "Ancestral Hall", "Grand Master's Chapel",
-    "Market", "Lighthouse", "Trader",
+    "Market", "Lighthouse", "Trader", "Worker",
 ]
 NUM_BUILD_OPTIONS = len(BUILD_OPTIONS)
 
@@ -187,10 +188,12 @@ def get_valid_build_mask(city, device=None, options=None):
       mask invariant, #51)
     - units: valid iff `City.can_produce_unit` -- the owner
       `player_can_build` them (their `requires_tech` / `requires_civic`,
-      #116 P2, P4: the opening web is Warrior, Slinger and Settler), and the
+      #116 P2, P4: the opening web is Warrior, Slinger and Settler), the
       Trader only while its owner's route capacity exceeds its routes plus
       its standing Traders (#116 P5: a Trader that could never be sent
-      cannot pay off); the Settler also needs population >= 3
+      cannot pay off), and the Worker only while its owner has a tile one
+      could improve (#116 P8: `improvements.worker_has_work`); the Settler
+      also needs population >= 3
 
     The same predicates `City.produce_unit` / `produce_building` apply, so
     an option the mask offers is never refused by production.

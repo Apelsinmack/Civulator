@@ -29,6 +29,7 @@ from .availability import city_can_build_building, player_can_build
 from .culture import culture
 from .districts import district_spec, district_yields
 from .housing import housing
+from .improvements import worker_has_work
 from .loyalty import CAPTURED as LOYALTY_CAPTURED, FOUNDED as LOYALTY_FOUNDED
 from .loyalty import growth_share, loyalty_percent
 from .trade import TRADER_UNIT, end_routes_touching, trader_slot_free
@@ -151,12 +152,19 @@ class City:
         """Whether this city may start (or buy) a `unit_type`: its owner
         `player_can_build` it (#116 P2, P4), and -- for the trade unit
         (`[trade] unit`) -- the owner has a route slot no route or standing
-        Trader fills (`trade.trader_slot_free`, #116 P5: a Trader that could
-        never be sent is an option that cannot pay off). The one unit
-        predicate of `produce_unit`, the build mask and `purchase`."""
+        Trader fills (`trade.trader_slot_free`, #116 P5), and -- for the
+        Worker -- the owner has a tile one could improve
+        (`improvements.worker_has_work`, #116 P8): a Trader that could never
+        be sent, a Worker with nothing to build, is an option that cannot pay
+        off. The one unit predicate of `produce_unit`, the build mask and
+        `purchase`."""
         if not player_can_build(self.player, "unit", unit_type):
             return False
-        return unit_type != TRADER_UNIT or trader_slot_free(self.player)
+        if unit_type == TRADER_UNIT:
+            return trader_slot_free(self.player)
+        if UNIT_CLASSES.get(unit_type) is WorkerUnit:
+            return worker_has_work(self.player)
+        return True
 
     def produce_unit(self, unit_type):
         """Start producing a unit. Refused (False, production unchanged)

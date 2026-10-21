@@ -32,6 +32,7 @@ from .availability import player_can_build
 from .city import _create_unit
 from .defaults import (
     default_civic, default_government, default_loadout, default_research, default_trade,
+    default_workers,
 )
 from .districts import (
     YIELD_NAMES as DISTRICT_YIELD_NAMES, District, can_place_district, district_cost,
@@ -280,6 +281,9 @@ class GameEnvironment:
                 "gold_spent_purchases": 0,
                 "faith_spent_purchases": 0,
                 "trade_routes_established": 0,
+                # Improvements a Worker built (#116 P8): counted by
+                # WorkerUnit.build_improvement, the one player build path.
+                "improvements_built": 0,
                 # Wonders (#116 P6): wonders this player completed, and its
                 # placed copies removed because another city completed one.
                 "wonders_completed": 0,
@@ -1662,9 +1666,9 @@ class GameEnvironment:
            (#116 P4)
         6. route expiry and Trader return -- `trade.expire_routes` (#116 P5)
         7. Trader auto-send -- `defaults.default_trade` (#116 P5)
-        8. Worker default (#116 P8)
+        8. Worker default -- `defaults.default_workers` (#116 P8)
 
-        Steps 1-7 exist; a later patch inserts its steps at their place here.
+        Steps 1-8 exist; a later patch inserts its steps at their place here.
         """
         treasury = player.gold
         self._pay_maintenance(player)
@@ -1675,6 +1679,7 @@ class GameEnvironment:
         self._government_and_loadout_defaults(player, refit=civic is not None)
         expire_routes(player, self)
         default_trade(player, self)
+        default_workers(player, self)
 
     # --- Upgrades (#116 P3, docs/progression_design.md §6.4) ---
 

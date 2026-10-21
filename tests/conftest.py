@@ -10,9 +10,11 @@ test_combat_range import ...`).
 And the synthetic-source helpers (#116 P4): a policy card, government or
 civic that exists for one test only, added to research_model's registries
 through `monkeypatch` (so teardown removes it) and validated by the real
-effects interpreter on first use.
+effects interpreter on first use; and (#116 P8) `synthetic_improvements`, the
+same for the `[improvements.*]` tables.
 """
 
+import contextlib
 import os
 import sys
 
@@ -94,3 +96,40 @@ def stand(env, unit_type, player_index, coordinates):
     env.players[player_index].units.append(unit)
     env.add_unit_to_tile(unit, coordinates)
     return unit
+
+
+@contextlib.contextmanager
+def synthetic_improvements(tables):
+    """Run a `with` block against `tables` (name -> an `[improvements.*]`-style
+    dict, in the order the block should see as config order) INSTEAD of the
+    configured improvements (#116 P8). The tables go through the real
+    `terrain_model.parse_improvements` (so a malformed one raises), and every
+    module-level table the readers hold -- `IMPROVEMENT_YIELDS`,
+    `IMPROVEMENT_REQUIRES_TECH`, `IMPROVEMENT_HOUSING`, the `on` constraints,
+    and the name set and order -- is swapped IN PLACE (the tile and housing
+    modules hold references to the dicts) and put back exactly, order
+    included, when the block exits. `requires_tech` must name a real tech."""
+    from civulator import terrain_model
+    from civulator.unit_model import to_tenths
+
+    on, requires_tech, yields = terrain_model.parse_improvements(tables)
+    housing = {name: to_tenths(table["housing"], f"[improvements.{name}] housing")
+               for name, table in tables.items() if table.get("housing")}
+    swaps = {"_IMPROVEMENT_ON": on, "IMPROVEMENT_REQUIRES_TECH": requires_tech,
+             "IMPROVEMENT_YIELDS": yields, "IMPROVEMENT_HOUSING": housing}
+    saved = {attr: dict(getattr(terrain_model, attr)) for attr in swaps}
+    names, order = terrain_model.IMPROVEMENT_NAMES, terrain_model.IMPROVEMENT_ORDER
+    try:
+        for attr, new in swaps.items():
+            table = getattr(terrain_model, attr)
+            table.clear()
+            table.update(new)
+        terrain_model.IMPROVEMENT_NAMES = frozenset(tables)
+        terrain_model.IMPROVEMENT_ORDER = tuple(tables)
+        yield
+    finally:
+        for attr, old in saved.items():
+            table = getattr(terrain_model, attr)
+            table.clear()
+            table.update(old)
+        terrain_model.IMPROVEMENT_NAMES, terrain_model.IMPROVEMENT_ORDER = names, order

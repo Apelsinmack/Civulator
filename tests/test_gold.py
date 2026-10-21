@@ -24,11 +24,12 @@ from civulator.effects import (
     active_effects,
     effects_of,
 )
-from civulator.game.city import City
+from civulator.game.city import UNIT_CLASSES, City
 from civulator.game.districts import District
 from civulator.game.maintenance import maintenance_due
 from civulator.game.purchasing import purchase_cost
 from civulator.game.trade import TRADER_UNIT
+from civulator.game.unit import WorkerUnit
 from civulator.game.yields import city_yield
 from civulator.game.housing import housing
 
@@ -128,8 +129,12 @@ def _maintained_types():
 
 
 def _free_types():
+    # Not the Trader and not the Worker: the engine defaults of the economy
+    # phase (#116 P5, P8) walk and work those two, so "left where it stands"
+    # is not a property of them (test_worker_default.py has theirs).
     names = sorted(n for n in unit_model.UNIT_NAMES
-                   if _upkeep_of(n) == 0 and n != TRADER_UNIT)
+                   if _upkeep_of(n) == 0 and n != TRADER_UNIT
+                   and UNIT_CLASSES[n] is not WorkerUnit)
     assert names, "fixture: some unit is free"
     return names
 

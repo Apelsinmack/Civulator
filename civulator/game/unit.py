@@ -107,9 +107,6 @@ MOVEMENT_DOMAIN = {
 # tests/test_build_options.py asserts the partition is total: every statted
 # unit type is either a BUILD_OPTIONS entry or named here.
 DEFERRED_BUILD_UNITS = {
-    # Worker: tile improvements exist (WorkerUnit.build_improvement) but no
-    # agent has an improvement action, so producing one could not pay off.
-    "Worker",
     # BatteringRam / SiegeTower: stats exist (issue #66) but their Civ 6
     # mechanic — an adjacency that changes how ANOTHER unit's attack resolves
     # against a city's walls — does not, and cannot until there is a wall model
@@ -119,7 +116,10 @@ DEFERRED_BUILD_UNITS = {
     "BatteringRam",
     "SiegeTower",
     # (The Trader sat here from #116 P3 until P5 gave it trade routes; it is a
-    # build option now, offered only while its owner has a free route slot.)
+    # build option now, offered only while its owner has a free route slot.
+    # The Worker sat here until #116 P8 gave it the engine default that builds
+    # improvements; it is a build option now, offered only while its owner has
+    # a tile one could improve -- improvements.worker_has_work.)
 }
 
 
@@ -872,7 +872,9 @@ class TraderUnit(Unit):
 
 
 class WorkerUnit(Unit):
-    """Unit for tile improvements."""
+    """Unit for tile improvements. Idle, it is run by the engine default
+    `defaults.default_workers` (#116 P8); an agent action would replace that
+    call (#99)."""
 
     def __init__(self, player, coordinates):
         super().__init__(player, coordinates, "Worker")
@@ -880,7 +882,9 @@ class WorkerUnit(Unit):
     def build_improvement(self, improvement_type, game_env):
         """Build an improvement on the current tile, if the owner may: a tile
         of one of its cities, the improvement's tech known, and the tile
-        predicate (`GameEnvironment.can_player_build_improvement_at`, #116 P2)."""
+        predicate (`GameEnvironment.can_player_build_improvement_at`, #116 P2).
+        The build spends the Worker's movement, marks it acted and counts in
+        `episode_stats["improvements_built"]` (#116 P8)."""
         if not game_env.can_player_build_improvement_at(
             self.player, self.coordinates, improvement_type
         ):
@@ -888,4 +892,6 @@ class WorkerUnit(Unit):
 
         game_env.build_improvement(self.coordinates, improvement_type)
         self.movement_points = 0
+        self.has_acted = True
+        game_env.episode_stats[self.player.player_index]["improvements_built"] += 1
         return True
