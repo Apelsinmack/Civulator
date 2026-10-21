@@ -32,7 +32,7 @@ can be rebalanced when RL agents find what is overpowered.
 | Aqueduct (+2, or water housing raised to 6) | a district: waits for #86 |
 | Amenities | #88's own rule (#41): only once unhappiness does something |
 | Neighborhood, Sewer, policies, wonders | not in the game yet |
-| Workers building improvements | no agent action and no Worker in `BUILD_OPTIONS`. Improvement housing ships but is dormant in play (ACCEPTED GAP below) |
+| Workers building improvements | no agent action and no Worker in `BUILD_OPTIONS`. Improvement housing ships but is dormant in play (ACCEPTED GAP below; **closed by #116 P8**, the Worker default) |
 | Civ 6's growth-threshold curve | ours (`15 + 10·(pop−1)`) stays; separate question |
 
 ---
@@ -78,7 +78,9 @@ housing(city) = water(city)
 **ACCEPTED GAP:** no unit can build improvements in play, so improvement
 housing is 0 in real games until Workers and an improvement action exist. The
 rule and its column ship and are tested, exactly as building culture did in
-#87.
+#87. **Closed by #116 P8** (CHANGELOG v0.8.0, "Workers build improvements by
+default"): an engine default now builds improvements, so improvement housing
+is live; the agent's improvement action is still #99's.
 
 ## 2. Growth slowdown
 

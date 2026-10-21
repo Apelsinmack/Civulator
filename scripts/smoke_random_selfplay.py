@@ -14,10 +14,13 @@ the trade routes opened and running (the engine's Trader default) and the
 gold and faith spent on purchases (#116 P5; 0: no default buys), and
 per player the lowest and the mean loyalty of its cities and the cities it
 lost and gained by loyalty flips (#116 P7; the end line adds the lowest
-loyalty any of its cities had after any round), plus wall-clock. A sanity check
-that borders grow, research and civics progress, the defaults adopt
-governments, slot cards and send Traders, upkeep is paid and loyalty moves
-in real games, not a measurement.
+loyalty any of its cities had after any round), and per player the
+improvements its Workers built, the improvements standing on its tiles and its
+Workers alive (#116 P8; the engine's Worker default builds them -- nothing
+here orders a Worker's work, though the random agent may move one), plus
+wall-clock. A sanity check that borders grow, research and civics progress,
+the defaults adopt governments, slot cards, send Traders and improve tiles,
+upkeep is paid and loyalty moves in real games, not a measurement.
 
 Districts (#86) and wonders (#116 P6, district-registry entries of kind
 "wonder"): at each player's turn start every city has a small chance to
@@ -51,6 +54,7 @@ from civulator.game.availability import player_can_build
 from civulator.game.city import City
 from civulator.game.districts import can_place_district
 from civulator.game.housing import housing
+from civulator.game.unit import WorkerUnit
 from civulator.game import GameEnvironment, resolve_size_and_players
 
 STEP_LIMIT = 200_000
@@ -96,7 +100,8 @@ def main():
               f"pop_by_player={pops}  growth_slowed_turns={slowed}  "
               f"techs_researched={techs}  civics_researched={civics}  "
               f"governments={governments}  policies={policies}  "
-              f"{gold_line()}  {loyalty_line()}  t={time.perf_counter() - t0:.1f}s")
+              f"{gold_line()}  {loyalty_line()}  {improvement_line()}  "
+              f"t={time.perf_counter() - t0:.1f}s")
 
     def gold_line():
         """Per player: treasury (whole gold), upkeep paid (whole gold),
@@ -109,6 +114,18 @@ def main():
                 f"routes_running={[len(p.routes) for p in env.players]}  "
                 f"purchases_gold_faith_tenths="
                 f"{[(s['gold_spent_purchases'], s['faith_spent_purchases']) for s in stats]}")
+
+    def improvement_line():
+        """Per player: improvements its Workers built (the episode counter),
+        improvements standing on the tiles its cities own, and its Workers
+        alive (#116 P8)."""
+        built = [env.episode_stats[i]["improvements_built"] for i in range(num_players)]
+        standing = [sum(len(env.map.get_tile(pos).improvements)
+                        for city in p.cities for pos in env.map.tiles_of_city(city.city_id))
+                    for p in env.players]
+        workers = [sum(isinstance(u, WorkerUnit) for u in p.units) for p in env.players]
+        return (f"improvements_built={built}  improvements_standing={standing}  "
+                f"workers_alive={workers}")
 
     def loyalty_line():
         """Per player: (lowest, mean) loyalty of its cities -- None without a
@@ -205,6 +222,7 @@ def main():
               f"order={player.civics}")
     print(f"gold {gold_line()}")
     print(f"loyalty {loyalty_line()}  lowest_after_any_round={lowest_seen}")
+    print(f"improvements {improvement_line()}")
     print(f"done={env.done} steps={steps} wall={time.perf_counter() - t0:.1f}s")
 
 

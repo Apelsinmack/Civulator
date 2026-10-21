@@ -971,6 +971,111 @@ before, and there is no free city, post-flip immunity or governor -- so
 cities between two rivals may change hands repeatedly; not measured beyond
 that one game. The Colosseum reaches only its owner's cities.
 
+### Workers build improvements by default (#116 P8)
+
+**Rule change, effect NOT yet measured.** Spec: `docs/progression_design.md`
+§13, §15 P8 and "v2 fixes" (Improvement yields; Worker default; Load order
+and config ownership; Turn order). This patch closes the accepted gap of the
+housing design (#88): no unit built improvements in play, so improvement
+housing, improvement yields and every tech that unlocks an improvement were
+dormant in real games.
+
+- **The rule.** The last step of the economy phase, after the Trader default,
+  is `defaults.default_workers` (no RNG). In `player.units` order, every
+  Worker that is idle -- all its movement and not having acted, so a Worker an
+  agent ordered this turn is left alone -- does exactly one of:
+  - **(a) builds.** On a tile where its owner may build some improvement
+    (`GameEnvironment.can_player_build_improvement_at`: the tile is the
+    owner's, the improvement's `requires_tech` is known, the tile predicate
+    holds) it builds the one with the largest **gain**: the improvement's
+    food + production + gold from `[improvements.*]`, whole points, each
+    counted alike; then the larger housing; then config order
+    (`terrain_model.IMPROVEMENT_ORDER`) -- through `WorkerUnit.
+    build_improvement`, which now also marks the Worker acted and counts the
+    build in the new per-player stat `improvements_built`.
+  - **(b) walks.** Otherwise it takes one step toward the nearest of its
+    owner's tiles where it could build something -- nearest by the canonical
+    `distance_function`, ties by `(row, col)`; the candidates come from
+    `Map.tiles_of_city` over the player's cities in city-id order, and a
+    candidate is never a city centre, a district tile or an improved tile and
+    has no unit of another player and no own Worker standing on it. The step
+    is the Trader default's one-step rule, factored out of `trader_step` into
+    `defaults.step_toward` so both defaults share it: the adjacent tile the
+    unit can enter, with no foreign unit, its own slot free, a payable
+    `step_cost` and strictly nearer, ties by `(row, col)`, taken through
+    `Unit.move`. Never `path_finder`. One action per turn: a Worker that
+    stepped onto its target builds the next turn.
+  - **(c) stays,** when there is nothing to build or reach.
+- **Claude's calls** (the design is silent on all three).
+  - **One improvement per tile.** The engine's tile predicate refuses only a
+    repeat of the *same* improvement ("our engine lets several stack",
+    `docs/housing_design.md`), so without a rule of its own a Worker would
+    stand on one Plains tile and build a Farm, then a Plantation, a Camp, a
+    Pasture and a Quarry. The default, and the Worker's build offer, never
+    improve a tile that already holds one (Civ 6 allows one). The rule lives in
+    the new `civulator/game/improvements.py`, not in the tile predicate:
+    `can_build_improvement_at`, the painter and `build_improvement` are as
+    they were. Whether the engine itself should refuse a second improvement is
+    Erik's call.
+  - **Workers spread.** A tile an earlier Worker of the same pass chose is not
+    chosen by a later one, so Workers that start together -- the Pyramids'
+    three -- go to different tiles instead of queueing for one.
+  - **Config order is a tuple.** `IMPROVEMENT_NAMES` is a frozenset, whose
+    iteration order changes with the process's hash seed; "ties by config
+    order" reads the new `terrain_model.IMPROVEMENT_ORDER`. (On flat Plains
+    with every tech, Plantation and Camp tie on gain and housing: the order
+    decides.)
+- **The Worker is a build option.** `Worker` left `DEFERRED_BUILD_UNITS` and
+  is appended to `BUILD_OPTIONS` (30 -> 31 options; archived build heads keep
+  their width, #67). It is offered, producible and purchasable only while its
+  owner holds a tile a Worker could be sent to -- `improvements.
+  worker_has_work`, read by `City.can_produce_unit`, so the build mask,
+  `produce_unit` and `purchase` share one predicate: an owned tile where an
+  improvement may be built now, with no improvement yet and no foreign unit or
+  own Worker on it (the mask invariant, #51: a Worker with nothing to build
+  cannot pay off). It counts tiles, not Workers already on their way.
+- **What is live now.** Workers; the Ilkum policy's +30 % production toward
+  them (P4); the Pyramids' three free Workers (P6), which the default sends to
+  work in the turn they appear; improvement yields (P2: food and production
+  into `Tile.yields`, so the terrain-aware encoder's yield channels see them;
+  gold into `city_yield`); improvement housing (#88); and the techs that unlock
+  an improvement (P2). Idle Workers cost no upkeep (`[units.Worker]
+  maintenance = 0`), so only production limits how many exist.
+- **Measured** (nothing here is an effect on agents). *Default alone, no
+  agent:* two Workers per player placed next to each capital, every tech known,
+  seed 11, 8x16 `basic` world, 2 players (`play(11, rounds)` in
+  `tests/test_worker_default.py`, 1 game): improvements built per player after
+  2 rounds [2, 2], after 6 rounds [5, 5], after 12 rounds [7, 6], after 50
+  rounds [9, 8]. The capitals own 7 tiles at the start and 10 by round 50, so
+  after the first rounds the default builds as the borders grow. *Random
+  agents:* `python scripts/smoke_random_selfplay.py --seed S [--size tiny]`, 1
+  game each, 250 rounds; it now logs per player the improvements built, the
+  improvements standing on its cities' tiles and its Workers alive at every
+  checkpoint and in an end line. Built / standing / Workers alive at the end,
+  one entry per player: seed 4242 duel [6, 0] / [6, 0] / [4, 0]; seed 7 duel
+  [0, 3] / [0, 1] / [0, 1]; seed 99 duel [0, 6] / [0, 3] / [0, 1]; seed 4242
+  `--size tiny` (3 players) [0, 7, 8] / [0, 3, 5] / [0, 0, 2]; seed 7 `--size
+  tiny` [25, 9, 17] / [20, 8, 11] / [1, 5, 1]. The counts are low and uneven
+  because the random build choice rarely picks a Worker and the random agent
+  also moves the Workers the default is working. Built minus standing is, in
+  all five runs, exactly the improvements the smoke script's random district
+  placement cleared (a district placed on an improved tile removes the
+  improvement, P2): 0, 2, 3, 7 and 12, counted by a one-off wrapper around
+  `Tile.clear_improvements` that is not committed.
+- **What agents see.** The terrain-aware encoder reads `Tile.yields`, so built
+  improvements show in its food and production channels (the terrain epoch is
+  bumped, P2); nothing else in the encoders changes. No agent action builds an
+  improvement or orders a Worker's work (#99): the default is the only builder,
+  and an order an agent gives a Worker is overruled only at the next turn start,
+  when the default acts on an idle Worker.
+
+**Accepted gaps.** The Worker is offered while *any* open tile has no Worker on
+it, even when the Workers already alive outnumber the open tiles. Whether the
+engine's tile predicate should itself forbid a second improvement (above) is
+open. One action per turn, and Civ 6's work-over-several-turns, charges and
+pillaging are not modelled. Nothing removes an improvement from a tile its
+owner loses: it changes hands with the tile.
+
 ---
 
 ## v0.7.0 — Borders and culture; city combat and the other post-0.6.2 rule changes (2026-10-11)

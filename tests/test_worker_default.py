@@ -116,13 +116,19 @@ def expected_step(env, unit, target):
 
 
 def nearest_scene(env, ring1):
-    """A tile W at distance 3 from the centre and two ring-1 tiles: `near`,
-    strictly nearer to W than every other ring-1 tile, and `far`, a farthest."""
-    for w in ring(env, CENTRE, 3):
-        ds = sorted((env.distance_function(w, r), r) for r in ring1)
-        if ds[0][0] < ds[1][0] < ds[-1][0]:
-            return w, ds[0][1], ds[-1][1]
-    raise AssertionError("fixture: no tile sees one ring-1 tile strictly nearest")
+    """A tile W off the city's land and two ring-1 tiles, `near` strictly
+    nearer to W than `far`, the farthest ring-1 tile from W. W has two
+    neighbours equally near `near`, so a step has an alternative when one is
+    refused and a tie to break by coordinates."""
+    for distance in (3, 4, 5):
+        for w in ring(env, CENTRE, distance):
+            far = max(ring1, key=lambda r: (env.distance_function(w, r), r))
+            for near in ring1:
+                steps = nearer_neighbours(env, w, near)
+                if (env.distance_function(w, near) < env.distance_function(w, far)
+                        and len(steps) >= 2 and steps[0][0] == steps[1][0]):
+                    return w, near, far
+    raise AssertionError("fixture: no tile has a nearer ring-1 tile it can reach by two steps")
 
 
 def tie_scene(env, ring1):
@@ -409,6 +415,26 @@ def test_a_step_never_lands_where_unit_move_would_refuse(blocker):
         assert worker.coordinates != blocked
         if blocker == "a foreign unit":
             assert warrior.coordinates == blocked and warrior.health == 100
+
+
+def test_a_worker_with_every_nearer_neighbour_blocked_stays_instead_of_stepping_sideways():
+    """A step must bring the Worker strictly nearer its target: with every
+    nearer neighbour held by a foreign unit it stays put, though neighbours at
+    the same distance are free. Breaks if a sideways or backward step is ever
+    taken (the Worker would shuffle forever beside a blocked path)."""
+    with synthetic_improvements({"Plot": _table(food=1)}):
+        env, player, city = scene()
+        w, near, far = nearest_scene(env, ring(env, CENTRE, 1))
+        open_only(env, city, [near], "Plot")
+        worker = stand(env, "Worker", 0, w)
+        for _, pos in nearer_neighbours(env, w, near):
+            stand(env, "Warrior", 1, pos)
+        sideways = [p for p in env.map.get_adjacent_coords(w)
+                    if env.distance_function(p, near) == env.distance_function(w, near)
+                    and not env.get_units_at(p)]
+        assert sideways, "fixture: a free neighbour at the same distance"
+        env.economy_phase(player)
+        assert worker.coordinates == w and worker.movement_points == worker.get_max_movement()
 
 
 def test_a_worker_does_not_head_for_a_tile_another_worker_stands_on_or_chose_earlier(monkeypatch):
