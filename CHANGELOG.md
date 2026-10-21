@@ -827,6 +827,150 @@ player may place copies of one wonder in several of its own cities (Civ 6:
 once one city has broken ground, no other city of that player may start
 it); the completing city removes them like any other copy.
 
+### Loyalty (#116 P7)
+
+**Rule change, effect NOT yet measured.** Spec: `docs/progression_design.md`
+§8 and "v2 fixes" (Loyalty arithmetic; Flips, captures and `set_owner`;
+Turn order; Yields: units, scaling and adjacency). Civ 6 facts:
+`docs/civ6_progression_reference.md` §11 (the Civilization Wiki's Loyalty
+page, Rise and Fall / Gathering Storm, and the Monument, Palace and Colosseum
+pages). Erik asked for loyalty from the ground up, Civ 6-inspired
+(2026-10-21): the non-military way to take a city, and the counter to
+founding cities in a bigger neighbour's shadow.
+
+- **A loyalty per city.** `City.loyalty`, an int from 0 to `[loyalty]
+  maximum = 100`: `founded = 100` for a new city, `captured = 50` whenever a
+  city changes hands -- by capture or by a flip, both through
+  `City.set_owner` (design §8.1, Claude's call: a conquest must be
+  consolidated; the wiki gives no starting value). It travels with the city.
+  All of `[loyalty]` is read by `civulator/game/loyalty.py` only.
+- **Pressure (Civ 6's formula, in integers).** A player presses a city with
+  the sum, over its cities within `range = 9` (canonical wrap distance,
+  inclusive), of `population * (citizen_weight - distance)`,
+  `citizen_weight = 10` (Civ 6: -10 % per tile); the city presses for its own
+  owner at distance 0. `own` is the owner's pressure, `foreign` the sum of
+  every other living player's. Departure: no age factor (there are no
+  golden or dark ages) and no Bread and Circuses or cultural-dominance
+  multiplier.
+- **Drift.** `sign(own - foreign) * (2 * drift_gain * |own - foreign| // (2 *
+  min(own, foreign) + 1))`, clamped to `+-drift_cap`, `drift_gain = 10`,
+  `drift_cap = 20` -- Civ 6's `10 * (D - F) / (min(D, F) + 0.5)`, capped at
+  +-20. Departure: integer arithmetic, truncated toward zero, so the wiki's
+  worked example (domestic 31, foreign 45, -4.4) gives -4 here. A city
+  alone drifts +20; a population-1 city five tiles from a population-6
+  rival capital drifts -19 (own 10, foreign 30), the design's Duel example.
+- **The other per-round sources**, added after the drift (so the total may
+  exceed +-20, as in Civ 6):
+
+  | Source | Loyalty per round | How it is declared | Civ 6 |
+  |---|---|---|---|
+  | Garrison: a unit of the owner of a fighting class (not `support`, not `civilian`) on the centre | `[loyalty] garrison = 2` | inherent | **departure** (design §8.2, Claude's call): Civ 6 has no inherent garrison term -- only cards that need one; here a garrison is the one lever a player has on turn one |
+  | Monument | +1 | `loyalty` column of `[buildings.Monument]` | +1 |
+  | Government Plaza (complete) | +8 | `loyalty` column of `[districts."Government Plaza"]` | +8 (a Governor's +8 is not modelled) |
+  | Palace | +1 per citizen of its city | effect `{ kind = "loyalty", amount = 1, per_population = true }` | +1 per citizen (R&F Palace) |
+  | Limitanei (policy card) | +2 in a garrisoned city | effect with `requires_garrison = true` | +2 if garrisoned |
+  | Colosseum (complete wonder) | +2 to every city of its owner within 6 tiles of it, its own included | effect with `range = 6`, `scope = "player"` | +2 to each city centre within 6 tiles; **departure**: own cities only |
+
+  A building's or district's `loyalty` column is whole points (not tenths);
+  everything conditional is the `loyalty` effect kind, whose one consumer is
+  `loyalty.loyalty_delta` (`effects.DEFERRED_KINDS` is now empty: every
+  kind has its reader). The loader refuses a `range` on anything but a
+  building or district of scope `"player"` (it measures from the city
+  holding the source; every entry in force now carries that
+  `source_city`), and a flat, unconditional city-scoped loyalty effect on a
+  building or district (that is what the column says -- one way to say it,
+  as for yields). Not modelled (design §8.6): amenities (#96), governors,
+  religion, starvation's -4, grievances, the other loyalty cards, the
+  Audience Chamber, the Statue of Liberty, free cities' and city-states'
+  base levels.
+- **Once per round, at round end.** `GameEnvironment._loyalty_phase` runs in
+  `next_turn` after the border phase and before the end-of-game test and
+  `turn_counter += 1` (design "v2 fixes", Turn order), with the border
+  phase's discipline: every city takes part, whoever owns it, and
+  everything is computed from the state at the start of the phase -- every
+  delta first (cities in id order), then `loyalty = clamp(loyalty + delta,
+  0, 100)` for all, then, for every city left at 0, the player pressing it
+  hardest (still the phase-start board: pressure reads population,
+  distance and owners, never loyalty), then the flips in city-id order. So
+  neither seat order nor a city founded late in the round, nor an earlier
+  flip of the same phase, decides a delta or a flip target. Integers only;
+  no RNG.
+- **Bands** (`[loyalty] bands = [[min, yield_percent, growth_share], ...]`,
+  ints, mins strictly descending, first match wins, loyalty 0 in the last
+  band; the loader raises otherwise), Civ 6's four exactly:
+
+  | Loyalty | Science, culture, gold, faith, production | Growth |
+  |---|---|---|
+  | 76-100 (Loyal) | 100 % | 100 % |
+  | 51-75 (Wavering) | 75 % | 75 % |
+  | 26-50 (Disloyal) | 50 % | 25 % |
+  | 0-25 (Unrest) | 0 % | 0 % |
+
+  The percent scales the four pool yields inside `city_yield` (one floor,
+  as P1 specified) and production once in `City.calculate_production`,
+  after the summed `production_percent` effects; the share scales the
+  growth bucket in `City.growth_bucket_gain` (replacing P6's 100 %
+  stub). **Departures**: food is not scaled (starvation is its own
+  punishment, design §8.4; Civ 6 says "all yields"), and production keeps
+  its floor of 1, so a city in unrest still builds, slowly. A 0 % growth
+  share blocks growth even with a full bucket, like housing's 0 % band (Civ
+  6 Unrest: "no Population growth"); the bucket is kept.
+- **Revolt: a direct flip.** A city at 0 after the phase joins the player
+  exerting the largest foreign pressure on it (ties: the lower player
+  index); a city nobody else presses stays with its owner at 0. The flip,
+  `GameEnvironment._flip_city`, deletes the old owner's units on the centre
+  tile (each counted in its `losses`), then calls `City.set_owner` -- the one
+  place a city changes hands, now with two callers, `_capture_city` (force)
+  and `_flip_city` (loyalty): the tiles, districts and wonders go with the
+  city, its loyalty resets to `captured`, every trade route touching it
+  ends and the old owner's queued units for it are dropped (P5). New
+  per-player stats `cities_flipped_out` / `cities_flipped_in`; a flip is
+  never counted in `cities_captured`. **Departures**: no free city (Civ 6:
+  the city first becomes a Free City and later petitions to join the civ
+  pressing it most; there is no neutral owner in the engine, design §8.6);
+  a city flips at 0 whatever the sign of that round's delta (Civ 6: "0 or
+  less while still receiving negative Loyalty"; here a city can only reach
+  0 by a delta of at most 0). The capital is protected the Civ 6 way, by
+  the Palace's per-citizen loyalty, not by immunity.
+- **No reward.** A flip pays no reward: it happens at round end, where no
+  step returns one. Whether the training objective should see flips is
+  Erik's call. A player whose last city flips is eliminated exactly as after
+  a capture: it plays one more turn without a city and dies in
+  `Player.end_turn`, which ends a two-player game.
+- **Engine.** `next_turn`'s round end is `_border_phase` -> `_loyalty_phase`
+  -> the end-of-game test (`_update_done`, the same test `_check_game_end`
+  and the end of `next_turn` run; P9 adds domination there) -> `turn_counter
+  += 1`. `unit_model.FIGHTING_CLASSES` names the classes that garrison a
+  city and that are "land military" for faith purchases (P5).
+  `effects.Effect` gains `source_city` (set on the entries `active_effects`
+  returns; ignored by equality). The smoke script logs per player the lowest
+  and mean loyalty of its cities and the loyalty flips at every checkpoint,
+  and the end line adds the lowest loyalty any of its cities had after any
+  round. Seeded runs, 1 game each, random valid actions, 250 rounds:
+  `python scripts/smoke_random_selfplay.py --seed 4242` (duel, 2 players)
+  -- no city below 100 after any round and no flip, and the districts and
+  wonders lines match what P6 recorded for the same command (14 placed, 9
+  complete; 1 and 3 wonders): the top band changes nothing; seeds 7 and 99
+  (same command) likewise no city below 100. `python
+  scripts/smoke_random_selfplay.py --seed 4242 --size tiny` (3 players): a
+  city of the second player was at 1 at the round-150 checkpoint; 3 flips
+  over the game (the second player lost 2 cities and gained 1, the third
+  lost 1 and gained 2), the third player holding a city at 50 at the end;
+  seed 7 (same command): no city below 100.
+
+**What agents see.** Nothing new in the encoders (#111): no channel reads
+loyalty, and no agent action or engine default acts on it (#99). The build
+agent's turns-to-complete channels read `calculate_production`, so a city
+below the top band shows its scaled production to archived weights.
+
+**Accepted gaps.** In the one tiny-map run above, the 3 flips all fell
+between rounds 150 and 250 and between the second and third players, in
+both directions (2 to the third player, 1 back; 1 game). Nothing in this
+model damps a flip back -- a flipped city starts at 50 where it was pressed
+before, and there is no free city, post-flip immunity or governor -- so
+cities between two rivals may change hands repeatedly; not measured beyond
+that one game. The Colosseum reaches only its owner's cities.
+
 ---
 
 ## v0.7.0 — Borders and culture; city combat and the other post-0.6.2 rule changes (2026-10-11)
