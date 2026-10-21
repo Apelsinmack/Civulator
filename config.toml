@@ -1003,6 +1003,40 @@ a = 10
 b = 6
 p = 1.3
 
+# --- Loyalty (issue #116 P7, docs/progression_design.md §8 and "v2 fixes") ------
+# Read only by civulator/game/loyalty.py. Every city has a loyalty 0..`maximum`
+# (`founded` for a new city; `captured` for a city that changes hands, by
+# capture or by a loyalty flip). All values are ints. Once per round, at round end, each city's
+# loyalty moves by its delta, computed for every city from the state at the
+# start of the phase (Civ 6's formula, in integers; the Civilization Wiki,
+# docs/civ6_progression_reference.md §11):
+#   pressure of player P on city C = sum over P's cities c within `range`
+#       (canonical wrap distance, inclusive) of population(c) * (citizen_weight
+#       - distance(c, C)); C counts for its owner at distance 0
+#   own = the owner's pressure, foreign = every other living player's, summed
+#   drift = sign(own - foreign) * (2 * drift_gain * |own - foreign|
+#           // (2 * min(own, foreign) + 1)), clamped to +-drift_cap
+#           (Civ 6: 10 * (D - F) / (min(D, F) + 0.5), capped at +-20)
+#   delta = drift + `garrison` (a unit of the owner of a fighting class on the
+#           centre) + the `loyalty` columns of the city's buildings and
+#           complete districts + the `loyalty` effects in force for it
+# A city at 0 after the phase flips to the player with the largest foreign
+# pressure on it (ties: lower player index), if any player presses it.
+# `bands` = [min loyalty, yield percent, growth share] rows, ints, mins
+# strictly descending, first match wins, loyalty 0 falls into the last row:
+# the percent scales science, culture, gold, faith and production; the share
+# scales growth (food is not scaled). Civ 6's four bands.
+[loyalty]
+maximum = 100       # Civ 6: loyalty runs 0..100
+founded = 100
+captured = 50       # design §8.1, Claude's call: a conquest must be consolidated
+range = 9           # Civ 6: only cities within 9 tiles press
+citizen_weight = 10 # Civ 6: a citizen's pressure falls 10 % per tile (must exceed range)
+drift_gain = 10
+drift_cap = 20
+garrison = 2        # design §8.2, Claude's call (Civ 6 has no inherent garrison term)
+bands = [[76, 100, 100], [51, 75, 75], [26, 50, 25], [1, 0, 0]]
+
 # --- Research: the tech tree (issue #116 P2, docs/progression_design.md §4) ---
 # Read only by civulator/research_model.py. A tech is one [techs.*] table:
 #   cost       Civ 6 base science (Standard speed), positive int
@@ -1272,10 +1306,17 @@ requires = ["Feudalism", "Civil Service"]
 #   trade_route_capacity  amount (a building's counts once per city, Civ 6)
 #   route_yield           gold/culture/science/food/production = N per route;
 #                         international_only = true
-#   loyalty (amount, range, requires_garrison, per_population), growth_percent
-#   (percent), free_units (units = [{ unit, count }]), free_tech / free_civic
-#   (count), free_population (amount, all_cities): validated now, consumed
-#   from #116 P6-P7.
+#   loyalty               amount (whole points per round); per_population = true
+#                         (times the city's population); requires_garrison = true
+#                         (only while a unit of the owner of a fighting class stands
+#                         on the centre); range = N (only on a building or district
+#                         of scope "player": every own city within N tiles of the
+#                         city holding it). A flat loyalty of its own city is the
+#                         `loyalty` column, never an effect (#116 P7)
+#   growth_percent        percent (the growth bucket, #116 P6)
+#   free_units (units = [{ unit, count }]), free_tech / free_civic (count),
+#   free_population (amount, all_cities): one-shot, on a wonder's completion
+#   only (#116 P6).
 
 # --- Governments (issue #116 P4, docs/progression_design.md §5.2) ------------
 # Read only by civulator/research_model.py: requires_civic (the civic that
@@ -1406,7 +1447,7 @@ effects = [{ kind = "production_percent", target = { unit = "Settler" }, percent
 [policies.Limitanei]
 type = "military"
 requires_civic = "Early Empire"
-effects = [{ kind = "loyalty", amount = 2, requires_garrison = true }]   # consumed from #116 P7
+effects = [{ kind = "loyalty", amount = 2, requires_garrison = true }]   # Civ 6: +2 Loyalty in a garrisoned city
 
 [policies.Insulae]
 type = "economic"
@@ -1509,7 +1550,9 @@ effects = [{ kind = "production_percent", target = { kind = "wonder", wonder_era
 # Yield columns (optional, default 0, multiples of 0.1; #87 culture, #116 the
 # rest): `science`, `culture`, `gold`, `faith` per turn into the owner's pools,
 # `food` and `production` per turn into the city's own — all read by
-# civulator/game/yields.py city_yield, never by name.
+# civulator/game/yields.py city_yield, never by name. `loyalty` (optional,
+# default 0, whole points, #116 P7): per round into the city's loyalty, read by
+# civulator/game/loyalty.py.
 # Availability columns (#116 P2, all optional; checked by
 # civulator/game/availability.py city_can_build_building, the one predicate
 # production, the build mask and purchasing call):
@@ -1540,6 +1583,7 @@ food = 1            # rule change v0.8.0 (#116 P1): Civ 6 Granary +1 Food
 [buildings.Monument]
 production_cost = 50
 culture = 2         # optional column (default 0); Civ 6 Monument. A multiple of 0.1
+loyalty = 1         # optional column (default 0, whole points); Civ 6 Monument +1 Loyalty
 
 # Walls: +30 defence, Civ 6's Ancient Walls (see CHANGELOG). The building
 # that unlocks the city's ranged strike ([city] ranged_building).
@@ -1670,6 +1714,9 @@ purchasable = []
 science = 2
 gold = 5
 production = 2
+# Civ 6 (Rise and Fall): +1 Loyalty per turn for each citizen of its city
+# (#116 P7, docs/progression_design.md §8.2).
+effects = [{ kind = "loyalty", amount = 1, per_population = true }]
 
 # --- Districts (issue #86, docs/districts_design.md) ------------------------
 # Civ 6 Gathering Storm values. Read only by civulator/district_model.py.
@@ -1706,6 +1753,8 @@ production = 2
 #                        optional flat per-turn yields of the complete district
 #                        (multiples of 0.1, default 0; #116, read by city_yield);
 #                        none declared today
+#   loyalty              optional whole points per round into its city's loyalty
+#                        once complete (default 0; #116 P7, read by game/loyalty.py)
 #   requires_tech        a [techs.*] name the owner must know to place it
 #                        (#116 P2; checked through can_place_district)
 #   requires_civic       a [civics.*] name the owner must know to place it (#116 P4)
@@ -1835,6 +1884,7 @@ discount_percent = 40
 [districts."Government Plaza"]
 production_cost = 30
 requires_civic = "State Workforce"
+loyalty = 8         # Civ 6: +8 Loyalty per turn to its city (#116 P7)
 cost_model = "discounted"
 discount_percent = 25
 max_per_player = 1
@@ -1985,7 +2035,8 @@ effects = [
     { kind = "free_units", units = [{ unit = "Trader", count = 1 }] },
 ]
 
-# Its +2 loyalty to own city centres within 6 tiles is consumed from #116 P7.
+# Civ 6 (Rise and Fall): +2 Loyalty to every city centre within 6 tiles; here
+# to its owner's own cities only (#116 P7).
 [districts.Colosseum]
 kind = "wonder"
 era = "Classical"

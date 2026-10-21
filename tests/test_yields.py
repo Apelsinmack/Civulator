@@ -18,6 +18,7 @@ from civulator.game import districts as districts_mod
 from civulator.game import yields as yields_mod
 from civulator.game.culture import culture
 from civulator.game.districts import District, adjacency_score
+from civulator.game.loyalty import loyalty_percent
 from civulator.game.yields import city_yield
 
 from test_districts import board, make_city, neighbours, own, plain_types
@@ -366,8 +367,11 @@ def test_pools_grow_by_the_sum_of_the_owners_city_yields_once_per_round():
 def test_a_city_captured_mid_round_accrues_once_that_round():
     """A city that accrued for its old owner and changes hands in the same
     round adds nothing more that round; from the next round its yields go
-    to the new owner only. Breaks if capture resets the round stamp or a
-    city accrues twice in one round."""
+    to the new owner only -- what it yields then, at the loyalty band a
+    change of hands leaves it in (#116 P7: `set_owner` resets loyalty to
+    `[loyalty] captured`, restated from "== the yields before capture").
+    Breaks if capture resets the round stamp or a city accrues twice in one
+    round."""
     env = _varied_board()
     old, new = env.players
     make_city(env, (3, 14), player_index=1)               # the new owner's capital
@@ -377,12 +381,15 @@ def test_a_city_captured_mid_round_accrues_once_that_round():
     yields_now = {y: city_yield(city, y) for y in POOL_YIELDS}
     old_pools, new_pools = _pools(old), _pools(new)
     city.set_owner(new)
+    yields_captured = {y: city_yield(city, y) for y in POOL_YIELDS}
+    assert yields_captured == {y: yields_now[y] * loyalty_percent(city) // 100
+                               for y in POOL_YIELDS}, "only the loyalty band changed"
     city.process_turn(env)                                # same round, new owner
     assert _pools(old) == old_pools and _pools(new) == new_pools
     env.turn_counter += 1
     city.process_turn(env)
     assert _pools(old) == old_pools
-    assert {y: _pools(new)[y] - new_pools[y] for y in POOL_YIELDS} == yields_now
+    assert {y: _pools(new)[y] - new_pools[y] for y in POOL_YIELDS} == yields_captured
 
 
 def test_pool_stat_keys_are_declared_ints_beside_culture_produced():

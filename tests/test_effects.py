@@ -29,6 +29,7 @@ from civulator.effects import (
 )
 from civulator.game import districts as districts_mod
 from civulator.game.housing import housing
+from civulator.game.loyalty import loyalty_delta
 from civulator.game.maintenance import maintenance_due
 from civulator.game.purchasing import faith_purchase_categories, purchase_cost
 from civulator.game.trade import DURATION_TURNS, TradeRoute, route_capacity, route_yields
@@ -151,6 +152,8 @@ class Stage:
         # The #116 P6 consumer: what 7 surplus food at the 100 % housing band
         # adds to the growth bucket (hundredths).
         out["growth gain"] = city.growth_bucket_gain(7, 100)
+        # The #116 P7 consumer: the capital's loyalty delta this round.
+        out["loyalty delta"] = loyalty_delta(city, env)
         return out
 
 
@@ -303,21 +306,27 @@ def test_each_p5_kind_moves_exactly_its_consumer(monkeypatch, entries, expected)
         assert dict(after["route yields"])["gold"] - dict(before["route yields"])["gold"] == 20
 
 
-@pytest.mark.parametrize("entry", [
-    {"kind": "loyalty", "amount": 2, "requires_garrison": True},
+@pytest.mark.parametrize("entry, garrisoned, gain", [
+    ({"kind": "loyalty", "amount": 2}, False, 2),
+    ({"kind": "loyalty", "amount": 1, "per_population": True}, False, 3),   # population 3
+    ({"kind": "loyalty", "amount": 2, "requires_garrison": True}, True, 2),
+    ({"kind": "loyalty", "amount": 2, "requires_garrison": True}, False, 0),
 ])
-def test_a_deferred_kind_is_validated_and_moves_nothing_yet(monkeypatch, entry):
-    """The kinds whose consumers land in P7 parse on a card and change
-    nothing a P4-P6 consumer computes. Restated by #116 P6: `growth_percent`
-    left this list (its consumer is the growth bucket, the next test) and
-    the one-shot kinds too (they fire in `complete_district`,
-    tests/test_wonders.py); `loyalty` stays deferred. Breaks if a deferred
-    kind is read early by the wrong consumer."""
-    assert entry["kind"] in DEFERRED_KINDS
+def test_loyalty_moves_exactly_the_loyalty_delta(monkeypatch, entry, garrisoned, gain):
+    """#116 P7 (restated from the P4-P6 deferred-kinds test, retired with
+    the last deferred kind): a `loyalty` card moves only the city's loyalty
+    delta, by its amount -- times the population with `per_population`, and
+    only while a fighting unit of the owner stands on the centre with
+    `requires_garrison` -- and nothing else any consumer computes. Breaks if
+    the kind gains a second consumer, loses its one, or drops a condition."""
     stage = Stage(monkeypatch)
+    if garrisoned:
+        stand(stage.env, stage.fighter_type, 0, stage.city.coordinates)
     before = stage.fingerprint()
     stage.slot(monkeypatch, [entry])
-    assert stage.fingerprint() == before
+    after = stage.fingerprint()
+    assert _moved(before, after) == ({"loyalty delta"} if gain else set()), entry
+    assert after["loyalty delta"] - before["loyalty delta"] == gain
     assert [e.kind for e in active_effects(stage.player)
             if e.source == ("policy", CARD)] == [entry["kind"]], "the card is in force"
 
@@ -341,12 +350,13 @@ def test_growth_percent_moves_exactly_the_growth_bucket(monkeypatch):
 
 def test_every_kind_names_its_one_consumer():
     """The closed set of kinds is exactly the set with a named consumer, and
-    every deferred kind is a kind. Breaks if a kind is added without a
-    consumer or a consumer entry outlives its kind."""
+    since #116 P7 no kind is deferred: every consumer is a reader in the
+    code, none a patch still to come. Breaks if a kind is added without a
+    consumer, a consumer entry outlives its kind, or a kind is validated
+    but read by nothing."""
     assert set(KINDS) == set(CONSUMERS)
-    assert DEFERRED_KINDS <= set(KINDS)
-    assert all(CONSUMERS[k].startswith("#116 P") for k in DEFERRED_KINDS)
-    assert not any(CONSUMERS[k].startswith("#116 P") for k in set(KINDS) - DEFERRED_KINDS)
+    assert not DEFERRED_KINDS
+    assert not any(CONSUMERS[k].startswith("#116 P") for k in KINDS)
 
 
 # --- city_yield's attributes -------------------------------------------------------------
@@ -401,6 +411,31 @@ def test_a_building_effect_holds_in_its_city_unless_scoped_to_the_player(monkeyp
     monkeypatch.setitem(unit_model.BUILDING_EFFECTS, CAPITAL_BUILDING, (entry,))
     assert stage.city.calculate_production(stage.env) > before[0]
     assert (other.calculate_production(stage.env) > before[1]) is holds_in_other
+
+
+def test_entries_in_force_carry_the_city_holding_their_source(monkeypatch):
+    """#116 P7: an entry `active_effects` returns from a building or a
+    complete district carries the city that holds it (`source_city`) --
+    the capital's own city-scoped entries and a player-scoped entry of
+    another city alike -- and one from a policy carries None; the parsed
+    entry itself carries none, and equality ignores it. Breaks if a ranged
+    effect could not tell where it comes from, or the parse memo were
+    bound to one city."""
+    stage = Stage(monkeypatch)
+    other = make_city(stage.env, (3, 12), population=3)
+    probe = {"kind": "city_ranged_strength", "amount": 1}
+    monkeypatch.setitem(unit_model.BUILDING_EFFECTS, CAPITAL_BUILDING, (probe,))
+    monkeypatch.setitem(unit_model.BUILDING_EFFECTS, "Monument",
+                        ({**probe, "scope": "player"},))
+    other.buildings.append("Monument")
+    stage.slot(monkeypatch, [probe])
+    held = {e.source: e.source_city
+            for e in active_effects(stage.player, stage.city, probe["kind"])}
+    assert held == {("policy", CARD): None, ("building", CAPITAL_BUILDING): stage.city,
+                    ("building", "Monument"): other}
+    parsed = effects_of("building", CAPITAL_BUILDING)[0]
+    assert parsed.source_city is None
+    assert parsed == parsed.held_by(stage.city)
 
 
 def test_active_effects_come_in_the_documented_order(monkeypatch):
@@ -503,6 +538,10 @@ def _district_without_adjacency():
     ({"kind": "purchase_percent", "resource": "gems", "percent": -15}, "government"),
     ({"kind": "faith_purchase", "categories": ["naval"]}, "government"),
     ({"kind": "loyalty", "amount": 2, "range": -1}, "policy"),
+    ({"kind": "loyalty", "amount": 2, "range": 6}, "policy"),                        # range needs a city
+    ({"kind": "loyalty", "amount": 2, "range": 6, "scope": "city"}, "district"),     # a city scope has no reach
+    ({"kind": "loyalty", "amount": 1}, "building"),                                  # flat: the column
+    ({"kind": "loyalty", "amount": 1.5, "per_population": True}, "building"),        # whole points
     ({"kind": "trade_route_capacity", "amount": 0}, "civic"),
     ({"kind": "free_units", "units": [{"unit": "Dragon", "count": 1}]}, "district"),
     ({"kind": "free_units", "units": [{"unit": _warrior_like(), "count": 1}]}, "policy"),  # one-shot off a wonder
@@ -519,8 +558,10 @@ def test_a_malformed_effect_raises_at_load(entry, source):
     """The loader refuses an unknown kind or attribute, a malformed value, a
     name that is no unit / building / district / class / era / rule /
     resource / category, a target that can match nothing, a `city_yield` on
-    a building, city scope where no city exists, slots on a card and a
-    one-shot off a wonder (§14 row 5). Breaks if any junk is accepted."""
+    a building, city scope where no city exists, slots on a card, a
+    one-shot off a wonder (§14 row 5), and a `loyalty` entry whose reach is
+    wrong or that says what the `loyalty` column says (#116 P7). Breaks if
+    any junk is accepted."""
     with pytest.raises(ValueError):
         parse_effect(entry, source, "Probe")
 

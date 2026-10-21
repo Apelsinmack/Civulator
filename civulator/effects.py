@@ -39,13 +39,16 @@ districts, #116 P6) in the player's cities (`player.cities` order, then
 city's city-scoped building entries and complete-district entries in the
 same order. One-shot entries (ONE_SHOT_KINDS) are never in force: they fire
 once, when their wonder completes (`GameEnvironment._one_shot_effects`,
-#116 P6), and are read there through `effects_of`.
+#116 P6), and are read there through `effects_of`. Every entry in force
+carries its `source_city` (#116 P7): the city holding the building or the
+complete district it comes from, None for a government, policy, civic or
+tech -- what a `loyalty` effect with a `range` measures from.
 
 Pure: reads parsed specs and live state; mutates nothing (the parse memo
 below caches validated entries per raw list, never game state).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 
 from . import district_model, research_model, unit_model
@@ -91,10 +94,8 @@ KIND_FREE_TECH = "free_tech"
 KIND_FREE_CIVIC = "free_civic"
 KIND_FREE_POPULATION = "free_population"
 
-# The one consumer of each kind (design §3, "consumed by"). The kinds wired in
-# #116 P4-P6 name their reader; the others are validated now and name the
-# patch whose consumer reads them -- each has a documented stub where it will
-# live.
+# The one consumer of each kind (design §3, "consumed by"). Since #116 P7
+# every kind is wired: each names its reader.
 CONSUMERS = {
     KIND_CITY_YIELD: "game/yields.py city_yield (food and production reach "
                      "calculate_food / calculate_production through it)",
@@ -114,7 +115,8 @@ CONSUMERS = {
     KIND_FAITH_PURCHASE: "game/purchasing.py faith_purchase_categories (can_purchase)",
     KIND_TRADE_ROUTE_CAPACITY: "game/trade.py route_capacity",
     KIND_ROUTE_YIELD: "game/trade.py pair_yields (the route term of game/yields.py city_yield)",
-    KIND_LOYALTY: "#116 P7: loyalty_sources (game/yields.py _loyalty_sources stub)",
+    KIND_LOYALTY: "game/loyalty.py loyalty_delta (the round-end loyalty phase, "
+                  "GameEnvironment._loyalty_phase)",
     KIND_GROWTH_PERCENT: "game/city.py City.growth_bucket_gain (the growth bucket of process_turn)",
     KIND_FREE_UNITS: "game/environment.py GameEnvironment._one_shot_effects (complete_district): "
                      "each unit through City.place_or_queue_unit",
@@ -126,8 +128,9 @@ CONSUMERS = {
                           "(complete_district): population added, assign_tiles re-run",
 }
 KINDS = tuple(CONSUMERS)
-# Kinds validated since P4 whose consumer lands later (the stubs above).
-DEFERRED_KINDS = frozenset({KIND_LOYALTY})
+# Kinds validated before their consumer exists, each naming in CONSUMERS the
+# patch that will read it. Empty since #116 P7 (loyalty was the last).
+DEFERRED_KINDS = frozenset()
 # One-shot kinds fire once when a wonder completes (design §3, §9.3), so they
 # belong on `kind = "wonder"` tables only, and are never in force.
 ONE_SHOT_KINDS = frozenset({KIND_FREE_UNITS, KIND_FREE_TECH, KIND_FREE_CIVIC,
@@ -143,7 +146,7 @@ RULES = (RULE_FLANKING,)
 APPLIES_ALL = "all"
 APPLIES_CITY = "city"
 COMBAT_STRENGTH_CLASSES = tuple(c for c in unit_model.COMBAT_CLASSES
-                                if c not in ("support", "civilian"))
+                                if c in unit_model.FIGHTING_CLASSES)
 _APPLIES_TO = (*COMBAT_STRENGTH_CLASSES, APPLIES_ALL, APPLIES_CITY)
 
 # Categories a `faith_purchase` effect unlocks, defined beside the unit
@@ -163,18 +166,28 @@ _TARGET_KEYS = ("unit", "unit_class", "unit_era", "building", "in_district",
 class Effect:
     """One validated `effects` entry. `attrs` holds its normalised attributes
     (yields and housing in int tenths, name lists as tuples); index it like a
-    mapping (`effect["percent"]`). `source` is (source kind, source name)."""
+    mapping (`effect["percent"]`). `source` is (source kind, source name).
+
+    `source_city` (#116 P7) is the city whose building or complete district
+    the entry comes from, set on the entries `active_effects` returns; None on
+    a parsed entry (`effects_of`) and on one from a government, policy, civic
+    or tech. It is live state, so it takes no part in equality."""
 
     kind: str
     scope: str
     source: tuple
     attrs: MappingProxyType
+    source_city: object = field(default=None, compare=False, repr=False)
 
     def __getitem__(self, key):
         return self.attrs[key]
 
     def get(self, key, default=None):
         return self.attrs.get(key, default)
+
+    def held_by(self, city):
+        """This entry as in force from `city` (its `source_city`)."""
+        return replace(self, source_city=city)
 
 
 # --- Attribute validators ------------------------------------------------------------
@@ -460,7 +473,8 @@ def parse_effect(entry, source_kind, source_name, districts=None):
     no city; a `city_yield` effect on a building (a building says it with a
     column); a `policy_slots` effect on a policy (a card cannot change the
     slots it is fitted into); a one-shot kind anywhere but on a `kind =
-    "wonder"` table of the district registry (#116 P6). `districts` is the
+    "wonder"` table of the district registry (#116 P6); a `loyalty` entry
+    whose reach is wrong (`_check_loyalty_reach`, #116 P7). `districts` is the
     registry names resolve against (default: district_model.DISTRICTS).
     """
     if source_kind not in SOURCES:
@@ -491,8 +505,25 @@ def parse_effect(entry, source_kind, source_name, districts=None):
     raw = {k: v for k, v in entry.items() if k not in ("kind", "scope")}
     ctx = {"districts": registry}
     attrs = _PARSERS[kind](raw, where, ctx)
+    if kind == KIND_LOYALTY:
+        _check_loyalty_reach(attrs, scope, source_kind, where)
     return Effect(kind=kind, scope=scope, source=(source_kind, source_name),
                   attrs=MappingProxyType(attrs))
+
+
+def _check_loyalty_reach(attrs, scope, source_kind, where):
+    """A `loyalty` entry's reach (#116 P7, design §8.2). `range` measures from
+    the city holding the source, so it needs a building or district of scope
+    "player" (a city-scoped entry holds in its own city only, and a policy
+    has no city). A flat, unconditional entry of its own city is what the
+    `loyalty` column says: one way to say it, as for yields."""
+    if attrs["range"] > 0 and (source_kind not in _CITY_SOURCES or scope != SCOPE_PLAYER):
+        raise ValueError(f"{where}: range measures from the city holding the source; "
+                         f"it needs a building or district of scope \"player\"")
+    if (source_kind in _CITY_SOURCES and scope == SCOPE_CITY
+            and not attrs["per_population"] and not attrs["requires_garrison"]):
+        raise ValueError(f"{where}: a flat loyalty of its own city is the `loyalty` "
+                         f"column, not an effect")
 
 
 def parse_effects(entries, source_kind, source_name, districts=None):
@@ -655,11 +686,11 @@ def loadout_is_legal(player, names):
 def _gather(player, city, kind, policies):
     out = []
 
-    def take(source_kind, name, scope):
+    def take(source_kind, name, scope, holder=None):
         for effect in effects_of(source_kind, name):
             if (effect.scope == scope and effect.kind not in ONE_SHOT_KINDS
                     and (kind is None or effect.kind == kind)):
-                out.append(effect)
+                out.append(effect if holder is None else effect.held_by(holder))
 
     if player.government is not None:
         take(SOURCE_GOVERNMENT, player.government, SCOPE_PLAYER)
@@ -671,24 +702,25 @@ def _gather(player, city, kind, policies):
         take(SOURCE_TECH, name, SCOPE_PLAYER)
     for owned in player.cities:
         for building in owned.buildings:
-            take(SOURCE_BUILDING, building, SCOPE_PLAYER)
+            take(SOURCE_BUILDING, building, SCOPE_PLAYER, owned)
         for district in owned.districts:
             if district.complete:
-                take(SOURCE_DISTRICT, district.type, SCOPE_PLAYER)
+                take(SOURCE_DISTRICT, district.type, SCOPE_PLAYER, owned)
     if city is not None:
         for building in city.buildings:
-            take(SOURCE_BUILDING, building, SCOPE_CITY)
+            take(SOURCE_BUILDING, building, SCOPE_CITY, city)
         for district in city.districts:
             if district.complete:
-                take(SOURCE_DISTRICT, district.type, SCOPE_CITY)
+                take(SOURCE_DISTRICT, district.type, SCOPE_CITY, city)
     return out
 
 
 def active_effects(player, city=None, kind=None):
     """The effect entries in force for `player` (and, given, `city`, one of
     its cities), in the deterministic order of the module docstring,
-    optionally only those of `kind`. A list of Effect; empty for no player.
-    Pure: recomputed on every call, never cached."""
+    optionally only those of `kind`. A list of Effect, each carrying its
+    `source_city` (None for a government, policy, civic or tech); empty for
+    no player. Pure: recomputed on every call, never cached."""
     if player is None:
         return []
     if kind is not None and kind not in _PARSERS:

@@ -275,6 +275,28 @@ BUILDING_DEFENSE_BONUS = {
 }
 
 
+def whole_points(value, what):
+    """An int column in whole points (no tenths): raises for a bool, a float
+    or anything else that is not an int."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{what} must be a whole number (an int), got {value!r}")
+    return value
+
+
+# Loyalty sources (#116 P7, docs/progression_design.md §8.2): the optional
+# `loyalty` column, WHOLE points per round added to the city's loyalty delta
+# (loyalty is an int 0..100, not a pool in tenths). Read by
+# civulator/game/loyalty.py only; nonzero entries only, like the yield columns.
+BUILDING_LOYALTY = {
+    name: points
+    for name, points in (
+        (name, whole_points(table["loyalty"], f"[buildings.{name}] loyalty"))
+        for name, table in _BUILDINGS_CFG.items() if "loyalty" in table
+    )
+    if points
+}
+
+
 # --- Availability columns (#116 P2, docs/progression_design.md §4.1, §6.2) ---
 #
 # Every key a table may carry: a typo in a gating column (`requires_techs`)
@@ -290,6 +312,7 @@ BUILDING_KEYS = frozenset({
     "requires_tech", "requires_district", "requires_building",
     "requires_civic", "requires_government_tier", "maintenance",
     "purchasable", "effects",  # #116 P4
+    "loyalty",  # #116 P7
 })
 
 
@@ -406,6 +429,10 @@ def _raw_effects(table, where):
 # no attack; the encoder gives both no class channel.
 COMBAT_CLASSES = ("melee", "anti_cavalry", "ranged", "light_cavalry",
                   "heavy_cavalry", "siege", "support", "civilian")
+# The fighting classes: every class but `support` and `civilian`. A unit of one
+# of them is "land military" for faith purchases (#116 P5) and garrisons a city
+# for loyalty (#116 P7).
+FIGHTING_CLASSES = frozenset(c for c in COMBAT_CLASSES if c not in ("support", "civilian"))
 # The resources a unit or building may be bought with (#116 P5: each has a
 # `purchase_multiplier` in its pool table and a Player pool of the same name).
 PURCHASE_RESOURCES = ("gold", "faith")
@@ -544,7 +571,6 @@ SIEGE_CLASS = frozenset(name for name, cls in COMBAT_CLASS.items() if cls == "si
 # land unit here; Civ 6: "land military units").
 FAITH_CATEGORY_LAND_MILITARY = "land_military"
 FAITH_CATEGORIES = (FAITH_CATEGORY_LAND_MILITARY,)
-_LAND_MILITARY_CLASSES = frozenset(c for c in COMBAT_CLASSES if c not in ("support", "civilian"))
 
 
 def faith_category(unit_type):
@@ -552,7 +578,7 @@ def faith_category(unit_type):
     for a unit of a fighting class (melee, anti_cavalry, ranged,
     light_cavalry, heavy_cavalry, siege), None otherwise (and for a name that
     is no unit). Read by civulator/game/purchasing.py."""
-    if COMBAT_CLASS.get(unit_type) in _LAND_MILITARY_CLASSES:
+    if COMBAT_CLASS.get(unit_type) in FIGHTING_CLASSES:
         return FAITH_CATEGORY_LAND_MILITARY
     return None
 
