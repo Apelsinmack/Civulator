@@ -16,11 +16,15 @@ wall-clock. A sanity check that borders grow, research and civics progress,
 the defaults adopt governments, slot cards and send Traders, and upkeep is
 paid in real games, not a measurement.
 
-Districts (#86): at each player's turn start every city has a small chance to
-place a district through the engine (candidate tiles from Map.tiles_of_city,
-sorted, filtered by can_place_district; type and tile drawn from a seeded RNG over the config-ordered types)
-and idle cities finish their placed districts. The end line reports districts
-placed / completed and the Aqueduct housing seen.
+Districts (#86) and wonders (#116 P6, district-registry entries of kind
+"wonder"): at each player's turn start every city has a small chance to
+place one through the engine (the type drawn from a seeded RNG over the
+config-ordered types its owner `player_can_build`, the tile from
+Map.tiles_of_city, sorted, filtered by can_place_district -- which also
+refuses a wonder any player completed) and idle cities finish their placed
+districts and wonders. The end line reports districts placed / completed,
+the Aqueduct housing seen, and per player the wonders completed, the wonder
+races lost and the complete wonders held at the end.
 
 Usage: python scripts/smoke_random_selfplay.py [--seed 4242] [--rounds 250]
 """
@@ -39,7 +43,8 @@ import torch
 from civulator.agents import DQNAgent, ReplayMemory, get_encoder
 from civulator.agents.action_space import decode_action, end_turn_index
 from civulator.agents.build_agent import BUILD_OPTIONS, get_valid_build_mask
-from civulator.district_model import DISTRICTS
+from civulator.district_model import DISTRICTS, KIND_WONDER
+from civulator.game.availability import player_can_build
 from civulator.game.city import City
 from civulator.game.districts import can_place_district
 from civulator.game.housing import housing
@@ -109,8 +114,9 @@ def main():
 
     def district_turn(city):
         nonlocal placed
-        if district_rng.random() < DISTRICT_CHANCE:
-            name = district_rng.choice(list(DISTRICTS))
+        names = [n for n in DISTRICTS if player_can_build(city.player, "district", n)]
+        if district_rng.random() < DISTRICT_CHANCE and names:
+            name = district_rng.choice(names)
             tiles = [pos for pos in sorted(env.map.tiles_of_city(city.city_id))
                      if can_place_district(city, name, pos)]
             if tiles and env.place_district(city, name, district_rng.choice(tiles)):
@@ -163,6 +169,10 @@ def main():
           f"by_type={ {n: sum(d.type == n and d.complete for d in all_districts) for n in DISTRICTS} } "
           f"water_housing_cities={len(water_cities)} water_housing_gain_tenths={sorted(water_gain)} "
           f"yields={[{k: v for k, v in env.episode_stats[i].items() if k.startswith('district_yield_') and v} for i in range(num_players)]}")
+    print(f"wonders completed={[env.episode_stats[i]['wonders_completed'] for i in range(num_players)]} "
+          f"races_lost={[env.episode_stats[i]['wonder_races_lost'] for i in range(num_players)]} "
+          f"held={[[d.type for c in p.cities for d in c.districts if d.complete and DISTRICTS[d.type].kind == KIND_WONDER] for p in env.players]} "
+          f"placed_unfinished={[[d.type for c in p.cities for d in c.districts if not d.complete and DISTRICTS[d.type].kind == KIND_WONDER] for p in env.players]}")
     for player in env.players:
         print(f"techs {player.name}: researched={env.episode_stats[player.player_index]['techs_researched']} "
               f"current={player.current_tech} science_pool_tenths={player.science} "
