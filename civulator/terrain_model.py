@@ -10,8 +10,9 @@ it, the painter places through Tile." It also holds the canonical
 terrain-domain passability check (`can_enter`, §3.3/D8), which every mover —
 units, spawns, the A* cost-grid builder, the action masks — goes through.
 
-Imports only civulator.config: no civulator.game / civulator.agents /
-civulator.viz. This is what lets the (pure) future mapgen package and the
+Imports only civulator.config and the two pure interpreters it builds on
+(unit_model's `to_tenths`, research_model's tech names, #116 P2): no
+civulator.game / civulator.agents / civulator.viz. This is what lets the (pure) future mapgen package and the
 (impure) game engine share one implementation instead of two (design doc §0
 decision E1) — mapgen cannot import game/, and game/ must not import
 torch/matplotlib-adjacent code, but both may import this.
@@ -53,6 +54,7 @@ the `features = ["none", ...]` convention shown in the Wheat example above).
 from dataclasses import dataclass
 
 from .config import CFG
+from .research_model import validate_tech_name
 from .unit_model import to_tenths
 
 _TERRAIN_CFG = CFG.get("terrain", {})
@@ -75,6 +77,54 @@ IMPROVEMENT_HOUSING = {
 # "does this improvement exist", so no other module re-reads
 # CFG["improvements"] to validate a name.
 IMPROVEMENT_NAMES = frozenset(CFG.get("improvements", {}))
+
+# --- Improvement gates and yields (issue #116 P2, progression design "v2 fixes") ---
+
+# Every key an [improvements.*] table may carry; a typo raises at load.
+IMPROVEMENT_KEYS = frozenset({"on", "housing", "requires_tech", "food", "production", "gold"})
+# The tile yields an improvement may add, in whole points.
+IMPROVEMENT_YIELD_COLUMNS = ("food", "production", "gold")
+
+
+def parse_improvements(tables):
+    """`[improvements.*]` -> (on, requires_tech, yields), each keyed by name.
+
+    `on`: the placement constraint of every improvement declaring one (an
+    improvement without `on` is buildable nowhere). `requires_tech`: a tech
+    name, checked against research_model. `yields`: name -> {food,
+    production, gold} in whole non-negative points, for every improvement
+    (0 when a column is absent). Unknown keys raise.
+    """
+    on, requires_tech, yields = {}, {}, {}
+    for name, table in tables.items():
+        where = f"[improvements.{name}]"
+        unknown = set(table) - IMPROVEMENT_KEYS
+        if unknown:
+            raise ValueError(f"{where}: unknown key(s) {sorted(unknown)}")
+        if "on" in table:
+            on[name] = table["on"]
+        if "requires_tech" in table:
+            requires_tech[name] = validate_tech_name(table["requires_tech"], where)
+        columns = {}
+        for column in IMPROVEMENT_YIELD_COLUMNS:
+            value = table.get(column, 0)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{where} {column} must be a non-negative int, got {value!r}")
+            columns[column] = value
+        yields[name] = columns
+    return on, requires_tech, yields
+
+
+_IMPROVEMENT_ON, IMPROVEMENT_REQUIRES_TECH, IMPROVEMENT_YIELDS = parse_improvements(
+    CFG.get("improvements", {})
+)
+
+
+def improvement_on(name):
+    """The `on` placement constraint of improvement `name`, or None when it
+    is buildable nowhere (unknown, or no `on` entry). The one accessor
+    `GameEnvironment.can_build_improvement_at` reads."""
+    return _IMPROVEMENT_ON.get(name)
 
 _LAYER_TABLES = {
     "base": BASE_TABLE,

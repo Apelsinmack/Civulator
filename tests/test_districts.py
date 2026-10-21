@@ -2,7 +2,10 @@
 places a district (docs/districts_design.md §1-§4, §7 and "v3 fixes").
 
 Boards are the all-Plains fixture of test_combat_range, rivers cleared, so
-every adjacency source in a test is one the test put there.
+every adjacency source in a test is one the test put there. Every player of
+a board knows the whole tech tree (`grant_all`, #116 P2), so a district's
+`requires_tech` never decides a test about placement; the gate itself is
+`test_a_district_is_refused_until_its_tech_is_known`.
 """
 
 import inspect
@@ -25,7 +28,9 @@ from civulator.game.districts import (
 from civulator.game.environment import GameEnvironment
 from civulator.game.territory import NEUTRAL
 from civulator.game.unit import WarriorUnit
+from civulator.research_model import TECHS
 
+from conftest import grant_all
 from test_combat_range import make_flat_env, place
 
 DISTRICTS = district_model.DISTRICTS
@@ -39,6 +44,8 @@ def board():
     env = make_flat_env()
     env.map.rivers.clear()
     env.map.terrain_epoch += 1
+    for player in env.players:
+        grant_all(player)
     return env
 
 
@@ -680,13 +687,49 @@ def test_remove_city_clears_its_districts():
     assert env.map.district_epoch > epoch
 
 
+# --- Research gate (#116 P2) ---------------------------------------------------
+
+
+def test_a_district_is_refused_until_its_tech_is_known():
+    """Every district with a `requires_tech` that this board can host is
+    refused by can_place_district -- and place_district changes nothing --
+    while its owner lacks that tech, and placed once the tech is known, on
+    the same tile. Breaks if can_place_district skips player_can_build (a
+    future district mask would then offer an unresearched district)."""
+    gated = [n for n, s in DISTRICTS.items() if s.requires_tech is not None]
+    assert gated, "fixture: some district is tech-gated"
+    exercised = 0
+    for name in gated:
+        env = board()
+        city = make_city(env, CENTRE, population=10)
+        for d in (1, 2):
+            for pos in ring(env, CENTRE, d):
+                own(env, city, pos)
+        site = next((pos for pos in sorted(env.map.tiles_of_city(city.city_id))
+                     if can_place_district(city, name, pos)), None)
+        if site is None:
+            continue  # the all-Plains board cannot host it (Harbor, Aqueduct)
+        exercised += 1
+        tech = DISTRICTS[name].requires_tech
+        city.player.techs.remove(tech)
+        epoch = env.map.district_epoch
+        assert not can_place_district(city, name, site), name
+        assert not env.place_district(city, name, site), name
+        assert city.districts == [] and env.map.district_epoch == epoch
+        city.player.techs.append(tech)
+        assert env.place_district(city, name, site), name
+    assert exercised, "fixture: no gated district fits the board"
+
+
 # --- Cost (§4, v3 one integer rule) ------------------------------------------------
 
 
-def _player_with_completed(types):
+def _player_with_completed(types, techs=()):
+    """A Player stand-in: its cities' districts and its `techs` (every Player
+    has the list since #116 P1; game_progress reads it since P2)."""
     city = SimpleNamespace(districts=[District(t, 0, (0, i), complete=True)
                                       for i, t in enumerate(types)])
-    return SimpleNamespace(cities=[city])
+    return SimpleNamespace(cities=[city], techs=list(techs))
 
 
 def test_discount_follows_the_integer_rule_a9_b10(monkeypatch):
@@ -734,8 +777,10 @@ def test_discount_needs_completed_discounted_districts_only():
 
 def test_escalation_is_integer_and_fixed_never_scales(monkeypatch):
     """escalated = base * (den + factor * num) // den; "fixed" is the base.
-    Breaks if float arithmetic or scaling of fixed creeps in."""
-    assert districts_mod.game_progress(None) == (0, 1)
+    A player with no techs is (0, total), so it pays the base (restated by
+    #116 P2 from `game_progress(None) == (0, 1)`, the pre-tree stub). Breaks
+    if float arithmetic or scaling of fixed creeps in."""
+    assert districts_mod.game_progress(_player_with_completed([])) == (0, len(TECHS))
     monkeypatch.setattr(districts_mod, "game_progress", lambda player: (1, 7))
     factor = district_model.COST_PROGRESS_FACTOR
     player = _player_with_completed([])
@@ -750,23 +795,54 @@ def test_escalation_is_integer_and_fixed_never_scales(monkeypatch):
     assert district_cost(player, "Port") == 50
 
 
+def test_game_progress_is_the_known_tech_fraction_and_drives_the_cost():
+    """#116 P2, design §4.3 / §14: game_progress(player) = (techs known,
+    techs in the tree), and every district that is not `fixed` costs
+    base * (den + factor * num) // den -- so the cost rises with every tech
+    and a player knowing the whole tree pays base * (1 + factor). Breaks if
+    the #86 hook is fed anything but the player's tech list, or the formula
+    is evaluated with real division."""
+    from civulator.research_model import TECH_ORDER
+    factor = district_model.COST_PROGRESS_FACTOR
+    den = len(TECHS)
+    previous = None
+    for num in range(den + 1):
+        player = _player_with_completed([], techs=TECH_ORDER[:num])
+        assert districts_mod.game_progress(player) == (num, den)
+        costs = {}
+        for name, spec in DISTRICTS.items():
+            expected = (spec.production_cost if spec.cost_model == "fixed"
+                        else spec.production_cost * (den + factor * num) // den)
+            costs[name] = district_cost(player, name)
+            assert costs[name] == expected, (name, num)
+        if previous is not None:
+            assert all(costs[n] >= previous[n] for n in costs), "cost never falls with a tech"
+        previous = costs
+    for name, spec in DISTRICTS.items():
+        if spec.cost_model != "fixed":
+            assert previous[name] == spec.production_cost * (1 + factor)
+
+
 def test_cost_is_locked_at_placement():
-    """The cost is stored on the District when placed and not recomputed.
-    Breaks if the cost is read live from district_cost later."""
+    """The cost is stored on the District when placed and not recomputed:
+    it is `district_cost` at placement (escalated by the owner's techs since
+    #116 P2, so no longer the bare base), and it stays when the live cost
+    later drops. Breaks if the cost is read live from district_cost later."""
     t = district_model.DISCOUNTED_TYPES[0]
     if DISTRICTS[t].on is not None or DISTRICTS[t].requires_adjacent \
             or DISTRICTS[t].adjacent_to_city_center:
         t = placeable_type()
     env = board()
     city = make_city(env, (3, 4))
+    at_placement = district_cost(city.player, t)
     assert env.place_district(city, t, far_site(env, city))
     locked = city.districts[-1].cost
-    assert locked == DISTRICTS[t].production_cost
+    assert locked == at_placement
     others = [n for n in district_model.DISCOUNTED_TYPES if n != t]
     for i in range(len(district_model.DISCOUNTED_TYPES) + 1):
         city.districts.append(District(others[i % len(others)], city.city_id, (7, i),
                                        complete=True))
-    assert district_cost(city.player, t) < DISTRICTS[t].production_cost
+    assert district_cost(city.player, t) < locked
     assert city.districts[0].cost == locked
 
 

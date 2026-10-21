@@ -13,16 +13,23 @@ Validation (design §1.2 and "v3 fixes", config loading):
   this registry);
 - `amount` and `per` are positive ints; `adjacency_yield` is one of
   ACCEPTED_YIELDS; housing values and the optional flat yield columns
-  (unit_model.YIELD_COLUMNS, issue #116) go through unit_model.to_tenths.
+  (unit_model.YIELD_COLUMNS, issue #116) go through unit_model.to_tenths;
+- `requires_tech` names a tech (research_model, #116 P2), `maintenance` is
+  a non-negative multiple of 0.1 (tenths), `requires_civic` is kept raw
+  until #116 P4 defines civics;
+- every `[buildings.*] requires_district` (parsed by unit_model, which loads
+  before this registry) names a district of this registry.
 
-Imports only config / terrain_model / unit_model: no civulator.game.
+Imports only config / research_model / terrain_model / unit_model: no
+civulator.game.
 """
 
 from dataclasses import dataclass
 
 from .config import CFG
 from . import terrain_model
-from .unit_model import YIELD_COLUMNS, to_tenths
+from .research_model import validate_tech_name
+from .unit_model import BUILDING_REQUIRES_DISTRICT, YIELD_COLUMNS, to_tenths
 
 CITY_CENTER = "City Center"
 ANY_DISTRICT = "any"
@@ -47,6 +54,7 @@ _DISTRICT_KEYS = frozenset({
     "adjacent_to_city_center", "requires_adjacent",
     "housing", "water_housing_min", "water_housing_boost",
     *YIELD_COLUMNS,
+    "requires_tech", "requires_civic", "maintenance",  # #116 P2
 })
 
 
@@ -89,6 +97,12 @@ class DistrictSpec:
     # unit_model.YIELD_COLUMNS -> int tenths, 0 when the column is absent.
     # Read by game/yields.py city_yield; separate from the adjacency yield.
     yield_columns: dict
+    # Availability (#116 P2): the tech the owner must know to place it (None =
+    # ungated); the civic (raw, passes until P4); gold upkeep per turn in int
+    # tenths (stored now, deducted from P5 on).
+    requires_tech: object = None
+    requires_civic: object = None
+    maintenance: int = 0
 
 
 @dataclass(frozen=True)
@@ -238,7 +252,18 @@ def _parse_district(name, table, district_names):
         water_housing_min=_optional_tenths(table, "water_housing_min", where),
         water_housing_boost=_optional_tenths(table, "water_housing_boost", where),
         yield_columns={c: _optional_tenths(table, c, where) or 0 for c in YIELD_COLUMNS},
+        requires_tech=(validate_tech_name(table["requires_tech"], where)
+                       if "requires_tech" in table else None),
+        requires_civic=table.get("requires_civic"),
+        maintenance=_maintenance(table, where),
     )
+
+
+def _maintenance(table, where):
+    tenths = _optional_tenths(table, "maintenance", where) or 0
+    if tenths < 0:
+        raise ValueError(f"{where}: maintenance must be >= 0")
+    return tenths
 
 
 def parse_districts(cfg):
@@ -269,7 +294,18 @@ def parse_districts(cfg):
     )
 
 
+def validate_building_districts(requires_district, districts):
+    """Raise ValueError unless every `[buildings.*] requires_district` value
+    (building -> district name) names a district of `districts`."""
+    for building, district in requires_district.items():
+        if district not in districts:
+            raise ValueError(
+                f"[buildings.{building}] requires_district {district!r} is not a district"
+            )
+
+
 REGISTRY = parse_districts(CFG["districts"])
+validate_building_districts(BUILDING_REQUIRES_DISTRICT, REGISTRY.districts)
 
 DISTRICTS = REGISTRY.districts
 POPULATION_PER_DISTRICT = REGISTRY.population_per_district

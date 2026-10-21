@@ -29,6 +29,15 @@ combat number should appear anywhere else (CLAUDE.md canonical-systems
 table). `NUM_UNIT_SLOTS`/`UNIT_SLOT` and `MOVEMENT_DOMAIN` are deliberately
 NOT here — see the comments on those tables in game/unit.py for why.
 
+Availability columns (#116 P2, progression design "v2 fixes", load order):
+this module parses `requires_tech` on units and buildings and
+`requires_district`, `requires_building`, `maintenance` on buildings, and
+keeps `requires_civic` / `requires_government_tier` raw for P4. A
+`requires_tech` is checked against `research_model.TECHS`, which loads
+first; a `requires_district` names the district registry, which loads after
+this module, so `district_model` checks those names against itself.
+Unknown keys in a `[units.*]` or `[buildings.*]` table raise.
+
 tests/test_unit_config_identity.py is the bit-identity gate for #64: it
 pins every value below as a hardcoded literal, independent of this module
 and of config.toml, so this move is provably a refactor and not a balance
@@ -36,6 +45,7 @@ change.
 """
 
 from .config import CFG
+from .research_model import validate_tech_name
 
 _UNITS_CFG = CFG.get("units", {})
 _COMBAT_CFG = CFG.get("combat", {})
@@ -228,3 +238,110 @@ BUILDING_DEFENSE_BONUS = {
     for name, table in _BUILDINGS_CFG.items()
     if table.get("defense_bonus")
 }
+
+
+# --- Availability columns (#116 P2, docs/progression_design.md §4.1, §6.2) ---
+#
+# Every key a table may carry: a typo in a gating column (`requires_techs`)
+# must raise rather than silently leave the item ungated. A later patch
+# adding a column adds it here, as district_model's _DISTRICT_KEYS.
+UNIT_KEYS = frozenset({
+    "max_movement", "combat_strength", "ranged_strength", "range",
+    "production_cost", "siege_class", "requires_tech", "requires_civic",
+})
+BUILDING_KEYS = frozenset({
+    "production_cost", "defense_bonus", "housing", *YIELD_COLUMNS,
+    "requires_tech", "requires_district", "requires_building",
+    "requires_civic", "requires_government_tier", "maintenance",
+})
+
+
+def _check_keys(tables, allowed, table_name):
+    for name, table in tables.items():
+        unknown = set(table) - allowed
+        if unknown:
+            raise ValueError(f"[{table_name}.{name}]: unknown key(s) {sorted(unknown)}")
+
+
+def _name_column(tables, column, table_name):
+    """name -> the string `column` of every table declaring it."""
+    out = {}
+    for name, table in tables.items():
+        if column in table:
+            value = table[column]
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"[{table_name}.{name}] {column} must be a name, got {value!r}")
+            out[name] = value
+    return out
+
+
+def parse_unit_gates(units_cfg):
+    """`[units.*]` availability columns -> (requires_tech, requires_civic),
+    each name -> value for the units declaring it. `requires_tech` must name a
+    tech; `requires_civic` is kept raw until P4 defines civics."""
+    _check_keys(units_cfg, UNIT_KEYS, "units")
+    requires_tech = {
+        name: validate_tech_name(tech, f"[units.{name}]")
+        for name, tech in _name_column(units_cfg, "requires_tech", "units").items()
+    }
+    requires_civic = {n: t["requires_civic"] for n, t in units_cfg.items() if "requires_civic" in t}
+    return requires_tech, requires_civic
+
+
+def parse_building_gates(buildings_cfg):
+    """`[buildings.*]` availability columns -> a dict of name -> value maps:
+    `requires_tech` (a tech), `requires_district` (a district name, checked by
+    district_model), `requires_building` (another configured building; the
+    chain may not loop back), `requires_civic` / `requires_government_tier`
+    (raw until P4) and `maintenance` (int tenths of gold per turn)."""
+    _check_keys(buildings_cfg, BUILDING_KEYS, "buildings")
+    requires_tech = {
+        name: validate_tech_name(tech, f"[buildings.{name}]")
+        for name, tech in _name_column(buildings_cfg, "requires_tech", "buildings").items()
+    }
+    requires_building = _name_column(buildings_cfg, "requires_building", "buildings")
+    for name, other in requires_building.items():
+        if other not in buildings_cfg:
+            raise ValueError(f"[buildings.{name}] requires_building {other!r} is not a building")
+        seen = {name}
+        while other is not None:
+            if other in seen:
+                raise ValueError(f"[buildings.{name}] requires_building loops back through {other!r}")
+            seen.add(other)
+            other = requires_building.get(other)
+    maintenance = {}
+    for name, table in buildings_cfg.items():
+        if "maintenance" in table:
+            tenths = to_tenths(table["maintenance"], f"[buildings.{name}] maintenance")
+            if tenths < 0:
+                raise ValueError(f"[buildings.{name}] maintenance must be >= 0")
+            if tenths:
+                maintenance[name] = tenths
+    return {
+        "requires_tech": requires_tech,
+        "requires_district": _name_column(buildings_cfg, "requires_district", "buildings"),
+        "requires_building": requires_building,
+        "requires_civic": {n: t["requires_civic"] for n, t in buildings_cfg.items()
+                           if "requires_civic" in t},
+        "requires_government_tier": {n: t["requires_government_tier"]
+                                     for n, t in buildings_cfg.items()
+                                     if "requires_government_tier" in t},
+        "maintenance": maintenance,
+    }
+
+
+# The unit types and buildings that exist (#116 P2): the one accessor for
+# "is this a configured unit / building", so availability never re-reads CFG.
+UNIT_NAMES = frozenset(_UNITS_CFG)
+BUILDING_NAMES = frozenset(_BUILDINGS_CFG)
+
+UNIT_REQUIRES_TECH, UNIT_REQUIRES_CIVIC = parse_unit_gates(_UNITS_CFG)
+_BUILDING_GATES = parse_building_gates(_BUILDINGS_CFG)
+BUILDING_REQUIRES_TECH = _BUILDING_GATES["requires_tech"]
+BUILDING_REQUIRES_DISTRICT = _BUILDING_GATES["requires_district"]
+BUILDING_REQUIRES_BUILDING = _BUILDING_GATES["requires_building"]
+BUILDING_REQUIRES_CIVIC = _BUILDING_GATES["requires_civic"]
+BUILDING_REQUIRES_GOVERNMENT_TIER = _BUILDING_GATES["requires_government_tier"]
+# Gold per turn in int tenths (the treasury's unit), nonzero entries only.
+# Parsed and stored now; #116 P5 deducts it.
+BUILDING_MAINTENANCE = _BUILDING_GATES["maintenance"]

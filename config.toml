@@ -438,44 +438,63 @@ crossing_cost = 1
 # constraint, and features were never checked (a Woods Plains tile always
 # allowed a Farm), so only the mappings below constrain them.
 # An improvement without an `on` key is buildable nowhere.
+#
+# Columns (#116 P2, docs/progression_design.md "v2 fixes"), all optional and
+# read only by civulator/terrain_model.py:
+#   requires_tech   a [techs.*] name; absent = buildable from the start
+#   food, production, gold
+#                   whole points per turn the improvement adds to its tile
+#                   (default 0): food and production through Tile.yields,
+#                   gold through city_yield(city, "gold") over worked tiles.
+#                   Civ 6 Gathering Storm base yields, before any tech or
+#                   policy bonus (those are not modelled). Rule change v0.8.0.
+# The Oil Well is removed (v0.8.0): no tech in this span unlocks it.
 
 [improvements.Farm]
 housing = 0.5      # optional column (default 0); Civ 6. A multiple of 0.1
+food = 1           # Civ 6 GS: +1 Food (wiki Farm_(Civ6))
 on = [
     { bases = ["Plains", "Grassland", "Desert"], relief = ["flat"] },
     { features = ["Floodplains"] },
 ]
 
 [improvements.Mine]
+requires_tech = "Mining"
+production = 1     # Civ 6 GS: +1 Production (wiki Mine_(Civ6))
 on = [
     { relief = ["hills"] },
     { bases = ["Desert", "Tundra", "Snow"], relief = ["flat"] },
 ]
 
 [improvements.Plantation]
+requires_tech = "Irrigation"
 housing = 0.5
+gold = 2           # Civ 6 GS: +2 Gold (wiki Plantation_(Civ6))
 on = { bases = ["Plains", "Grassland", "Desert"], relief = ["flat"] }
 
 [improvements.Camp]
+requires_tech = "Animal Husbandry"
 housing = 0.5
+gold = 2           # Civ 6: +1 Gold, GS +2 Gold (wiki Camp_(Civ6))
 on = { bases = ["Plains", "Grassland", "Tundra", "Desert"], relief = ["flat"] }
 
 [improvements.Pasture]
+requires_tech = "Animal Husbandry"
 housing = 0.5
+production = 1     # Civ 6 GS: +1 Production (wiki Pasture_(Civ6))
 on = { bases = ["Plains", "Grassland", "Desert", "Tundra"], relief = ["flat"] }
 
 [improvements.Quarry]
+requires_tech = "Mining"
+production = 1     # Civ 6 GS: +1 Production (wiki Quarry_(Civ6))
 on = { bases = ["Plains", "Desert", "Grassland", "Tundra"], relief = ["flat"] }
 
+# Civ 6 unlocks Fishing Boats with Sailing, which this tree cuts (design §4.2).
 [improvements."Fishing Boats"]
+requires_tech = "Celestial Navigation"
 housing = 0.5
+food = 1           # Civ 6 GS: +1 Food (wiki Fishing_Boats_(Civ6))
 on = { bases = ["Coast", "Lake"] }
-
-[improvements."Oil Well"]
-on = [
-    { bases = ["Desert", "Tundra", "Snow"], relief = ["flat"] },
-    { bases = ["Coast", "Ocean"] },
-]
 
 [game]
 num_players = 8
@@ -508,8 +527,13 @@ range = 1
 production_cost = 40
 
 # Slinger: the Civ 6 Ancient-era ranged starter (issue #67). Range 1 —
-# it shoots only into adjacent tiles, unlike the Archer's 2. Ungated
-# deliberately: research does not exist yet (#41/#76).
+# it shoots only into adjacent tiles, unlike the Archer's 2. Ungated, with
+# the Warrior: the opening web (#116 P2).
+#
+# requires_tech (#116 P2, optional): the [techs.*] name a player must know
+# before any city may build the unit; absent = buildable from the start.
+# Read only by civulator/unit_model.py; checked through
+# civulator/game/availability.py player_can_build.
 [units.Slinger]
 max_movement = 2
 combat_strength = 5
@@ -518,6 +542,7 @@ range = 1
 production_cost = 35
 
 [units.Archer]
+requires_tech = "Archery"
 max_movement = 2
 combat_strength = 15
 ranged_strength = 25
@@ -525,6 +550,7 @@ range = 2
 production_cost = 60
 
 [units.Swordsman]
+requires_tech = "Iron Working"
 max_movement = 2
 combat_strength = 35
 ranged_strength = 0
@@ -532,6 +558,7 @@ range = 1
 production_cost = 90
 
 [units.Spearman]
+requires_tech = "Bronze Working"
 max_movement = 2
 combat_strength = 25
 ranged_strength = 0
@@ -539,6 +566,7 @@ range = 1
 production_cost = 65
 
 [units.Horseman]
+requires_tech = "Horseback Riding"
 max_movement = 4
 combat_strength = 35
 ranged_strength = 0
@@ -560,6 +588,7 @@ range = 0
 production_cost = 50
 
 [units.Catapult]
+requires_tech = "Engineering"
 max_movement = 2
 combat_strength = 23
 ranged_strength = 35
@@ -583,6 +612,7 @@ siege_class = true
 # in BUILD_OPTIONS: offering an agent a unit that does nothing would be a build
 # option that cannot pay off.
 [units.BatteringRam]
+requires_tech = "Masonry"
 max_movement = 2
 combat_strength = 0
 ranged_strength = 0
@@ -590,6 +620,7 @@ range = 0
 production_cost = 65
 
 [units.SiegeTower]
+requires_tech = "Machinery"
 max_movement = 2
 combat_strength = 0
 ranged_strength = 0
@@ -722,6 +753,127 @@ a = 10
 b = 6
 p = 1.3
 
+# --- Research: the tech tree (issue #116 P2, docs/progression_design.md §4) ---
+# Read only by civulator/research_model.py. A tech is one [techs.*] table:
+#   cost       Civ 6 base science (Standard speed), positive int
+#   era        Ancient | Classical | Medieval | Renaissance
+#   requires   tech names (absent = available from the start); every name
+#              must exist, the graph must be acyclic and every tech reachable
+#   effects    optional, kept raw for #116 P4's effects interpreter
+# Names, eras and costs are Civ 6 Gathering Storm's
+# (docs/civ6_progression_reference.md §1); prerequisites are this design's,
+# differing from Civ 6 only where a cut tech sat in between (design §4.2).
+# What a tech unlocks is never declared here: it is the `requires_tech`
+# column of the unlocked item's own table.
+[research]
+tech_cost_percent = 75   # every tech costs cost * this // 100 whole science (design §12)
+
+[techs.Pottery]
+cost = 25
+era = "Ancient"
+
+[techs."Animal Husbandry"]
+cost = 25
+era = "Ancient"
+
+[techs.Mining]
+cost = 25
+era = "Ancient"
+
+[techs.Astrology]
+cost = 50
+era = "Ancient"
+
+[techs.Irrigation]
+cost = 50
+era = "Ancient"
+requires = ["Pottery"]
+
+[techs.Writing]
+cost = 50
+era = "Ancient"
+requires = ["Pottery"]
+
+[techs.Archery]
+cost = 50
+era = "Ancient"
+requires = ["Animal Husbandry"]
+
+[techs.Masonry]
+cost = 80
+era = "Ancient"
+requires = ["Mining"]
+
+[techs."Bronze Working"]
+cost = 80
+era = "Ancient"
+requires = ["Mining"]
+
+[techs."Celestial Navigation"]
+cost = 120
+era = "Classical"
+requires = ["Astrology"]  # Civ 6 also requires Sailing (cut)
+
+[techs.Currency]
+cost = 120
+era = "Classical"
+requires = ["Writing"]
+
+[techs."Horseback Riding"]
+cost = 120
+era = "Classical"
+requires = ["Archery"]
+
+[techs."Iron Working"]
+cost = 120
+era = "Classical"
+requires = ["Bronze Working"]
+
+[techs.Engineering]
+cost = 200
+era = "Classical"
+requires = ["Masonry"]  # Civ 6: Wheel (cut)
+
+[techs."Military Tactics"]
+cost = 300
+era = "Medieval"
+requires = ["Bronze Working", "Currency"]  # Civ 6: Mathematics (cut)
+
+[techs.Apprenticeship]
+cost = 300
+era = "Medieval"
+requires = ["Currency", "Horseback Riding"]
+
+[techs.Machinery]
+cost = 300
+era = "Medieval"
+requires = ["Iron Working", "Engineering"]
+
+[techs.Education]
+cost = 335
+era = "Medieval"
+requires = ["Apprenticeship"]  # Civ 6: + Mathematics (cut); per-tech page cost 335
+
+[techs."Military Engineering"]
+cost = 335
+era = "Medieval"
+requires = ["Engineering"]  # Civ 6: Construction (cut); per-tech page cost 335
+
+[techs.Stirrups]
+cost = 390
+era = "Medieval"
+requires = ["Horseback Riding", "Apprenticeship"]
+
+[techs.Castles]
+cost = 390
+era = "Medieval"
+requires = ["Military Engineering"]  # Civ 6: Construction (cut)
+
+[techs.Gunpowder]
+cost = 600
+era = "Renaissance"
+requires = ["Apprenticeship", "Stirrups", "Military Engineering"]
+
 # --- Buildings (issue #7) ---------------------------------------------------
 # One table per building: `production_cost` is what a city pays for it, and
 # `defense_bonus` (optional, default 0) is added to the city's defensive combat
@@ -732,8 +884,24 @@ p = 1.3
 # rest): `science`, `culture`, `gold`, `faith` per turn into the owner's pools,
 # `food` and `production` per turn into the city's own — all read by
 # civulator/game/yields.py city_yield, never by name.
+# Availability columns (#116 P2, all optional; checked by
+# civulator/game/availability.py city_can_build_building, the one predicate
+# production, the build mask and purchasing call):
+#   requires_tech      a [techs.*] name the owner must know
+#   requires_district  a [districts.*] name: a COMPLETE district of that type
+#                      must stand in the city
+#   requires_building  a [buildings.*] name the city must already own
+#   requires_civic, requires_government_tier
+#                      accepted for #116 P4 (civics, governments); they pass
+#                      until P4 defines what they name
+#   maintenance        gold per turn (multiple of 0.1, default 0); parsed and
+#                      stored now, deducted from #116 P5 on
+# Civ 6 Gathering Storm values (docs/civ6_progression_reference.md §7);
+# design: docs/progression_design.md §6.2. The Factory is removed (v0.8.0):
+# it is beyond the tree (Industrialization).
 [buildings.Granary]
 production_cost = 60
+requires_tech = "Pottery"
 housing = 2         # optional column (default 0); Civ 6 Granary. A multiple of 0.1
 food = 1            # rule change v0.8.0 (#116 P1): Civ 6 Granary +1 Food
                     # (docs/civ6_progression_reference.md §7)
@@ -742,18 +910,59 @@ food = 1            # rule change v0.8.0 (#116 P1): Civ 6 Granary +1 Food
 production_cost = 50
 culture = 2         # optional column (default 0); Civ 6 Monument. A multiple of 0.1
 
-# Walls: +30 defence, Civ 6's Ancient Walls (see CHANGELOG). The one building
-# that changes combat, and the reason the [buildings.*] table has a
-# defense_bonus column at all.
+# Walls: +30 defence, Civ 6's Ancient Walls (see CHANGELOG). The building
+# that unlocks the city's ranged strike ([city] ranged_building).
 [buildings.Walls]
 production_cost = 100
+requires_tech = "Masonry"
 defense_bonus = 30
 
+# Workshop: Civ 6's cost and yield (v0.8.0; it was 120 and inert).
 [buildings.Workshop]
-production_cost = 120
+production_cost = 195
+requires_tech = "Apprenticeship"
+requires_district = "Industrial Zone"
+production = 3
+maintenance = 1
 
-[buildings.Factory]
-production_cost = 240
+[buildings.Library]
+production_cost = 90
+requires_tech = "Writing"
+requires_district = "Campus"
+science = 2
+maintenance = 1
+
+[buildings.University]
+production_cost = 250
+requires_tech = "Education"
+requires_district = "Campus"
+requires_building = "Library"
+science = 4
+housing = 1
+maintenance = 2
+
+[buildings.Shrine]
+production_cost = 70
+requires_tech = "Astrology"
+requires_district = "Holy Site"
+faith = 2
+maintenance = 1
+
+[buildings.Barracks]
+production_cost = 90
+requires_tech = "Bronze Working"
+requires_district = "Encampment"
+production = 1
+housing = 1
+maintenance = 1
+
+# Medieval Walls: a second +30 on top of the Walls (Civ 6: +100 outer
+# defence each); no maintenance (Civ 6).
+[buildings."Medieval Walls"]
+production_cost = 220
+requires_tech = "Castles"
+requires_building = "Walls"
+defense_bonus = 30
 
 # Palace (#88): granted to a player's first city by GameEnvironment.create_city,
 # never built (no production_cost, so City.produce_building refuses it).
@@ -786,18 +995,26 @@ production = 2
 #                        optional flat per-turn yields of the complete district
 #                        (multiples of 0.1, default 0; #116, read by city_yield);
 #                        none declared today
+#   requires_tech        a [techs.*] name the owner must know to place it
+#                        (#116 P2; checked through can_place_district)
+#   requires_civic       accepted for #116 P4 (civics); passes until then
+#   maintenance          gold per turn (multiple of 0.1, default 0; Civ 6:
+#                        the gold districts pay for themselves); parsed and
+#                        stored now, deducted from #116 P5 on
 # Sources: terrain = {bases/relief/features/resources} (terrain_model `on`
 # form), improvement = [...], district = [...] | "any" ("City Center" names a
 # city centre; "any" = any district or centre), river_on_tile = true
 # (adjacency only), river_edge_not_shared_with_center = true (requires_adjacent only).
 [districts]
 population_per_district = 3   # specialty districts allowed = 1 + floor((pop - 1) / 3)
-cost_progress_factor = 9      # cost = base * (1 + 9 * P); P = 0 until tech exists (§4.3)
+cost_progress_factor = 9      # cost = base * (1 + 9 * P); P = techs known / techs in the tree (#116 P2)
 removable_features = ["Woods", "Rainforest", "Marsh"]   # cleared on placement
 allowed_features = ["Floodplains"]                      # kept on placement
 
 [districts.Campus]
 production_cost = 54
+requires_tech = "Writing"
+maintenance = 1
 cost_model = "discounted"
 discount_percent = 40
 adjacency_yield = "science"
@@ -811,6 +1028,7 @@ adjacency = [
 
 [districts."Commercial Hub"]
 production_cost = 54
+requires_tech = "Currency"
 cost_model = "discounted"
 discount_percent = 40
 adjacency_yield = "gold"
@@ -823,6 +1041,7 @@ adjacency = [
 
 [districts."Theater Square"]
 production_cost = 54
+maintenance = 1
 cost_model = "discounted"
 discount_percent = 40
 adjacency_yield = "culture"
@@ -834,6 +1053,8 @@ adjacency = [
 
 [districts."Holy Site"]
 production_cost = 54
+requires_tech = "Astrology"
+maintenance = 1
 cost_model = "discounted"
 discount_percent = 40
 adjacency_yield = "faith"
@@ -846,6 +1067,8 @@ adjacency = [
 
 [districts."Industrial Zone"]
 production_cost = 54
+requires_tech = "Apprenticeship"
+maintenance = 1
 cost_model = "discounted"
 discount_percent = 40
 adjacency_yield = "production"
@@ -862,6 +1085,7 @@ adjacency = [
 # allowed_features, so the general feature rule refuses it.
 [districts.Harbor]
 production_cost = 54
+requires_tech = "Celestial Navigation"
 cost_model = "discounted"
 discount_percent = 40
 adjacency_yield = "gold"
@@ -878,12 +1102,15 @@ adjacency = [
 
 [districts.Encampment]
 production_cost = 54
+requires_tech = "Bronze Working"
+maintenance = 1
 cost_model = "discounted"
 discount_percent = 40
 adjacent_to_city_center = false
 
 [districts."Entertainment Complex"]
 production_cost = 54
+maintenance = 1
 cost_model = "discounted"
 discount_percent = 40
 
@@ -898,6 +1125,7 @@ max_per_player = 1
 # water = max(water_housing_min, water + water_housing_boost).
 [districts.Aqueduct]
 production_cost = 36
+requires_tech = "Engineering"
 cost_model = "progress"
 counts_toward_limit = false
 adjacent_to_city_center = true

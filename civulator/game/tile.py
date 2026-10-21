@@ -1,6 +1,6 @@
 """Tile class representing a single hex on the game map."""
 
-from ..terrain_model import can_enter, compose, validate
+from ..terrain_model import IMPROVEMENT_YIELDS, can_enter, compose, validate
 
 
 class Tile:
@@ -14,6 +14,11 @@ class Tile:
 
     Rivers are not tile state — `Map.rivers` (edges) is the single river
     representation (§9.1).
+
+    Improvements are not layers, but they add to the tile's yields (#116 P2):
+    `yields` and `gold` read them live from terrain_model's
+    IMPROVEMENT_YIELDS. Their writers take `map_ref` like `set_layers`, so a
+    change bumps the terrain epoch every yield cache keys on.
     """
 
     def __init__(self, row, column, base_terrain="Plains", relief=None,
@@ -67,8 +72,24 @@ class Tile:
 
     @property
     def yields(self):
-        """(food, production) — the additive sum of all layer contributions."""
-        return self.composed.yields
+        """(food, production): the additive sum of all layer contributions
+        plus the food and production of the tile's improvements (#116 P2,
+        `[improvements.*]` columns through terrain_model)."""
+        if not self.improvements:
+            return self.composed.yields
+        food, production = self.composed.yields
+        for name in self.improvements:
+            columns = IMPROVEMENT_YIELDS[name]
+            food += columns["food"]
+            production += columns["production"]
+        return (food, production)
+
+    @property
+    def gold(self):
+        """Whole gold per turn from the tile's improvements (#116 P2). No
+        terrain layer yields gold; `city_yield(city, "gold")` sums this over
+        a city's centre and worked tiles."""
+        return sum(IMPROVEMENT_YIELDS[name]["gold"] for name in self.improvements)
 
     @property
     def movement_cost(self):
@@ -111,15 +132,29 @@ class Tile:
         if unit in self.units:
             self.units.remove(unit)
 
-    def add_improvement(self, improvement):
-        """Add an improvement to this tile."""
+    def add_improvement(self, improvement, map_ref=None):
+        """Add an improvement to this tile. Bumps map_ref.terrain_epoch when a
+        Map is given and the tile changed: an improvement changes the tile's
+        yields (#116 P2), and every yield cache keys on that epoch."""
         if improvement not in self.improvements:
             self.improvements.append(improvement)
+            if map_ref is not None:
+                map_ref.terrain_epoch += 1
 
-    def remove_improvement(self, improvement):
-        """Remove an improvement from this tile."""
+    def remove_improvement(self, improvement, map_ref=None):
+        """Remove an improvement from this tile (epoch bump as add_improvement)."""
         if improvement in self.improvements:
             self.improvements.remove(improvement)
+            if map_ref is not None:
+                map_ref.terrain_epoch += 1
+
+    def clear_improvements(self, map_ref=None):
+        """Remove every improvement (epoch bump as add_improvement, only when
+        there was something to remove)."""
+        if self.improvements:
+            self.improvements.clear()
+            if map_ref is not None:
+                map_ref.terrain_epoch += 1
 
     def set_city(self, city):
         """Set a city on this tile."""

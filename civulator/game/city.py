@@ -13,6 +13,7 @@ from ..unit_model import (
     growth_percent,
 )
 from . import territory
+from .availability import city_can_build_building, player_can_build
 from .culture import culture
 from .districts import district_yields
 from .housing import housing
@@ -103,8 +104,9 @@ class City:
         """The city's ranged strength (issue #84), `[city] ranged_strength`.
 
         A flat number, unlike a unit's: Civ 6 derives it from the strongest
-        ranged unit the civilization has built, which needs a tech tree we do
-        not have (#41/#76), and it carries no health penalty -- a battered
+        ranged unit the civilization has built, which is not modelled (the
+        tech tree exists since #116 P2; this rule does not), and it carries
+        no health penalty -- a battered
         city shoots as hard as a fresh one. Both simplifications are named in
         the CHANGELOG.
         """
@@ -115,14 +117,20 @@ class City:
         return CITY_RANGED_RANGE
 
     def produce_unit(self, unit_type):
-        """Start producing a unit."""
+        """Start producing a unit. Refused (False, production unchanged)
+        unless the owner may build it: a configured unit whose
+        `requires_tech` the owner knows (#116 P2, `player_can_build`)."""
+        if not player_can_build(self.player, "unit", unit_type):
+            return False
         self.current_production = {"type": "unit", "unit_type": unit_type}
         return True
 
     def produce_building(self, building_type):
-        """Start producing a building. Refused (False) for a name with no
-        production cost - the Palace is granted, never built (#88)."""
-        if building_type not in self.BUILDING_COSTS:
+        """Start producing a building. Refused (False, production unchanged)
+        unless `city_can_build_building` holds: a production cost (the
+        Palace is granted, never built, #88), the owner's research, a
+        complete required district and an owned required building (#116 P2)."""
+        if not city_can_build_building(self, building_type):
             return False
         self.current_production = {"type": "building", "building_type": building_type}
         return True

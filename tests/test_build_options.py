@@ -17,9 +17,10 @@ between "buildable" and "deliberately not buildable" must be total, so
 statted-but-unreachable can never again be an accident that looks like a
 decision.
 
-No availability gate is asserted beyond cost and the Settler's population
-requirement — research does not exist yet (#41/#76), so an ungated unit is a
-genuinely state-changing action and CLAUDE.md's mask invariant holds.
+Since #116 P2 the tech tree gates units: the Swordsman is offered and
+produced once its owner knows Iron Working and refused before (restated from
+"offered from turn 1"); the Slinger stays ungated. The gate for every option
+is pinned in tests/test_availability.py.
 """
 
 import pytest
@@ -35,6 +36,7 @@ from civulator.agents.build_agent import (
     options_for_width,
 )
 from civulator.agents.state_encoders import EnhancedStateEncoder
+from civulator.game.availability import required_tech
 from civulator.game.city import City, _create_unit
 from civulator.game.unit import (
     DEFERRED_BUILD_UNITS,
@@ -46,6 +48,7 @@ from civulator.game.unit import (
     WarriorUnit,
 )
 
+from conftest import grant
 from test_combat_range import make_flat_env, place
 
 
@@ -63,11 +66,20 @@ def test_unit_is_a_build_option(unit_type):
 ])
 def test_city_can_actually_produce_the_unit(unit_type, expected_cls):
     """E2E: the whole path an agent walks — pick the option, pay for it, and
-    a unit of the right class is standing on the map afterwards."""
+    a unit of the right class is standing on the map afterwards. A unit with
+    a `requires_tech` (the Swordsman: Iron Working, #116 P2) is refused,
+    production unchanged, until its owner knows the tech. Breaks if the
+    unit is unproducible, or producible before its tech."""
     env = make_flat_env()
     city = env.create_city(env.players[0], (3, 3), "Test City")
 
-    city.produce_unit(unit_type)
+    tech = required_tech("unit", unit_type)
+    if tech is not None:
+        before = dict(city.current_production)
+        assert city.produce_unit(unit_type) is False
+        assert city.current_production == before
+        grant(env.players[0], tech)
+    assert city.produce_unit(unit_type) is True
     city.production = city.get_unit_cost(unit_type)
     city.process_turn(env)
 
@@ -79,12 +91,17 @@ def test_city_can_actually_produce_the_unit(unit_type, expected_cls):
 @pytest.mark.parametrize("unit_type", ["Slinger", "Swordsman"])
 def test_the_build_mask_offers_the_unit(unit_type):
     """The mask must offer it — an option no mask ever exposes is the same as
-    no option at all, which is what #67 was."""
+    no option at all, which is what #67 was — once its owner knows its
+    `requires_tech` (#116 P2), and never before."""
     env = make_flat_env()
     city = City(env.players[0], (3, 3), "Test City")
+    idx = BUILD_OPTIONS.index(unit_type)
 
-    mask = get_valid_build_mask(city)
-    assert mask[BUILD_OPTIONS.index(unit_type)] == 1.0
+    tech = required_tech("unit", unit_type)
+    if tech is not None:
+        assert get_valid_build_mask(city)[idx] == 0.0
+        grant(env.players[0], tech)
+    assert get_valid_build_mask(city)[idx] == 1.0
 
 
 @pytest.mark.parametrize("unit_type", ["Slinger", "Swordsman"])

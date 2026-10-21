@@ -6,6 +6,7 @@ from civulator.game import housing as housing_mod
 from civulator.game.city import City
 from civulator.game.housing import housing
 
+from conftest import grant_all
 from test_city_walls import make_city
 from test_combat_range import make_flat_env
 
@@ -186,9 +187,12 @@ def test_captured_palace_city_keeps_it_and_old_owner_gets_no_new_one():
 
 
 def test_the_palace_cannot_be_produced():
-    """Breaks if the production path accepts a building without a cost."""
+    """Breaks if the production path accepts a building without a cost --
+    even for an owner who knows every tech -- while a costed building whose
+    tech is known (the Granary: Pottery, #116 P2) is accepted."""
     env = make_flat_env()
     city = make_city(env, (3, 3))
+    grant_all(city.player)
     assert "Palace" not in City.BUILDING_COSTS
     before = city.current_production
     assert city.produce_building("Palace") is False

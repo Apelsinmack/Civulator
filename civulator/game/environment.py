@@ -8,9 +8,12 @@ from .map import Map
 from .. import hexmath, mapgen
 from ..mapgen.starts import StartPlacementError
 from ..rng import PortableRNG
-from ..terrain_model import can_enter, matches
+from ..research_model import TECHS, is_available, scaled_tech_cost
+from ..terrain_model import can_enter, improvement_on, matches
 from .player import Player
 from .city import City
+from .availability import player_can_build
+from .defaults import default_research
 from .districts import (
     YIELD_NAMES as DISTRICT_YIELD_NAMES, District, can_place_district, district_cost,
 )
@@ -101,12 +104,6 @@ def resolve_size_and_players(size=None, num_players=None):
     if num_players is None:
         num_players = _SIZES_CFG.get(name, {}).get("default_players", 2)
     return rows, cols, int(num_players)
-
-
-# Improvement placement rules — the same `on` formalism as terrain layers
-# (design doc §3.1, §9.6), replacing the hardcoded terrain lists this file
-# used to carry. An improvement with no `on` entry is buildable nowhere.
-IMPROVEMENTS = CFG.get("improvements", {})
 
 
 class GameEnvironment:
@@ -230,6 +227,7 @@ class GameEnvironment:
                 "gold_produced": 0,
                 "faith_produced": 0,
                 "growth_slowed_turns": 0,  # city-turns, positive net, band < 100 % (#88)
+                "techs_researched": 0,  # completed techs (#116 P2)
                 # Summed adjacency score per yield, per city-round (#86 s5)
                 **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
             }
@@ -1104,7 +1102,7 @@ class GameEnvironment:
         tile.district = district
         city.districts.append(district)
 
-        tile.improvements.clear()
+        tile.clear_improvements(map_ref=self.map)
         feature = None if tile.feature in DISTRICT_REMOVABLE_FEATURES else tile.feature
         if feature != tile.feature or tile.resource is not None:
             tile.set_layers(tile.base_terrain, relief=tile.relief, feature=feature,
@@ -1133,24 +1131,91 @@ class GameEnvironment:
     # --- Improvements ---
 
     def can_build_improvement_at(self, coordinates, improvement_type):
+        """The TILE predicate: `improvement_type` may stand on this tile (no
+        city, no district, not already there, its `on` constraint met --
+        the same `on` formalism as terrain layers, design doc §3.1, §9.6,
+        read through `terrain_model.improvement_on`). Knows nothing of
+        players; `can_player_build_improvement_at` adds them."""
         tile = self.map.get_tile(coordinates)
         if not tile or tile.city or improvement_type in tile.improvements:
             return False
         if tile.district is not None:  # issue #86
             return False
 
-        entry = IMPROVEMENTS.get(improvement_type)
-        if entry is None or "on" not in entry:
+        on = improvement_on(improvement_type)
+        if on is None:
             return False
-        return matches(entry["on"], tile.base_terrain, tile.relief, tile.feature)
+        return matches(on, tile.base_terrain, tile.relief, tile.feature)
+
+    def can_player_build_improvement_at(self, player, coordinates, improvement_type):
+        """Whether `player` may build `improvement_type` on this tile now
+        (#116 P2, progression design "v2 fixes"): the tile is owned by one of
+        the player's cities (`Map.owner_city`), the player `player_can_build`
+        it (its `requires_tech`), and the tile predicate holds."""
+        tile = self.map.get_tile(coordinates)
+        if tile is None:
+            return False
+        owner_id = self.map.owner_id_at(tile.coordinates)
+        if owner_id == NEUTRAL or self.city_by_id[owner_id].player is not player:
+            return False
+        if not player_can_build(player, "improvement", improvement_type):
+            return False
+        return self.can_build_improvement_at(tile.coordinates, improvement_type)
 
     def build_improvement(self, coordinates, improvement_type):
-        """Build an improvement on the specified tile."""
+        """Build an improvement on the specified tile (the tile predicate
+        only; a player's build goes through `can_player_build_improvement_at`
+        first, as `WorkerUnit.build_improvement` does). Bumps the terrain
+        epoch: the tile's yields changed (#116 P2)."""
         if not self.can_build_improvement_at(coordinates, improvement_type):
             return False
         tile = self.map.get_tile(coordinates)
-        tile.add_improvement(improvement_type)
+        tile.add_improvement(improvement_type, map_ref=self.map)
         return True
+
+    # --- Research (#116 P2, docs/progression_design.md §4.3) ---
+
+    def set_research(self, player, tech):
+        """Choose `tech` as `player`'s current research. Refused (False,
+        nothing changed) unless it is a tech the player does not know and
+        every prerequisite is known. Switching loses nothing: the pool is one
+        number, not per-tech progress (design §4.3)."""
+        if not is_available(TECHS, tech, player.techs):
+            return False
+        player.current_tech = tech
+        return True
+
+    def resolve_research(self, player):
+        """Research for one turn of `player`'s: with no current tech, the
+        engine default picks one (`defaults.default_research`); then, if the
+        science pool (tenths) holds 10 * the scaled cost, pay it, append the
+        tech to `player.techs`, clear `current_tech` and count it in
+        `episode_stats["techs_researched"]`. At most one tech per call, so
+        one per turn (Civ 6); the overflow stays in the pool. Returns the
+        tech completed, or None."""
+        if player.current_tech is None:
+            player.current_tech = default_research(player)
+        tech = player.current_tech
+        if tech is None:
+            return None  # every tech is known
+        cost = 10 * scaled_tech_cost(tech)
+        if player.science < cost:
+            return None
+        player.science -= cost
+        player.techs.append(tech)
+        player.current_tech = None
+        self.episode_stats[player.player_index]["techs_researched"] += 1
+        return tech
+
+    def economy_phase(self, player):
+        """The player's economy phase (progression design, "v2 fixes", turn
+        order): runs once per own turn from `Player.start_turn`, after every
+        city has accrued and before the city ranged strike. The only place a
+        tech completes. Steps, in order: research (#116 P2). P4 adds civics
+        and the government/loadout defaults after research; P5 puts
+        maintenance and bankruptcy before it and route expiry and the Trader
+        default after; P8 the Worker default last."""
+        self.resolve_research(player)
 
     # --- Pathfinding wrappers ---
 

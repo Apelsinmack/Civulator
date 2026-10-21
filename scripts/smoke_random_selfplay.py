@@ -1,10 +1,14 @@
 """Seeded random-policy self-play smoke run (issue #87 P4 gate).
 
 Both seats play uniformly random VALID actions (DQNAgent epsilon=1.0 draws from
-the real action masks), cities pick a random build option when idle. Logs, at
+the real action masks), cities pick a random build option when idle -- drawn
+from `get_valid_build_mask`, so only what the city may build (#116 P2: the
+tech gates; never `random.choice(BUILD_OPTIONS)`). Logs, at
 round checkpoints, tiles owned per player, total population, cumulative
-culture claims, per-player housing vs population and growth_slowed_turns, plus wall-clock. A sanity check that borders grow in real games,
-not a measurement.
+culture claims, per-player housing vs population and growth_slowed_turns,
+techs researched per player (the engine's research default, #116 P2), plus
+wall-clock. A sanity check that borders grow and research progresses in real
+games, not a measurement.
 
 Districts (#86): at each player's turn start every city has a small chance to
 place a district through the engine (candidate tiles from Map.tiles_of_city,
@@ -28,7 +32,7 @@ import torch
 
 from civulator.agents import DQNAgent, ReplayMemory, get_encoder
 from civulator.agents.action_space import decode_action, end_turn_index
-from civulator.agents.build_agent import BUILD_OPTIONS
+from civulator.agents.build_agent import BUILD_OPTIONS, get_valid_build_mask
 from civulator.district_model import DISTRICTS
 from civulator.game.city import City
 from civulator.game.districts import can_place_district
@@ -69,9 +73,11 @@ def main():
         house = [sum(housing(c) for c in p.cities) // 10 for p in env.players]
         pops = [sum(c.population for c in p.cities) for p in env.players]
         slowed = [env.episode_stats[i]["growth_slowed_turns"] for i in range(num_players)]
+        techs = [env.episode_stats[i]["techs_researched"] for i in range(num_players)]
         print(f"round {round_no:4d}  tiles_owned={owned}  cities={cities}  "
               f"population={pop}  culture_claims={claims}  housing={house}  "
               f"pop_by_player={pops}  growth_slowed_turns={slowed}  "
+              f"techs_researched={techs}  "
               f"t={time.perf_counter() - t0:.1f}s")
 
     district_rng = random.Random(args.seed)
@@ -111,7 +117,9 @@ def main():
             for city in env.current_player.cities:
                 district_turn(city)
                 if city.current_production is None:
-                    option = random.choice(BUILD_OPTIONS)
+                    mask = get_valid_build_mask(city)
+                    valid = [BUILD_OPTIONS[i] for i in range(len(BUILD_OPTIONS)) if mask[i] > 0]
+                    option = random.choice(valid)
                     if option in City.BUILDING_COSTS:
                         city.produce_building(option)
                     else:
@@ -133,6 +141,10 @@ def main():
           f"by_type={ {n: sum(d.type == n and d.complete for d in all_districts) for n in DISTRICTS} } "
           f"water_housing_cities={len(water_cities)} water_housing_gain_tenths={sorted(water_gain)} "
           f"yields={[{k: v for k, v in env.episode_stats[i].items() if k.startswith('district_yield_') and v} for i in range(num_players)]}")
+    for player in env.players:
+        print(f"techs {player.name}: researched={env.episode_stats[player.player_index]['techs_researched']} "
+              f"current={player.current_tech} science_pool_tenths={player.science} "
+              f"order={player.techs}")
     print(f"done={env.done} steps={steps} wall={time.perf_counter() - t0:.1f}s")
 
 
