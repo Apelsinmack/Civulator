@@ -51,8 +51,11 @@ def _kind(option):
 
 
 def _site(env, city, index):
-    """An owned tile at distance 2 from the centre (fixture only)."""
-    pos = sorted(env.map.get_ring_coords(city.coordinates, 2)[2])[index]
+    """An owned tile at distance 2 or 3 from the centre, ring 2 first, each
+    ring sorted (fixture only; with the wonders, #116 P6, the registry holds
+    more entries than ring 2 has tiles)."""
+    rings = env.map.get_ring_coords(city.coordinates, 3)
+    pos = (sorted(rings[2]) + sorted(rings[3]))[index]
     if env.map.owner_id_at(pos) == NEUTRAL:
         env.map.claim(pos, city)
     return pos

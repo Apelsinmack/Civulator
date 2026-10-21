@@ -150,7 +150,8 @@ def test_maintenance_is_every_unit_building_and_complete_district_column():
     other = make_city(env, (3, 11))
     _stand_all(env, 0, sorted(unit_model.UNIT_NAMES))
     other.buildings.extend(n for n in CFG["buildings"] if n in unit_model.BUILDING_COSTS)
-    sites = ring(env, capital.coordinates, 2)
+    # Rings 2 and 3: with the wonders (#116 P6) the registry outgrew one ring.
+    sites = ring(env, capital.coordinates, 2) + ring(env, capital.coordinates, 3)
     for index, name in enumerate(district_model.DISTRICTS):
         _put(env, capital, name, sites[index])
     unfinished = _put(env, other, next(iter(district_model.DISTRICTS)),

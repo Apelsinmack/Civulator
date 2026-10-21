@@ -26,6 +26,20 @@ def _probe(**extra):
     return table
 
 
+def _a_wonder():
+    """A configured wonder's name, found by its kind (never by name)."""
+    return next((n for n, s in district_model.DISTRICTS.items()
+                 if s.kind == district_model.KIND_WONDER), "Stonehenge")
+
+
+def _wonder(**extra):
+    """A minimal valid wonder table (#116 P6, design §9.1)."""
+    table = {"kind": "wonder", "era": "Ancient", "production_cost": 100,
+             "cost_model": "fixed", "counts_toward_limit": False, "max_per_city": 1}
+    table.update(extra)
+    return table
+
+
 # --- The real config ---------------------------------------------------------
 
 
@@ -94,7 +108,18 @@ def test_aqueduct_declares_its_water_housing_fields_in_tenths():
     # tile tests take only `true`, and only where they belong
     _probe(adjacency=[{"amount": 1, "river_on_tile": False}]),
     _probe(adjacency=[{"amount": 1, "river_edge_not_shared_with_center": True}]),
-    _probe(requires_adjacent=[{"river_on_tile": True}]),
+    _probe(requires_adjacent=[{"river_on_tile": False}]),
+    _probe(requires_adjacent_all=[{"river_on_tile": False}]),
+    # the wonder source takes only "any" (#116 P6); a district list never
+    # names a wonder (wonders are matched by kind, through that source)
+    _probe(adjacency=[{"amount": 1, "wonder": "all"}]),
+    _probe(adjacency=[{"amount": 1, "wonder": True}]),
+    _probe(adjacency=[{"amount": 1, "district": [_a_wonder()]}]),
+    _probe(requires_adjacent=[{"district": [_a_wonder()]}]),
+    _probe(requires_adjacent_all="Harbor"),
+    # kind and era (#116 P6): a closed kind; era is a wonder column
+    _probe(kind="marvel"),
+    _probe(era="Ancient"),
     # limits
     _probe(max_per_city=0),
     _probe(max_per_player=0),
@@ -119,6 +144,82 @@ def test_unknown_scalar_and_feature_list_names_raise():
     cfg["removable_features"] = ["Jungle"]
     with pytest.raises(ValueError):
         district_model.parse_districts(cfg)
+
+
+def test_river_on_tile_is_a_requirement_tile_test_since_p6():
+    """INVERTED in #116 P6 (design "v2 fixes", District registry readers;
+    until then `requires_adjacent = [{ river_on_tile = true }]` raised):
+    `river_on_tile` is accepted as a tile test in `requires_adjacent` and
+    `requires_adjacent_all`, and stays one in adjacency rows. Breaks if
+    the Hanging Gardens' placement rule cannot be written."""
+    for key in ("requires_adjacent", "requires_adjacent_all"):
+        spec = district_model.parse_districts(
+            _with_district(_probe(**{key: [{"river_on_tile": True}]}))).districts["Probe"]
+        (source,) = getattr(spec, key)
+        assert (source.kind, source.value) == ("river_on_tile", True)
+
+
+def test_a_valid_wonder_parses_with_its_columns():
+    """A `kind = "wonder"` table parses with its era, no population slot, a
+    fixed cost, one per city, no adjacency and `requires_adjacent_all`
+    sources; a district's kind defaults to "district" and has no era. Breaks
+    if the kind or era columns are dropped or defaulted wrongly."""
+    reg = district_model.parse_districts(_with_district(_wonder(
+        era="Medieval",
+        requires_adjacent_all=[{"terrain": {"bases": ["Plains"]}}, {"district": ["Campus"]}],
+    )))
+    spec = reg.districts["Probe"]
+    assert (spec.kind, spec.era) == (district_model.KIND_WONDER, "Medieval")
+    assert spec.counts_toward_limit is False and spec.cost_model == "fixed"
+    assert spec.max_per_city == 1 and spec.adjacency_yield == "none" and spec.adjacency == ()
+    assert [s.kind for s in spec.requires_adjacent_all] == ["terrain", "district"]
+    district = district_model.parse_districts(_with_district(_probe())).districts["Probe"]
+    assert (district.kind, district.era, district.requires_adjacent_all) == (
+        district_model.KIND_DISTRICT, None, ())
+
+
+@pytest.mark.parametrize("bad", [
+    {"era": None},                              # era is required
+    {"era": "Space Age"},                       # one of research_model.ERAS
+    {"counts_toward_limit": None},              # must be declared ...
+    {"counts_toward_limit": True},              # ... and false
+    {"cost_model": None},
+    {"cost_model": "progress"},                 # wonders never escalate
+    {"max_per_city": None},
+    {"max_per_city": 2},
+    {"max_per_city": True},
+    {"adjacency_yield": "culture"},             # no adjacency of its own
+    {"adjacency": [{"amount": 1, "district": "any"}]},
+    {"discount_percent": 10},
+])
+def test_a_wonder_table_breaking_the_wonder_rules_raises_at_load(bad):
+    """A wonder declares era, counts_toward_limit = false, cost_model =
+    "fixed" and max_per_city = 1, and no adjacency_yield, adjacency or
+    discount (design §9.1); anything else raises at load. Breaks if a
+    wonder could take a population slot, escalate, be built twice in a
+    city or score adjacency."""
+    table = _wonder()
+    for key, value in bad.items():
+        if value is None:
+            table.pop(key)
+        else:
+            table[key] = value
+    with pytest.raises(ValueError):
+        district_model.parse_districts(_with_district(table))
+
+
+@pytest.mark.parametrize("bad", [
+    {}, {"consolation_percent": 101}, {"consolation_percent": -1},
+    {"consolation_percent": 50.0}, {"consolation_percent": True},
+    {"consolation_percent": 50, "refund_gold": 1},
+])
+def test_the_wonders_table_raises_on_anything_but_a_percent(bad):
+    """`[wonders]` holds exactly `consolation_percent`, an int in 0..100
+    (#116 P6, design §9.2), and the live value parses. Breaks if a
+    malformed refund rule loads."""
+    assert district_model.parse_wonders(CFG["wonders"]) == district_model.CONSOLATION_PERCENT
+    with pytest.raises(ValueError):
+        district_model.parse_wonders(bad)
 
 
 def test_a_valid_probe_district_parses_with_defaults():

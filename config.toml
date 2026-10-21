@@ -1391,13 +1391,12 @@ type = "military"
 requires_civic = "State Workforce"
 effects = [{ kind = "unit_maintenance_delta", amount = -1 }]   # -1 gold upkeep per unit
 
-# Civ 6: Ancient and Classical wonders. Wonders arrive in #116 P6 with no era
-# column yet, so this targets every wonder; P6 restates it if wonders gain an era.
+# Civ 6: Ancient and Classical wonders (the wonder's `era` column, #116 P6).
 [policies.Corvee]
 type = "economic"
 requires_civic = "State Workforce"
 obsolete_with = "Divine Right"
-effects = [{ kind = "production_percent", target = { kind = "wonder" }, percent = 15 }]
+effects = [{ kind = "production_percent", target = { kind = "wonder", wonder_era = ["Ancient", "Classical"] }, percent = 15 }]
 
 [policies.Colonization]
 type = "economic"
@@ -1495,10 +1494,11 @@ type = "military"
 requires_civic = "Divine Right"
 effects = [{ kind = "production_percent", target = { unit_class = ["light_cavalry", "heavy_cavalry"] }, percent = 50 }]
 
+# Civ 6: Ancient to Renaissance wonders (every era of the tree).
 [policies."Gothic Architecture"]
 type = "economic"
 requires_civic = "Divine Right"
-effects = [{ kind = "production_percent", target = { kind = "wonder" }, percent = 15 }]
+effects = [{ kind = "production_percent", target = { kind = "wonder", wonder_era = ["Ancient", "Classical", "Medieval", "Renaissance"] }, percent = 15 }]
 
 # --- Buildings (issue #7) ---------------------------------------------------
 # One table per building: `production_cost` is what a city pays for it, and
@@ -1685,8 +1685,23 @@ production = 2
 #   adjacency            rows { amount, per (default 1), <one source> } (§1.2);
 #                        each row floored separately: floor(count/per)*amount
 #   on                   terrain mapping for the district's own tile; absent = land
+#                        (present = exactly what it says: spell "flat land" with
+#                        the land bases, since water is flat too)
 #   adjacent_to_city_center   true = required, false = forbidden, absent = either
 #   requires_adjacent    sources of which at least one must hold (§2)
+#   requires_adjacent_all  sources of which every one must hold (#116 P6)
+#   kind                 "district" (default) or "wonder" (#116 P6, progression
+#                        design §9). A wonder declares era (one of [research]'s
+#                        eras), counts_toward_limit = false, cost_model =
+#                        "fixed", max_per_city = 1, and no adjacency_yield,
+#                        adjacency or discount_percent (the loader raises
+#                        otherwise); it is world-unique (refused once any player
+#                        completed it), and when it completes every other copy is
+#                        removed, its city refunded [wonders] consolation_percent
+#                        of that copy's locked cost. Its one-shot effects
+#                        (free_units, free_tech, free_civic, free_population)
+#                        fire once, on completion.
+#   era                  a wonder's era (wonders only)
 #   science, culture, gold, faith, food, production
 #                        optional flat per-turn yields of the complete district
 #                        (multiples of 0.1, default 0; #116, read by city_yield);
@@ -1700,8 +1715,11 @@ production = 2
 #                        a complete district in the owner's economy phase (#116 P5)
 # Sources: terrain = {bases/relief/features/resources} (terrain_model `on`
 # form), improvement = [...], district = [...] | "any" ("City Center" names a
-# city centre; "any" = any district or centre), river_on_tile = true
-# (adjacency only), river_edge_not_shared_with_center = true (requires_adjacent only).
+# city centre; "any" = any district or centre, never a wonder; a list names
+# districts only), wonder = "any" (every adjacent COMPLETE wonder, #116 P6),
+# river_on_tile = true (a tile test: a river along any edge of the tile; in
+# adjacency rows and, since #116 P6, in requires lists),
+# river_edge_not_shared_with_center = true (requires lists only).
 [districts]
 population_per_district = 3   # specialty districts allowed = 1 + floor((pop - 1) / 3)
 cost_progress_factor = 9      # cost = base * (1 + 9 * P); P = the larger of techs known / techs and civics known / civics (#116 P2, P4)
@@ -1744,6 +1762,7 @@ cost_model = "discounted"
 discount_percent = 40
 adjacency_yield = "culture"
 adjacency = [
+    { amount = 2, wonder = "any" },   # Civ 6: +2 per adjacent wonder (#116 P6)
     { amount = 2, district = ["Entertainment Complex"] },
     { amount = 1, per = 2, district = "any" },
     { amount = 1, district = ["Government Plaza"] },
@@ -1837,6 +1856,199 @@ requires_adjacent = [
 ]
 water_housing_min = 6
 water_housing_boost = 2
+
+# --- Wonders (#116 P6, docs/progression_design.md §9) -------------------------
+# District-registry tables with kind = "wonder" (see the district columns
+# above). Civ 6 Gathering Storm costs (docs/civ6_progression_reference.md §5);
+# requirements moved where a cut tech or civic held them; placement in the
+# district vocabulary. "Flat" is spelled with the land bases (water is flat).
+# Yields and housing are columns of the complete wonder in its city; effects
+# hold in its city (scope "city", the district default) or, with scope =
+# "player", in every city of its owner. Civ 6's "+2 tiles on completion" and
+# the amenity effects are not implemented (borders and amenities, #96).
+
+# Civ 6: Desert only, +1 Builder and a charge; here Desert or Plains and three
+# Workers (Erik: "quite a few builders"; design §9.4).
+[districts.Pyramids]
+kind = "wonder"
+era = "Ancient"
+production_cost = 220
+requires_tech = "Masonry"
+cost_model = "fixed"
+counts_toward_limit = false
+max_per_city = 1
+on = { relief = ["flat"], bases = ["Desert", "Plains"] }
+culture = 2
+effects = [{ kind = "free_units", units = [{ unit = "Worker", count = 3 }] }]
+
+# Civ 6: +2 faith and a Great Prophet; no prophets here, so faith 4.
+[districts.Stonehenge]
+kind = "wonder"
+era = "Ancient"
+production_cost = 180
+requires_tech = "Astrology"
+cost_model = "fixed"
+counts_toward_limit = false
+max_per_city = 1
+on = { relief = ["flat"], bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] }
+requires_adjacent = [{ terrain = { resources = ["Stone"] } }]
+faith = 4
+
+[districts."Hanging Gardens"]
+kind = "wonder"
+era = "Ancient"
+production_cost = 180
+requires_tech = "Irrigation"
+cost_model = "fixed"
+counts_toward_limit = false
+max_per_city = 1
+requires_adjacent = [{ river_on_tile = true }]
+housing = 2
+effects = [{ kind = "growth_percent", percent = 15, scope = "player" }]
+
+# Civ 6: next to a Camp; here next to one of the camp and pasture resources.
+[districts."Temple of Artemis"]
+kind = "wonder"
+era = "Ancient"
+production_cost = 180
+requires_tech = "Archery"
+cost_model = "fixed"
+counts_toward_limit = false
+max_per_city = 1
+requires_adjacent = [{ terrain = { resources = ["Cattle", "Sheep", "Deer"] } }]
+food = 4
+housing = 3
+
+# Civ 6: Mysticism and a great-person discount; here State Workforce and a
+# free civic (design §9.4).
+[districts.Oracle]
+kind = "wonder"
+era = "Classical"
+production_cost = 290
+requires_civic = "State Workforce"
+cost_model = "fixed"
+counts_toward_limit = false
+max_per_city = 1
+on = { relief = ["hills"] }
+culture = 2
+faith = 2
+effects = [{ kind = "free_civic", count = 1 }]
+
+[districts."Statue of Zeus"]
+kind = "wonder"
+era = "Classical"
+production_cost = 400
+requires_civic = "Military Training"
+cost_model = "fixed"
+counts_toward_limit = false
+max_per_city = 1
+on = { relief = ["flat"], bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] }
+requires_adjacent = [{ district = ["Encampment"] }]
+gold = 3
+effects = [
+    { kind = "free_units", units = [{ unit = "Spearman", count = 3 }, { unit = "Archer", count = 3 }] },
+    { kind = "production_percent", target = { unit_class = ["anti_cavalry"] }, percent = 50, scope = "player" },
+]
+
+# Civ 6: +2 science and boosts; here +3 science and one free tech.
+[districts."Great Library"]
+kind = "wonder"
+era = "Classical"
+production_cost = 400
+requires_civic = "Recorded History"
+cost_model = "fixed"
+counts_toward_limit = false
+max_per_city = 1
+on = { relief = ["flat"], bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] }
+requires_adjacent = [{ district = ["Campus"] }]
+science = 3
+effects = [{ kind = "free_tech", count = 1 }]
+
+# Civ 6: Shipbuilding; here Celestial Navigation. On Coast (not a Lake),
+# adjacent to land AND to a Harbor.
+[districts.Colossus]
+kind = "wonder"
+era = "Classical"
+production_cost = 400
+requires_tech = "Celestial Navigation"
+cost_model = "fixed"
+counts_toward_limit = false
+max_per_city = 1
+on = { bases = ["Coast"] }
+requires_adjacent_all = [
+    { terrain = { bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] } },
+    { district = ["Harbor"] },
+]
+gold = 3
+effects = [
+    { kind = "trade_route_capacity", amount = 1, scope = "player" },
+    { kind = "free_units", units = [{ unit = "Trader", count = 1 }] },
+]
+
+# Its +2 loyalty to own city centres within 6 tiles is consumed from #116 P7.
+[districts.Colosseum]
+kind = "wonder"
+era = "Classical"
+production_cost = 400
+requires_civic = "Games and Recreation"
+cost_model = "fixed"
+counts_toward_limit = false
+max_per_city = 1
+on = { relief = ["flat"], bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] }
+requires_adjacent = [{ district = ["Entertainment Complex"] }]
+culture = 2
+effects = [{ kind = "loyalty", amount = 2, range = 6, scope = "player" }]
+
+# Civ 6: "the same defensive bonuses as a Fort"; here +6 to its city's defence.
+[districts.Alhambra]
+kind = "wonder"
+era = "Medieval"
+production_cost = 710
+requires_tech = "Castles"
+cost_model = "fixed"
+counts_toward_limit = false
+max_per_city = 1
+on = { relief = ["hills"] }
+requires_adjacent = [{ district = ["Encampment"] }]
+effects = [
+    { kind = "policy_slots", military = 1, scope = "player" },
+    { kind = "combat_strength", applies_to = ["city"], amount = 6, scope = "city" },
+]
+
+[districts."Angkor Wat"]
+kind = "wonder"
+era = "Medieval"
+production_cost = 710
+requires_civic = "Medieval Faires"
+cost_model = "fixed"
+counts_toward_limit = false
+max_per_city = 1
+requires_adjacent = [{ district = ["Aqueduct"] }]
+faith = 2
+effects = [
+    { kind = "free_population", amount = 1, all_cities = true },
+    { kind = "housing_if_districts", amount = 1, min_districts = 0, scope = "player" },
+]
+
+# Civ 6: Printing; here Divine Right (civic).
+[districts."Forbidden City"]
+kind = "wonder"
+era = "Renaissance"
+production_cost = 920
+requires_civic = "Divine Right"
+cost_model = "fixed"
+counts_toward_limit = false
+max_per_city = 1
+on = { relief = ["flat"], bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] }
+adjacent_to_city_center = true
+culture = 5
+effects = [{ kind = "policy_slots", wildcard = 1, scope = "player" }]
+
+# Losing the race (design §9.2; Erik's March notes: soften the lost race):
+# the share of a removed copy's locked cost refunded into its city's
+# production pool, integer floor. Read only by civulator/district_model.py.
+[wonders]
+consolation_percent = 50
 
 [training]
 episodes = 64

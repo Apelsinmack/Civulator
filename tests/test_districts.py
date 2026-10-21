@@ -811,14 +811,25 @@ def test_escalation_is_integer_and_fixed_never_scales(monkeypatch):
     A player with no techs and no civics is (0, techs in the tree), so it
     pays the base (restated by #116 P2 from `game_progress(None) == (0, 1)`,
     the pre-tree stub; a tie of the two fractions is the tech fraction since
-    P4). Breaks if float arithmetic or scaling of fixed creeps in."""
+    P4). Restated by #116 P6 (design "v2 fixes", the pre-existing tests
+    table) from "every entry escalates": every `kind == "district"` entry
+    escalates, and every `fixed` entry -- every wonder, which the loader
+    holds to "fixed" -- never does. Breaks if float arithmetic or scaling
+    of fixed creeps in, or a wonder's cost escalates."""
     assert districts_mod.game_progress(_player_with_completed([])) == (0, len(TECHS))
     monkeypatch.setattr(districts_mod, "game_progress", lambda player: (1, 7))
     factor = district_model.COST_PROGRESS_FACTOR
     player = _player_with_completed([])
+    kinds = {spec.kind for spec in DISTRICTS.values()}
+    assert district_model.KIND_DISTRICT in kinds, "fixture: some district is configured"
     for name, spec in DISTRICTS.items():
-        expected = spec.production_cost * (7 + factor * 1) // 7
-        assert district_cost(player, name) == expected
+        if spec.kind == district_model.KIND_DISTRICT:
+            expected = spec.production_cost * (7 + factor * 1) // 7
+            assert district_cost(player, name) == expected, name
+        if spec.cost_model == "fixed":
+            assert district_cost(player, name) == spec.production_cost, name
+        if spec.kind == district_model.KIND_WONDER:
+            assert spec.cost_model == "fixed", name
     reg = district_model.parse_districts({
         **{k: v for k, v in CFG["districts"].items() if not isinstance(v, dict)},
         "Port": {"production_cost": 50, "cost_model": "fixed"},

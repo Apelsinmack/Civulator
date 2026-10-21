@@ -5,6 +5,7 @@ from ..effects import (
     ITEM_BUILDING,
     ITEM_UNIT,
     KIND_CITY_RANGED_STRENGTH,
+    KIND_GROWTH_PERCENT,
     KIND_PRODUCTION_PERCENT,
     active_effects,
     combat_strength_amounts,
@@ -242,7 +243,7 @@ class City:
         """(item kind, type name) of what the city is producing, the input of
         a `production_percent` target (`effects.target_matches`); None when
         it produces nothing. A district's kind is its registry entry's
-        (`district` or, from #116 P6, `wonder`)."""
+        (`district` or `wonder`, #116 P6)."""
         production = self.current_production
         if not production:
             return None
@@ -281,12 +282,28 @@ class City:
         return max(1, base * (100 + self.production_percent()) // 100)
 
     def _growth_percent(self):
-        """STUB for #116 P6 (design §3, "v2 fixes" yields): where the summed
-        `growth_percent` effects in force for this city will scale the growth
-        bucket (`food_net * housing_percent * growth_share * (100 + this) //
-        10000`). The kind is validated since P4; nothing reads it yet and
-        this adds nothing."""
-        return 0
+        """The summed `percent` of the `growth_percent` effects in force for
+        this city (#116 P6; the Hanging Gardens' +15, scope player, reaches
+        every city of its owner). Summed, then applied once in
+        `growth_bucket_gain` (v2 fixes, N3)."""
+        return percent_sum(active_effects(self.player, self, KIND_GROWTH_PERCENT))
+
+    def _growth_share(self):
+        """Percent of the growth a city keeps under its loyalty band. STUB:
+        100 until loyalty exists (#116 P7, design §8.4, which scales growth
+        here, at its consumer)."""
+        return 100
+
+    def growth_bucket_gain(self, food_net, housing_percent):
+        """What a non-negative `food_net` adds to the growth bucket this turn,
+        in hundredths of food (progression design "v2 fixes", yields):
+        `food_net * housing_percent * growth_share * (100 + growth_percent)
+        // 10000` -- the housing band (#88), the loyalty share (100 until
+        #116 P7) and the summed `growth_percent` effects, one integer floor.
+        The one consumer of `growth_percent`. With no effect and full loyalty
+        it is `food_net * housing_percent`, the v0.7 bucket exactly."""
+        return (food_net * housing_percent * self._growth_share()
+                * (100 + self._growth_percent()) // 10000)
 
     def get_growth_threshold(self):
         """Food surplus needed to grow to next population level.
@@ -319,9 +336,10 @@ class City:
         percent = growth_percent(housing(self) - 10 * self.population)
 
         # `food_surplus` is the growth bucket in HUNDREDTHS of food (exact
-        # integer arithmetic; a 1-food surplus at 25 % still accumulates).
+        # integer arithmetic; a 1-food surplus at 25 % still accumulates),
+        # raised by the growth_percent effects in force (#116 P6).
         if food_net >= 0:
-            self.food_surplus += food_net * percent
+            self.food_surplus += self.growth_bucket_gain(food_net, percent)
             if food_net > 0 and percent < 100:
                 game_env.episode_stats[self.player.player_index]["growth_slowed_turns"] += 1
         else:
@@ -467,6 +485,13 @@ class City:
     def set_owner(self, new_player):
         """Transfer city ownership to a new player -- the one place a city
         changes hands (`GameEnvironment._capture_city` calls it).
+
+        Its districts and wonders go with it as they are (#86; #116 P6): a
+        complete wonder's player-scoped effects serve the new owner from now
+        on (`effects.active_effects` reads the owner's cities), and nothing
+        fires -- one-shot effects fire only in
+        `GameEnvironment.complete_district`, which a complete wonder never
+        reaches again.
 
         Borders design §2.3: the city keeps all its tiles and they change
         player with it — `Map.city_changed_player` moves the per-player tile

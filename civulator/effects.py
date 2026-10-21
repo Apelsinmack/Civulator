@@ -37,7 +37,9 @@ entries of every building and every complete district (wonders are
 districts, #116 P6) in the player's cities (`player.cities` order, then
 `city.buildings` / `city.districts` order); and, when a city is given, that
 city's city-scoped building entries and complete-district entries in the
-same order.
+same order. One-shot entries (ONE_SHOT_KINDS) are never in force: they fire
+once, when their wonder completes (`GameEnvironment._one_shot_effects`,
+#116 P6), and are read there through `effects_of`.
 
 Pure: reads parsed specs and live state; mutates nothing (the parse memo
 below caches validated entries per raw list, never game state).
@@ -90,7 +92,7 @@ KIND_FREE_CIVIC = "free_civic"
 KIND_FREE_POPULATION = "free_population"
 
 # The one consumer of each kind (design §3, "consumed by"). The kinds wired in
-# #116 P4 and P5 name their reader; the others are validated now and name the
+# #116 P4-P6 name their reader; the others are validated now and name the
 # patch whose consumer reads them -- each has a documented stub where it will
 # live.
 CONSUMERS = {
@@ -113,20 +115,21 @@ CONSUMERS = {
     KIND_TRADE_ROUTE_CAPACITY: "game/trade.py route_capacity",
     KIND_ROUTE_YIELD: "game/trade.py pair_yields (the route term of game/yields.py city_yield)",
     KIND_LOYALTY: "#116 P7: loyalty_sources (game/yields.py _loyalty_sources stub)",
-    KIND_GROWTH_PERCENT: "#116 P6: the growth bucket (City._growth_percent stub)",
-    KIND_FREE_UNITS: "#116 P6: complete_district one-shots (GameEnvironment._one_shot_effects stub)",
-    KIND_FREE_TECH: "#116 P6: complete_district one-shots (GameEnvironment._one_shot_effects stub)",
-    KIND_FREE_CIVIC: "#116 P6: complete_district one-shots (GameEnvironment._one_shot_effects stub)",
-    KIND_FREE_POPULATION: "#116 P6: complete_district one-shots (GameEnvironment._one_shot_effects stub)",
+    KIND_GROWTH_PERCENT: "game/city.py City.growth_bucket_gain (the growth bucket of process_turn)",
+    KIND_FREE_UNITS: "game/environment.py GameEnvironment._one_shot_effects (complete_district): "
+                     "each unit through City.place_or_queue_unit",
+    KIND_FREE_TECH: "game/environment.py GameEnvironment._one_shot_effects (complete_district): "
+                    "the current or default tech completed at once",
+    KIND_FREE_CIVIC: "game/environment.py GameEnvironment._one_shot_effects (complete_district): "
+                     "the current or default civic completed at once",
+    KIND_FREE_POPULATION: "game/environment.py GameEnvironment._one_shot_effects "
+                          "(complete_district): population added, assign_tiles re-run",
 }
 KINDS = tuple(CONSUMERS)
 # Kinds validated since P4 whose consumer lands later (the stubs above).
-DEFERRED_KINDS = frozenset({
-    KIND_LOYALTY, KIND_GROWTH_PERCENT,
-    KIND_FREE_UNITS, KIND_FREE_TECH, KIND_FREE_CIVIC, KIND_FREE_POPULATION,
-})
+DEFERRED_KINDS = frozenset({KIND_LOYALTY})
 # One-shot kinds fire once when a wonder completes (design §3, §9.3), so they
-# belong on district-registry entries only.
+# belong on `kind = "wonder"` tables only, and are never in force.
 ONE_SHOT_KINDS = frozenset({KIND_FREE_UNITS, KIND_FREE_TECH, KIND_FREE_CIVIC,
                             KIND_FREE_POPULATION})
 # Kinds whose consumer takes no city: a city-scoped entry would never be read.
@@ -153,7 +156,7 @@ ITEM_UNIT = "unit"
 ITEM_BUILDING = "building"
 ITEM_KINDS = (ITEM_UNIT, ITEM_BUILDING, *district_model.KINDS)
 _TARGET_KEYS = ("unit", "unit_class", "unit_era", "building", "in_district",
-                "district", "kind")
+                "district", "kind", "wonder_era")
 
 
 @dataclass(frozen=True)
@@ -255,7 +258,8 @@ def _parse_city_yield(raw, where, ctx):
 
 def _parse_target(target, where, ctx):
     """A `production_percent` target: a table of _TARGET_KEYS, every key a
-    condition the produced item must meet. Raises if a name is unknown or
+    condition the produced item must meet (`wonder_era`, #116 P6: the
+    wonder's `era` column is one of these). Raises if a name is unknown or
     the conditions exclude every kind of item (e.g. a unit class AND a
     building)."""
     if not isinstance(target, dict) or not target:
@@ -288,6 +292,10 @@ def _parse_target(target, where, ctx):
     if "kind" in target:
         out["kind"] = _name(target["kind"], ITEM_KINDS, "item kind", f"{where} kind")
         kinds &= {out["kind"]}
+    if "wonder_era" in target:
+        out["wonder_era"] = _names(target["wonder_era"], research_model.ERAS, "era",
+                                   f"{where} wonder_era")
+        kinds &= {district_model.KIND_WONDER}
     if not kinds:
         raise ValueError(f"{where}: the conditions {sorted(target)} exclude every item")
     return MappingProxyType(out)
@@ -451,9 +459,9 @@ def parse_effect(entry, source_kind, source_name, districts=None):
     city (policy, government, civic, tech) or on a kind whose consumer takes
     no city; a `city_yield` effect on a building (a building says it with a
     column); a `policy_slots` effect on a policy (a card cannot change the
-    slots it is fitted into); a one-shot kind anywhere but on a district
-    (wonder) table. `districts` is the registry names resolve against
-    (default: district_model.DISTRICTS).
+    slots it is fitted into); a one-shot kind anywhere but on a `kind =
+    "wonder"` table of the district registry (#116 P6). `districts` is the
+    registry names resolve against (default: district_model.DISTRICTS).
     """
     if source_kind not in SOURCES:
         raise ValueError(f"unknown effect source {source_kind!r}, expected one of {SOURCES}")
@@ -474,11 +482,14 @@ def parse_effect(entry, source_kind, source_name, districts=None):
         raise ValueError(f"{where}: a building declares yields as columns, not city_yield effects")
     if kind == KIND_POLICY_SLOTS and source_kind == SOURCE_POLICY:
         raise ValueError(f"{where}: a policy card cannot change the policy slots")
-    if kind in ONE_SHOT_KINDS and source_kind != SOURCE_DISTRICT:
+    registry = district_model.DISTRICTS if districts is None else districts
+    if kind in ONE_SHOT_KINDS and (
+            source_kind != SOURCE_DISTRICT or source_name not in registry
+            or registry[source_name].kind != district_model.KIND_WONDER):
         raise ValueError(f"{where}: {kind} fires once on a wonder's completion; "
-                         f"it belongs on a district-registry table")
+                         f"it belongs on a kind = \"wonder\" table")
     raw = {k: v for k, v in entry.items() if k not in ("kind", "scope")}
-    ctx = {"districts": district_model.DISTRICTS if districts is None else districts}
+    ctx = {"districts": registry}
     attrs = _PARSERS[kind](raw, where, ctx)
     return Effect(kind=kind, scope=scope, source=(source_kind, source_name),
                   attrs=MappingProxyType(attrs))
@@ -561,6 +572,15 @@ def _validate_registries():
             parse_effects(spec.effects, SOURCE_DISTRICT, name)
 
 
+def one_shot_effects(district_type):
+    """The one-shot entries (ONE_SHOT_KINDS) of district-registry entry
+    `district_type`, in config order: what `GameEnvironment._one_shot_effects`
+    fires, once, when that wonder completes (#116 P6). Never part of
+    `active_effects`."""
+    return tuple(e for e in effects_of(SOURCE_DISTRICT, district_type)
+                 if e.kind in ONE_SHOT_KINDS)
+
+
 _validate_registries()
 
 
@@ -637,7 +657,8 @@ def _gather(player, city, kind, policies):
 
     def take(source_kind, name, scope):
         for effect in effects_of(source_kind, name):
-            if effect.scope == scope and (kind is None or effect.kind == kind):
+            if (effect.scope == scope and effect.kind not in ONE_SHOT_KINDS
+                    and (kind is None or effect.kind == kind)):
                 out.append(effect)
 
     if player.government is not None:
@@ -708,7 +729,8 @@ def target_matches(target, item_kind, name):
     """Whether a `production_percent` target holds for the item being
     produced: `item_kind` one of ITEM_KINDS (a district-registry entry's
     `kind` for a district or wonder), `name` its type. Every condition the
-    target names must hold."""
+    target names must hold; a wonder's era is read through
+    `game/districts.district_spec` (#116 P6)."""
     if "kind" in target and target["kind"] != item_kind:
         return False
     if item_kind == ITEM_UNIT:
@@ -718,15 +740,21 @@ def target_matches(target, item_kind, name):
             return False
         if "unit_era" in target and unit_model.UNIT_ERA.get(name) not in target["unit_era"]:
             return False
-        return not any(k in target for k in ("building", "in_district", "district"))
+        return not any(k in target for k in ("building", "in_district", "district",
+                                             "wonder_era"))
     if item_kind == ITEM_BUILDING:
         if "building" in target and name not in target["building"]:
             return False
         if ("in_district" in target
                 and unit_model.BUILDING_REQUIRES_DISTRICT.get(name) not in target["in_district"]):
             return False
-        return not any(k in target for k in ("unit", "unit_class", "unit_era", "district"))
+        return not any(k in target for k in ("unit", "unit_class", "unit_era", "district",
+                                             "wonder_era"))
     if "district" in target and name not in target["district"]:
+        return False
+    if "wonder_era" in target and (
+            item_kind != district_model.KIND_WONDER
+            or _districts().district_spec(name).era not in target["wonder_era"]):
         return False
     return not any(k in target for k in ("unit", "unit_class", "unit_era", "building",
                                          "in_district"))

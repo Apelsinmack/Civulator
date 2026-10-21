@@ -8,7 +8,15 @@ from .map import Map
 from .. import hexmath, mapgen
 from ..mapgen.starts import StartPlacementError
 from ..rng import PortableRNG
-from ..effects import loadout_is_legal, slot_counts
+from ..effects import (
+    KIND_FREE_CIVIC,
+    KIND_FREE_POPULATION,
+    KIND_FREE_TECH,
+    KIND_FREE_UNITS,
+    loadout_is_legal,
+    one_shot_effects,
+    slot_counts,
+)
 from ..research_model import (
     CIVICS,
     GOVERNMENTS,
@@ -27,8 +35,12 @@ from .defaults import (
 )
 from .districts import (
     YIELD_NAMES as DISTRICT_YIELD_NAMES, District, can_place_district, district_cost,
+    is_wonder,
 )
-from ..district_model import REMOVABLE_FEATURES as DISTRICT_REMOVABLE_FEATURES
+from ..district_model import (
+    CONSOLATION_PERCENT as WONDER_CONSOLATION_PERCENT,
+    REMOVABLE_FEATURES as DISTRICT_REMOVABLE_FEATURES,
+)
 from . import territory
 from .territory import (
     FOUNDING_RING, NEUTRAL, border_cost_function, choose_claim_tile,
@@ -263,6 +275,10 @@ class GameEnvironment:
                 "gold_spent_purchases": 0,
                 "faith_spent_purchases": 0,
                 "trade_routes_established": 0,
+                # Wonders (#116 P6): wonders this player completed, and its
+                # placed copies removed because another city completed one.
+                "wonders_completed": 0,
+                "wonder_races_lost": 0,
                 # Summed adjacency score per yield, per city-round (#86 s5)
                 **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
             }
@@ -1062,16 +1078,12 @@ class GameEnvironment:
     def remove_city(self, city):
         """The ONLY way a city ceases to exist without being captured
         (borders design §2.3): its tiles become neutral and its districts
-        are deleted with it (issue #86). Every trade route touching it ends
-        (#116 P5, `trade.end_routes_touching`): a route from another city
-        returns its Trader there, one from this city is lost."""
-        if city.districts:
-            for district in city.districts:
-                tile = self.map.get_tile(district.coordinates)
-                if tile is not None and tile.district is district:
-                    tile.district = None
-            city.districts = []
-            self.map.district_epoch += 1
+        are deleted with it (issue #86), each through `_remove_district`.
+        Every trade route touching it ends (#116 P5,
+        `trade.end_routes_touching`): a route from another city returns its
+        Trader there, one from this city is lost."""
+        for district in list(city.districts):
+            self._remove_district(city, district)
         for pos in self.map.tiles_of_city(city.city_id):
             self.map.release(pos, city)
         tile = self.map.get_tile(city.coordinates)
@@ -1151,11 +1163,37 @@ class GameEnvironment:
         city.current_production = {"type": "district", "district_type": district_type}
         return True
 
+    def _remove_district(self, city, district):
+        """Delete one placed district of `city` (#116 P6): the tile's link is
+        freed, the district leaves `city.districts`, `Map.district_epoch`
+        bumps and the city re-runs `assign_tiles` (the tile is workable
+        again). With `place_district` the only writer of `Tile.district` /
+        `City.districts`; called for a lost wonder race and by `remove_city`.
+        Touches nothing else: the caller settles production and refunds."""
+        tile = self.map.get_tile(district.coordinates)
+        if tile is not None and tile.district is district:
+            tile.district = None
+        city.districts = [d for d in city.districts if d is not district]
+        self.map.district_epoch += 1
+        city.assign_tiles(self)
+
     def complete_district(self, city, district):
-        """The one place a district finishes (progression design, Systems):
-        marks `district` complete and clears the city's production. Called by
-        `City.process_turn` once the locked cost is paid; the payment stays
-        there. One-shot wonder effects will hang here (#116 P6).
+        """The one place a district finishes (progression design §9.3,
+        Systems): marks `district` complete and clears the city's production.
+        Called by `City.process_turn` once the locked cost is paid; the
+        payment stays there.
+
+        When the district is a wonder (#116 P6, design §9.1-§9.3, "v2 fixes"
+        Wonders), it then settles the race (`_settle_wonder_race`: every other
+        placed copy is removed, its city refunded `[wonders]
+        consolation_percent` of that copy's locked cost) and counts
+        `episode_stats["wonders_completed"]`. Every completion then fires the
+        district's one-shot effects (`_one_shot_effects`; only wonder tables
+        may carry them) -- exactly once, because this is the only completion
+        path and a second call raises; never on capture (`set_owner` moves a
+        complete district as it is) or on load. When a free civic was
+        granted or the owner's policy slots changed (a `policy_slots`
+        wonder), the government and loadout defaults re-run for the owner.
 
         Raises ValueError for a district that is not the city's or is
         already complete, so nothing can complete twice.
@@ -1164,17 +1202,72 @@ class GameEnvironment:
             raise ValueError(f"complete_district: {district.type} is not a district of {city.name}")
         if district.complete:
             raise ValueError(f"complete_district: {district.type} at {district.coordinates} is already complete")
+        player = city.player
+        slots_before = slot_counts(player)
         district.complete = True
         city.current_production = None
+        if is_wonder(district.type):
+            self._settle_wonder_race(city, district)
+            self.episode_stats[player.player_index]["wonders_completed"] += 1
+        civic_granted = self._one_shot_effects(city, district)
+        if civic_granted or slot_counts(player) != slots_before:
+            self._government_and_loadout_defaults(player, refit=True)
+
+    def _settle_wonder_race(self, city, wonder):
+        """`wonder` just completed in `city`: remove every other placed copy
+        of its type, in every city in `city_by_id` order (the race is decided
+        inside the completing player's turn, so turn order decides a
+        same-round tie -- accepted, design "v2 fixes"). Each removed copy
+        refunds `[wonders] consolation_percent` of its locked cost (integer
+        floor) into its city's `production` pool, its city's
+        `current_production` is cleared if it pointed at that wonder, and its
+        owner's `episode_stats["wonder_races_lost"]` counts it. Removal goes
+        through `_remove_district`."""
+        for city_id in sorted(self.city_by_id):
+            other = self.city_by_id[city_id]
+            copies = [d for d in other.districts if d.type == wonder.type and d is not wonder]
+            for copy in copies:
+                if other.current_production == {"type": "district", "district_type": copy.type}:
+                    other.current_production = None
+                self._remove_district(other, copy)
+                other.production += copy.cost * WONDER_CONSOLATION_PERCENT // 100
+                self.episode_stats[other.player.player_index]["wonder_races_lost"] += 1
 
     def _one_shot_effects(self, city, district):
-        """STUB for #116 P6 (design §3, §9.3): where `complete_district` will
-        fire a wonder's one-shot effects -- `free_units` (placed through
-        `complete_unit_production`), `free_tech` / `free_civic` (completed at
-        once, outside the one-per-turn rule), `free_population` -- exactly
-        once, never on load or capture. The kinds are validated since P4
-        (only on district-registry tables); nothing fires yet."""
-        return None
+        """Fire the one-shot effects of `district` (design §3, §9.3; their one
+        consumer), in config order, for its city's owner -- called only by
+        `complete_district`:
+
+        - `free_units`: each unit through `City.place_or_queue_unit` (queued
+          in `Player.queued_units` when the city has no room);
+        - `free_tech` / `free_civic`: `count` times, the current tech / civic
+          (or the engine default's pick) completes at once, at no cost,
+          outside the one-per-turn rule (`_grant_tech` / `_grant_civic`,
+          which share their completion step with `resolve_research` /
+          `resolve_civic`); nothing when the tree is exhausted;
+        - `free_population`: `amount` added to the city -- to every city of
+          the owner with `all_cities` -- each re-running `assign_tiles`.
+
+        Returns True if a civic was granted (the caller re-runs the loadout
+        default)."""
+        player = city.player
+        civic_granted = False
+        for effect in one_shot_effects(district.type):
+            if effect.kind == KIND_FREE_UNITS:
+                for unit_type, count in effect["units"]:
+                    for _ in range(count):
+                        city.place_or_queue_unit(unit_type, self)
+            elif effect.kind == KIND_FREE_TECH:
+                for _ in range(effect["count"]):
+                    self._grant_tech(player)
+            elif effect.kind == KIND_FREE_CIVIC:
+                for _ in range(effect["count"]):
+                    civic_granted = self._grant_civic(player) is not None or civic_granted
+            elif effect.kind == KIND_FREE_POPULATION:
+                for grown in (list(player.cities) if effect["all_cities"] else [city]):
+                    grown.population += effect["amount"]
+                    grown.assign_tiles(self)
+        return civic_granted
 
     # --- Improvements ---
 
@@ -1245,18 +1338,40 @@ class GameEnvironment:
         `episode_stats["techs_researched"]`. At most one tech per call, so
         one per turn (Civ 6); the overflow stays in the pool. Returns the
         tech completed, or None."""
-        if player.current_tech is None:
-            player.current_tech = default_research(player)
-        tech = player.current_tech
+        tech = self._research_target(player)
         if tech is None:
             return None  # every tech is known
         cost = 10 * scaled_tech_cost(tech)
         if player.science < cost:
             return None
         player.science -= cost
+        self._complete_tech(player, tech)
+        return tech
+
+    def _research_target(self, player):
+        """`player.current_tech`, set first to the engine default's pick
+        (`defaults.default_research`) when none is chosen; None once every
+        tech is known."""
+        if player.current_tech is None:
+            player.current_tech = default_research(player)
+        return player.current_tech
+
+    def _complete_tech(self, player, tech):
+        """The one completion step of a tech: append it to `player.techs`,
+        clear `current_tech`, count it in `episode_stats["techs_researched"]`.
+        `resolve_research` pays first; a free tech does not."""
         player.techs.append(tech)
         player.current_tech = None
         self.episode_stats[player.player_index]["techs_researched"] += 1
+
+    def _grant_tech(self, player):
+        """A free tech (#116 P6, the `free_tech` one-shot): the current tech,
+        or the default's pick, completes now at no cost -- the science pool
+        is untouched and the turn's own research still resolves in the
+        economy phase. Returns the tech, or None when every tech is known."""
+        tech = self._research_target(player)
+        if tech is not None:
+            self._complete_tech(player, tech)
         return tech
 
     # --- Civics, governments, policies (#116 P4, docs/progression_design.md §5) ---
@@ -1280,18 +1395,41 @@ class GameEnvironment:
         `episode_stats["civics_researched"]`. At most one civic per call, so
         one per turn; the overflow stays in the pool. Returns the civic
         completed, or None."""
-        if player.current_civic is None:
-            player.current_civic = default_civic(player)
-        civic = player.current_civic
+        civic = self._civic_target(player)
         if civic is None:
             return None  # every civic is known
         cost = 10 * scaled_civic_cost(civic)
         if player.culture < cost:
             return None
         player.culture -= cost
+        self._complete_civic(player, civic)
+        return civic
+
+    def _civic_target(self, player):
+        """`player.current_civic`, set first to the engine default's pick
+        (`defaults.default_civic`) when none is chosen; None once every civic
+        is known."""
+        if player.current_civic is None:
+            player.current_civic = default_civic(player)
+        return player.current_civic
+
+    def _complete_civic(self, player, civic):
+        """The one completion step of a civic: append it to `player.civics`,
+        clear `current_civic`, count it in
+        `episode_stats["civics_researched"]`. `resolve_civic` pays first; a
+        free civic does not."""
         player.civics.append(civic)
         player.current_civic = None
         self.episode_stats[player.player_index]["civics_researched"] += 1
+
+    def _grant_civic(self, player):
+        """A free civic (#116 P6, the `free_civic` one-shot): the current
+        civic, or the default's pick, completes now at no cost -- the culture
+        pool is untouched and the turn's own civic still resolves in the
+        economy phase. Returns the civic, or None when every civic is known."""
+        civic = self._civic_target(player)
+        if civic is not None:
+            self._complete_civic(player, civic)
         return civic
 
     def set_government(self, player, name):
@@ -1322,16 +1460,18 @@ class GameEnvironment:
         player.policies = names
         return True
 
-    def _government_and_loadout_defaults(self, player, civic_completed):
+    def _government_and_loadout_defaults(self, player, refit):
         """The engine defaults of design §13 (no agent chooses yet, #99): adopt
         `defaults.default_government` when it names one (set_government
         re-fits the loadout if the slots change), and re-run
-        `defaults.default_loadout` when a civic completed this turn -- the one
-        event that unlocks a card or makes one obsolete."""
+        `defaults.default_loadout` when `refit`: a civic completed this turn
+        -- the one event that unlocks a card or makes one obsolete -- or
+        (from `complete_district`, #116 P6) a wonder granted a civic or
+        changed the policy slots."""
         choice = default_government(player)
         if choice is not None:
             self.set_government(player, choice)
-        if civic_completed:
+        if refit:
             player.policies = default_loadout(player)
 
     # --- Gold: maintenance and bankruptcy (#116 P5, docs/progression_design.md §7.1-§7.2) ---
@@ -1463,7 +1603,7 @@ class GameEnvironment:
         self.episode_stats[player.player_index]["gold_maintenance"] += max(0, treasury - player.gold)
         self.resolve_research(player)
         civic = self.resolve_civic(player)
-        self._government_and_loadout_defaults(player, civic is not None)
+        self._government_and_loadout_defaults(player, refit=civic is not None)
         expire_routes(player, self)
         default_trade(player, self)
 
