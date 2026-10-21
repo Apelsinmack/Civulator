@@ -41,7 +41,7 @@ from ..district_model import (
     CONSOLATION_PERCENT as WONDER_CONSOLATION_PERCENT,
     REMOVABLE_FEATURES as DISTRICT_REMOVABLE_FEATURES,
 )
-from . import territory
+from . import loyalty, territory
 from .territory import (
     FOUNDING_RING, NEUTRAL, border_cost_function, choose_claim_tile,
     run_border_phase,
@@ -256,6 +256,11 @@ class GameEnvironment:
                 "damage_dealt": 0.0,
                 "cities_founded": 0,
                 "cities_captured": 0,
+                # Loyalty flips (#116 P7): cities this player lost / gained
+                # at round end without a fight (GameEnvironment._flip_city).
+                # A flip is never counted in cities_captured.
+                "cities_flipped_out": 0,
+                "cities_flipped_in": 0,
                 "civilians_captured": 0,
                 "tiles_claimed_by_culture": 0,
                 "culture_produced": 0,  # int tenths of a culture point
@@ -828,6 +833,13 @@ class GameEnvironment:
             # Player has no units left, end their turn
             self.next_turn()
 
+        self._update_done()
+
+    def _update_done(self):
+        """The engine's end-of-game test: at most one living player (a player
+        dies in `Player.end_turn` once it holds no city -- after a capture or
+        a loyalty flip alike), or the turn cap passed. Sets `done`; never
+        clears it."""
         alive_players = [p for p in self.players if not p.is_dead]
         if len(alive_players) <= 1:
             self.done = True
@@ -836,7 +848,13 @@ class GameEnvironment:
             self.done = True
 
     def next_turn(self):
-        """Advance to the next player's turn."""
+        """Advance to the next player's turn.
+
+        On the wrap to player 0 the round ends (progression design "v2
+        fixes", Turn order; CLAUDE.md, Round-end phases): `_border_phase`,
+        then `_loyalty_phase`, then the end-of-game test, then `turn_counter
+        += 1` -- every round-end rule computed from the state at the start of
+        its phase, in city-id order, so turn order cannot decide it."""
         self.current_player.end_turn()
 
         self.current_player_index = (self.current_player_index + 1) % len(self.players)
@@ -844,16 +862,13 @@ class GameEnvironment:
 
         if self.current_player_index == 0:
             self._border_phase()
+            self._loyalty_phase()
+            self._update_done()  # the round-end verdict; #116 P9 adds domination here
             self.turn_counter += 1
 
         self.current_player.start_turn()
 
-        alive_players = [p for p in self.players if not p.is_dead]
-        if len(alive_players) <= 1:
-            self.done = True
-
-        if self.turn_counter > self.max_turns:
-            self.done = True
+        self._update_done()
 
     def _border_phase(self):
         """The round-end border phase (borders design §3.3): every existing
@@ -870,6 +885,60 @@ class GameEnvironment:
         for city_id, _ in claims:
             player_index = self.city_by_id[city_id].player.player_index
             self.episode_stats[player_index]["tiles_claimed_by_culture"] += 1
+
+    def _loyalty_phase(self):
+        """The round-end loyalty phase (#116 P7, progression design §8.3 and
+        "v2 fixes"), run only from `next_turn`, after `_border_phase` and
+        before the end-of-game test and `turn_counter += 1` -- the border
+        phase's discipline (borders design §3.3): every existing city takes
+        part, whoever owns it, and everything is computed from the state at
+        the start of the phase, so neither turn order nor a city founded late
+        in the round decides anything. Integers only; no RNG.
+
+        1. Every city's `loyalty.loyalty_delta`, in `city_by_id` order, before
+           any city changes.
+        2. Each city's loyalty becomes `loyalty.clamp(loyalty + delta)`.
+        3. For every city now at `loyalty.LOYALTY_MIN`, its
+           `loyalty.largest_foreign_presser` -- still the phase-start state,
+           since pressure reads population, distance and owners, never
+           loyalty.
+        4. Those with a presser flip, in city-id order, through `_flip_city`;
+           a city nobody else presses stays at the floor with its owner.
+        """
+        cities = [self.city_by_id[city_id] for city_id in sorted(self.city_by_id)]
+        deltas = [loyalty.loyalty_delta(city, self) for city in cities]
+        for city, delta in zip(cities, deltas):
+            city.loyalty = loyalty.clamp(city.loyalty + delta)
+        flips = [(city, loyalty.largest_foreign_presser(city, self))
+                 for city in cities if city.loyalty == loyalty.LOYALTY_MIN]
+        for city, new_player in flips:
+            if new_player is not None:
+                self._flip_city(city, new_player)
+
+    def _flip_city(self, city, new_player):
+        """`city` revolts and joins `new_player` (#116 P7, design §8.5): the
+        loyalty door to `City.set_owner`, beside `_capture_city`'s door of
+        force. The old owner's units on the centre tile are deleted (through
+        `delete_unit`, each counted in its `losses`), then `set_owner` moves
+        the city with its tiles, districts and wonders, resets its loyalty to
+        `[loyalty] captured`, ends every trade route touching it and drops
+        the old owner's queued units for it. `episode_stats` counts
+        `cities_flipped_out` for the old owner and `cities_flipped_in` for
+        the new one (never `cities_captured`).
+
+        No reward: the flip happens at round end, where no step returns one
+        (whether the training objective should see flips is Erik's call).
+        A player left without a city is eliminated by today's path, as after
+        a capture: it plays one more turn and dies in `Player.end_turn`."""
+        old_player = city.player
+        garrison = [unit for unit in self.get_units_at(city.coordinates)
+                    if unit.player is old_player]
+        for unit in garrison:
+            self.delete_unit(unit)
+            self.episode_stats[old_player.player_index]["losses"] += 1
+        city.set_owner(new_player)
+        self.episode_stats[old_player.player_index]["cities_flipped_out"] += 1
+        self.episode_stats[new_player.player_index]["cities_flipped_in"] += 1
 
     # --- Perception (fog of war) ---
     # The engine owns the truth about what each player can see; encoders

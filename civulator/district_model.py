@@ -18,7 +18,7 @@ Validation (design §1.2 and "v3 fixes", config loading):
   (unit_model.YIELD_COLUMNS, issue #116) go through unit_model.to_tenths;
 - `requires_tech` names a tech (research_model, #116 P2), `requires_civic`
   a civic (#116 P4), `maintenance` is a non-negative multiple of 0.1
-  (tenths);
+  (tenths); `loyalty` is a whole number (#116 P7);
 - `effects` is kept raw (a list; #116 P4) and validated by
   civulator/effects.py, which loads after this registry;
 - every `[buildings.*] requires_district` (parsed by unit_model, which loads
@@ -40,7 +40,7 @@ from dataclasses import dataclass
 from .config import CFG
 from . import terrain_model
 from .research_model import ERAS, validate_civic_name, validate_tech_name
-from .unit_model import BUILDING_REQUIRES_DISTRICT, YIELD_COLUMNS, to_tenths
+from .unit_model import BUILDING_REQUIRES_DISTRICT, YIELD_COLUMNS, to_tenths, whole_points
 
 CITY_CENTER = "City Center"
 ANY_DISTRICT = "any"
@@ -73,6 +73,7 @@ _DISTRICT_KEYS = frozenset({
     "requires_tech", "requires_civic", "maintenance",  # #116 P2
     "effects",  # #116 P4
     "kind", "era", "requires_adjacent_all",  # #116 P6
+    "loyalty",  # #116 P7
 })
 
 # What a registry entry is (progression design §9.1): the `kind` column,
@@ -151,6 +152,9 @@ class DistrictSpec:
     # Sources of which EVERY one must hold (#116 P6, the Colossus: land and a
     # Harbor); empty = no requirement. `requires_adjacent` needs any one.
     requires_adjacent_all: tuple = ()
+    # Whole points per round added to its city's loyalty delta once complete
+    # (#116 P7, design §8.2; read by game/loyalty.py); 0 when absent.
+    loyalty: int = 0
 
 
 @dataclass(frozen=True)
@@ -314,6 +318,7 @@ def _parse_district(name, table, district_names):
         era=era,
         requires_adjacent_all=_requirements(table, "requires_adjacent_all", where,
                                             district_names),
+        loyalty=whole_points(table.get("loyalty", 0), f"{where} loyalty"),
     )
 
 

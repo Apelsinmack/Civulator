@@ -29,6 +29,8 @@ from .availability import city_can_build_building, player_can_build
 from .culture import culture
 from .districts import district_spec, district_yields
 from .housing import housing
+from .loyalty import CAPTURED as LOYALTY_CAPTURED, FOUNDED as LOYALTY_FOUNDED
+from .loyalty import growth_share, loyalty_percent
 from .trade import TRADER_UNIT, end_routes_touching, trader_slot_free
 from .yields import city_yield
 from .unit import (
@@ -87,6 +89,12 @@ class City:
         # Placed districts (issue #86), in placement order. Written only by
         # GameEnvironment.place_district / remove_city; travel with the city.
         self.districts = []
+        # Loyalty (#116 P7, design §8.1), an int 0..[loyalty] maximum:
+        # `[loyalty] founded` for a new city (GameEnvironment.create_city is
+        # the engine's one constructor of a City), reset to `captured` by
+        # set_owner, moved only by GameEnvironment._loyalty_phase. Travels
+        # with the city.
+        self.loyalty = LOYALTY_FOUNDED
 
     def get_combat_strength(self, is_attacking=False, target=None):
         """Return the defensive combat strength of the city.
@@ -276,10 +284,13 @@ class City:
         yielding production, `city_yield` effects; #116) -- raised by the
         summed `production_percent` effects toward the current item, applied
         once with one integer floor (`base * (100 + percent) // 100`; the one
-        consumer of that kind, #116 P4), with a floor of 1, so a city can
-        always build, slowly."""
+        consumer of that kind, #116 P4), then scaled once by the city's
+        loyalty band (`loyalty.loyalty_percent`, integer floor; #116 P7),
+        with a floor of 1, so a city can always build, slowly -- even in
+        unrest."""
         base = city_yield(self, "production")
-        return max(1, base * (100 + self.production_percent()) // 100)
+        raised = base * (100 + self.production_percent()) // 100
+        return max(1, raised * loyalty_percent(self) // 100)
 
     def _growth_percent(self):
         """The summed `percent` of the `growth_percent` effects in force for
@@ -288,21 +299,16 @@ class City:
         `growth_bucket_gain` (v2 fixes, N3)."""
         return percent_sum(active_effects(self.player, self, KIND_GROWTH_PERCENT))
 
-    def _growth_share(self):
-        """Percent of the growth a city keeps under its loyalty band. STUB:
-        100 until loyalty exists (#116 P7, design §8.4, which scales growth
-        here, at its consumer)."""
-        return 100
-
     def growth_bucket_gain(self, food_net, housing_percent):
         """What a non-negative `food_net` adds to the growth bucket this turn,
         in hundredths of food (progression design "v2 fixes", yields):
         `food_net * housing_percent * growth_share * (100 + growth_percent)
-        // 10000` -- the housing band (#88), the loyalty share (100 until
-        #116 P7) and the summed `growth_percent` effects, one integer floor.
-        The one consumer of `growth_percent`. With no effect and full loyalty
-        it is `food_net * housing_percent`, the v0.7 bucket exactly."""
-        return (food_net * housing_percent * self._growth_share()
+        // 10000` -- the housing band (#88), the loyalty band's growth share
+        (`loyalty.growth_share`, #116 P7) and the summed `growth_percent`
+        effects, one integer floor. The one consumer of `growth_percent`.
+        With no effect and full loyalty it is `food_net * housing_percent`,
+        the v0.7 bucket exactly."""
+        return (food_net * housing_percent * growth_share(self)
                 * (100 + self._growth_percent()) // 10000)
 
     def get_growth_threshold(self):
@@ -351,10 +357,12 @@ class City:
                     self.population -= 1
                     self.assign_tiles(game_env)
 
-        # Population growth. The 0 % band is a hard cap: no growth even with
-        # a full bucket (the bucket is kept).
+        # Population growth. A 0 % band -- housing's, or loyalty's growth
+        # share (#116 P7, Civ 6 Unrest: "no Population growth") -- is a hard
+        # cap: no growth even with a full bucket (the bucket is kept).
         growth_threshold = 100 * self.get_growth_threshold()
-        if percent > 0 and self.food_surplus >= growth_threshold:
+        if (percent > 0 and growth_share(self) > 0
+                and self.food_surplus >= growth_threshold):
             self.food_surplus -= growth_threshold
             self.population += 1
             self.assign_tiles(game_env)
@@ -484,7 +492,10 @@ class City:
 
     def set_owner(self, new_player):
         """Transfer city ownership to a new player -- the one place a city
-        changes hands (`GameEnvironment._capture_city` calls it).
+        changes hands, by force (`GameEnvironment._capture_city`) or by loyalty
+        (`GameEnvironment._flip_city`, #116 P7). Either way its loyalty resets
+        to `[loyalty] captured` (design §8.1, "v2 fixes": a conquest must be
+        consolidated).
 
         Its districts and wonders go with it as they are (#86; #116 P6): a
         complete wonder's player-scoped effects serve the new owner from now
@@ -507,6 +518,7 @@ class City:
             old_player.cities.remove(self)
         new_player.cities.append(self)
         self.player = new_player
+        self.loyalty = LOYALTY_CAPTURED
         game_env = new_player.game_env
         game_env.map.city_changed_player(
             self, old_player.player_index if old_player else None

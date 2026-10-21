@@ -14,6 +14,7 @@ from civulator.game import districts as districts_mod
 from civulator.game import housing as housing_mod
 from civulator.game.city import City
 from civulator.game.culture import culture
+from civulator.game import loyalty
 from civulator.game.districts import YIELD_NAMES, District, district_yields
 from civulator.game.environment import GameEnvironment
 from civulator.game.housing import housing
@@ -325,7 +326,11 @@ def test_capture_keeps_districts_production_and_current_production():
 def test_district_stats_are_declared_and_accrue_once_per_round_under_capture(monkeypatch):
     """Every reportable yield has a district_yield_<name> counter; a city that
     changes hands mid-round accrues once that round, to whoever processed it
-    first. Breaks if the accrual skips the _culture_round guard."""
+    first. The counter is the raw adjacency score, unscaled by loyalty: the
+    captured city stands at `[loyalty] captured` after `set_owner` (#116 P7,
+    progression design "v2 fixes" B1 table) and still adds the full score.
+    Breaks if the accrual skips the _culture_round guard or the stat is
+    scaled."""
     synthetic(monkeypatch)
     env = board()
     names = [y for y in district_model.ACCEPTED_YIELDS if y != "none"]
@@ -337,6 +342,7 @@ def test_district_stats_are_declared_and_accrue_once_per_round_under_capture(mon
     env.turn_counter += 1
     city.process_turn(env)
     city.set_owner(env.players[1])
+    assert city.loyalty == loyalty.CAPTURED
     city.process_turn(env)                       # same round, new owner
     assert env.episode_stats[0]["district_yield_gold"] == 3
     assert env.episode_stats[1]["district_yield_gold"] == 0

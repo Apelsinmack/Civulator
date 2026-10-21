@@ -4,8 +4,10 @@ docs/progression_design.md §2.1 as corrected by its "v2 fixes").
     city_yield(city, name), name in unit_model.YIELD_COLUMNS
 
 Science, culture, gold and faith are integer TENTHS scaled by
-`loyalty_percent(city)`; food and production are WHOLE points, unscaled
-(loyalty scales production at its consumer, P7). The terms:
+`loyalty.loyalty_percent(city)` (the city's loyalty band, #116 P7); food and
+production are WHOLE points, unscaled (loyalty scales production once, at its
+consumer `City.calculate_production`, and growth at `City.growth_bucket_gain`;
+food is never scaled). The terms:
 
 - science/culture/gold/faith: `[<name>] base + per_pop * population`;
   food/production: the city centre plus the worked tiles (`Tile.yields`,
@@ -43,26 +45,11 @@ from ..unit_model import (
     YIELD_PER_POP,
 )
 from .districts import district_spec, district_yields, specialty_districts
+from .loyalty import loyalty_percent
 from .trade import yields_to_origin
 
 # Position of food and production in `Tile.yields`.
 _TILE_YIELD_INDEX = {"food": 0, "production": 1}
-
-
-def loyalty_percent(city):
-    """Percent of its science, culture, gold and faith the city keeps under
-    its loyalty band. STUB: 100 until loyalty exists (#116 P7, design §8.4,
-    which moves it to game/loyalty.py and also scales production and growth
-    at their consumers)."""
-    return 100
-
-
-def _loyalty_sources(city):
-    """STUB for #116 P7 (design §8.2): where the `loyalty` effects in force
-    for a city will be summed (`loyalty_sources`, moving to game/loyalty.py
-    with `loyalty_percent`). The effect kind is validated since P4; nothing
-    reads it yet and this returns nothing."""
-    return ()
 
 
 def _effect_yield(city, name, in_force):
