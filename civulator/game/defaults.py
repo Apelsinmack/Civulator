@@ -6,8 +6,9 @@ calls in place of an agent action that does not exist yet (#99); an agent
 action replaces exactly one call. P2 ships the research default; P4 the
 civic, government and policy-loadout defaults; P5 the Trader's
 (`default_trade`, which acts through the same public paths an agent would:
-`GameEnvironment.establish_trade_route` and `Unit.move`); P8 adds the
-Worker's.
+`GameEnvironment.establish_trade_route` and `Unit.move`); P8 the Worker's
+(`default_workers`: `WorkerUnit.build_improvement` and `Unit.move`). The two
+unit defaults that walk share one step rule, `step_toward`.
 
 "Newest" (v2 fixes, N2): a card unlocked by a civic later in
 `player.civics` (completion order) is newer; among the cards of one civic,
@@ -27,6 +28,7 @@ from ..research_model import (
     scaled_tech_cost,
 )
 from .availability import government_tier
+from .improvements import best_improvement, worker_targets
 from .trade import (
     TRADER_UNIT,
     eligible_destinations,
@@ -34,6 +36,7 @@ from .trade import (
     pair_yields,
     route_capacity,
 )
+from .unit import WorkerUnit
 
 
 def default_research(player):
@@ -151,35 +154,31 @@ def best_destination(trader, env):
     return best
 
 
-def trader_step(trader, env):
-    """The one step the engine takes `trader` (not on an own city centre)
-    toward home: the target is the own city centre nearest it by
-    `distance_function` (ties by the centre's (row, col)); the step is the
-    adjacent tile `Unit.move` would accept -- enterable, no foreign unit, no
-    own unit in the Trader's slot, no enemy city, affordable -- that is
-    strictly nearer the target, the nearest first, ties by (row, col). Never
-    `path_finder`. None when no such tile exists (the Trader waits)."""
-    player = trader.player
-    if not player.cities:
-        return None
-    here = tuple(trader.coordinates)
-    target = min((tuple(c.coordinates) for c in player.cities),
-                 key=lambda pos: (env.distance_function(here, pos), pos))
+def step_toward(unit, target, env):
+    """The one step the engine takes `unit` toward `target` (a tile): the
+    adjacent tile `Unit.move` would accept -- enterable, no unit of another
+    player, no own unit in the unit's slot, no enemy city barring it,
+    `Unit.step_cost` payable -- that is strictly nearer the target by
+    `distance_function`, the nearest first, ties by (row, col). Never
+    `path_finder`. None when no such tile exists (the unit waits). The step
+    rule of every default that walks a unit (`trader_step`,
+    `default_workers`); the caller moves the unit through `Unit.move`."""
+    here = tuple(unit.coordinates)
     current = env.distance_function(here, target)
     best, best_key = None, None
     for pos in env.map.get_adjacent_coords(here):
         pos = tuple(pos)
         tile = env.map.get_tile(pos)
-        if tile is None or not trader.can_enter(tile):
+        if tile is None or not unit.can_enter(tile):
             continue
         units = env.get_units_at(pos)
-        if any(u.player is not player for u in units):
+        if any(u.player is not unit.player for u in units):
             continue
-        if any(u.slot == trader.slot for u in units):
+        if any(u.slot == unit.slot for u in units):
             continue
-        if trader.enemy_city_blocks(pos, env):
+        if unit.enemy_city_blocks(pos, env):
             continue
-        if trader.step_cost(here, pos, env) > trader.movement_points:
+        if unit.step_cost(here, pos, env) > unit.movement_points:
             continue
         distance = env.distance_function(pos, target)
         if distance >= current:
@@ -188,6 +187,21 @@ def trader_step(trader, env):
         if best_key is None or key < best_key:
             best, best_key = pos, key
     return best
+
+
+def trader_step(trader, env):
+    """The one step the engine takes `trader` (not on an own city centre)
+    toward home: the target is the own city centre nearest it by
+    `distance_function` (ties by the centre's (row, col)), the step is
+    `step_toward` it. None when the Trader has no city or no step exists (it
+    waits)."""
+    player = trader.player
+    if not player.cities:
+        return None
+    here = tuple(trader.coordinates)
+    target = min((tuple(c.coordinates) for c in player.cities),
+                 key=lambda pos: (env.distance_function(here, pos), pos))
+    return step_toward(trader, target, env)
 
 
 def default_trade(player, env):
@@ -213,3 +227,56 @@ def default_trade(player, env):
             if step is not None:
                 trader.move(step, env)
     return opened
+
+
+# --- The Worker (#116 P8, design §13 and "v2 fixes": Worker default) ----------------
+
+
+def worker_target(worker, env, claimed=frozenset()):
+    """The tile `worker` is headed for: the nearest by `distance_function`
+    (ties by (row, col)) of `improvements.worker_targets` -- the owner's
+    tiles where an improvement may be built, with no foreign unit and no own
+    Worker standing -- leaving out the `claimed` tiles (the ones an earlier
+    Worker of the same pass chose). None when there is none."""
+    here = tuple(worker.coordinates)
+    candidates = (pos for pos in worker_targets(worker.player, env) if pos not in claimed)
+    return min(candidates, key=lambda pos: (env.distance_function(here, pos), pos),
+               default=None)
+
+
+def default_workers(player, env):
+    """The idle-Worker default, once per own turn, the last step of the
+    economy phase (after the Trader default; design §13 as amended by v2).
+    In `player.units` order, every Worker that is idle -- all its movement
+    and not having acted, so a Worker an agent ordered is left alone --
+    does exactly one of:
+
+    (a) it stands on a tile where its owner may build an improvement
+        (`improvements.best_improvement`: `can_player_build_improvement_at`,
+        so ownership, research and the tile predicate; the largest gain,
+        ties by config order; none on a tile that holds one already) and
+        builds that one through `WorkerUnit.build_improvement`;
+    (b) otherwise it takes one step, `step_toward`, through `Unit.move`
+        toward the nearest `worker_target`. A tile a Worker chose earlier in
+        the same pass is not chosen again, so Workers that start together
+        spread over the land instead of queueing for one tile;
+    (c) with nothing to build or reach it stays.
+
+    Never `path_finder`, no RNG. Returns the number of improvements built."""
+    built = 0
+    claimed = set()
+    for worker in [u for u in player.units if isinstance(u, WorkerUnit)]:
+        if worker.has_acted or worker.movement_points < worker.get_max_movement():
+            continue
+        name = best_improvement(player, worker.coordinates, env)
+        if name is not None:
+            built += bool(worker.build_improvement(name, env))
+            continue
+        target = worker_target(worker, env, claimed)
+        if target is None:
+            continue
+        claimed.add(target)
+        step = step_toward(worker, target, env)
+        if step is not None:
+            worker.move(step, env)
+    return built

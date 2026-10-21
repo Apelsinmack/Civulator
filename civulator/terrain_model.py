@@ -75,8 +75,11 @@ IMPROVEMENT_HOUSING = {
 
 # Every configured improvement name (issue #86): the one accessor for
 # "does this improvement exist", so no other module re-reads
-# CFG["improvements"] to validate a name.
-IMPROVEMENT_NAMES = frozenset(CFG.get("improvements", {}))
+# CFG["improvements"] to validate a name. IMPROVEMENT_ORDER is the same names
+# in config order (#116 P8): a frozenset of strings iterates in a
+# hash-seed-dependent order, so "ties by config order" reads the tuple.
+IMPROVEMENT_ORDER = tuple(CFG.get("improvements", {}))
+IMPROVEMENT_NAMES = frozenset(IMPROVEMENT_ORDER)
 
 # --- Improvement gates and yields (issue #116 P2, progression design "v2 fixes") ---
 
