@@ -135,15 +135,13 @@ def test_every_configured_improved_by_and_reveals_names_something_real():
         assert tech is None or tech in TECHS
 
 
-def test_requires_resource_must_name_a_strategic_resource(monkeypatch):
+def test_requires_resource_must_name_a_strategic_resource():
     """`[units.*] requires_resource` naming a luxury or an unknown resource
     raises at load. Breaks if the gate column is left unvalidated."""
     luxury = resources_of_class("luxury")[0]
     for bad in (luxury, "Unobtainium"):
-        monkeypatch.setitem(unit_model.UNIT_REQUIRES_RESOURCE, "Warrior", bad)
         with pytest.raises(ValueError, match="strategic"):
-            terrain_model._validate_unit_resource_gates()
-    monkeypatch.undo()
+            terrain_model._validate_unit_resource_gates({"Warrior": bad})
     for unit, name in unit_model.UNIT_REQUIRES_RESOURCE.items():
         assert resource_class(name) == "strategic", unit
 

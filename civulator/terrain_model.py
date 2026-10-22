@@ -336,11 +336,12 @@ def resources_of_class(cls):
     return tuple(name for name in RESOURCE_TABLE if RESOURCE_TABLE[name]["class"] == cls)
 
 
-def _validate_unit_resource_gates():
-    """Load-time: every `[units.*] requires_resource` names a strategic
-    resource (v0.9.0 Q1). Lives here, not in unit_model, because unit_model
-    loads first and this module owns [terrain.resource.*]."""
-    for unit, name in UNIT_REQUIRES_RESOURCE.items():
+def _validate_unit_resource_gates(gates=None):
+    """Load-time: every `[units.*] requires_resource` (`gates`, default
+    unit_model's parse) names a strategic resource (v0.9.0 Q1). Lives here,
+    not in unit_model, because unit_model loads first and this module owns
+    [terrain.resource.*]."""
+    for unit, name in (UNIT_REQUIRES_RESOURCE if gates is None else gates).items():
         if name not in RESOURCE_TABLE or RESOURCE_TABLE[name]["class"] != "strategic":
             raise ValueError(
                 f"[units.{unit}] requires_resource must name a strategic resource, got {name!r}"

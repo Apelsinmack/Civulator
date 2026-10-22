@@ -362,8 +362,12 @@ _PRE_BORDERS_DIGESTS = [
      "5c16cd0ab7648505c373775f1d90ec0e32e23f6115a213bf21e4914a325b176b"),
     (dict(n=8, m=16, num_players=2, map_type="basic"), 7,
      "ff969a89d102c6b5f843bf0cd60383fc42aacf3526b62f6ebe2890ba9cba5ee0"),
+    # Q1 (#128, resource tiers): re-baselined. The earthlike world now carries
+    # strategic/luxury tiles; with those names stripped the digest is exactly
+    # the Q0 value 2d37c8ef...914694f0 (checked at re-baseline), so cities,
+    # units, terrain layers and the next RNG draw did not move.
     (dict(size="duel", map_type="earthlike"), 4242,
-     "2d37c8ef83d9000b21251e1a6977ec6e2904ecd2be51df64d583ef7b914694f0"),
+     "a81cef1854c8cb8c136507f1bde7470f8e3bc41f133f0ea210929b47e72b0583"),
 ]
 
 

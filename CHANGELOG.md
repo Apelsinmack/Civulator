@@ -121,7 +121,13 @@ Design: `docs/rng_philox_migration.md`.
   types). SHA `c1789b41...01d5f5` -> `b674a660...6b07c3`. The engine-level
   Duel world (`test_rng.py::test_engine_world_is_frozen_across_versions`)
   moved the same way: 5 -> 15 resources, terrain, starts and rivers
-  unchanged; re-frozen. **Inspection by Erik: pending.**
+  unchanged; re-frozen. The seeded-Duel reset digest in
+  `tests/test_territory.py` moved too and was re-baselined: with the tiered
+  names stripped it equals the Q0 value exactly. Three content-coupled tests
+  were updated: the district-config "unknown resource" probe used "Iron"
+  (now real), the P4 resource-count band now counts the bonus tier it was
+  tuned for, and a test pinning the exact set of eight bonus resources was
+  rewritten as a property. **Inspection by Erik: pending.**
 - **Stats:** `episode_stats` gains `luxuries_accessible` (distinct luxuries a
   player has access to, the max over round ends) and `units_refused_resource`
   (refusals by the resource clause -- every predicate evaluation counts, so
