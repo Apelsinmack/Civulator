@@ -7,6 +7,17 @@ Training results (plots, win histories) are in `stats/`.
 
 ## v0.9.0 — Unreleased
 
+**Hardening — the painter resamples a seed with no legal start (#122).**
+`PainterState.generate_terrain` drew one seed and built a *seeded* world, which
+fails loudly on a world without a legal start (by design); about one Duel seed
+in five to ten does, so `test_painter_and_recorder_build_the_same_terrain_from_
+one_seed` and `test_paint_save_reload_identity_e2e` failed in roughly every
+other full-suite run (traceback on #122). The painter now tries up to
+`[map] max_world_retries` seeds, logs each skip to stderr and keeps the seed
+that built, so a saved scenario still reconstructs identically. 0 failures in
+10 isolated runs of the pair after the fix (it failed 1 in 5 before). No game
+rule changed.
+
 **Amenities — Displeased costs no loyalty** (Erik, 2026-10-22 night, after the Q2
 smoke showed every new size-1 city at surplus −1): `[amenities] bands` row
 `[-2, -10, 85, -1]` → `[-2, -10, 85, 0]`. A newly founded city without a luxury
