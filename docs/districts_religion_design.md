@@ -1,6 +1,8 @@
 # Districts II and religion (#93 #94 #95 #96 #97 #102): design
 
-> **Status: v3.1 — the build contract.** C10 and C11 ruled (R12, R13);
+> **Status: v3.1 — the build contract; implemented as Q0–Q9 (2026-10-22/23).
+> The "Implementation notes" section at the end records where the code differs.**
+> C10 and C11 ruled (R12, R13);
 > Q0 (philox32 RNG) precedes Q1 (R14, `docs/rng_philox_migration.md`). Erik ruled on §16's nine calls (2026-10-22 evening, all
 > accepted); lens 1 (systems) and lens 2 (rules semantics) both "survive with
 > fixes", resolved in "v2 fixes" and "v3 fixes" below, which win over §2–§15
@@ -1171,3 +1173,163 @@ bug, and it is a dial.
 resolved on paper, none reopening a ruling. **v3.1 is the build contract.**
 Order of work before the 0.9 bump: Q0 (RNG) → Q1–Q9 here → the embarkation
 and fair-start designs (#76, #85, #112) and their patches → release 0.9.0.
+
+
+## Implementation notes (Q0–Q9, 2026-10-22/23)
+
+The block is implemented as ten patches on branches of #128; Q8 and Q9 merge
+together (v2 fixes: `religion_param` is parsed in Q8 and read in Q9, so
+`DEFERRED_KINDS` stays empty at every merge). The text above is the build
+contract as it stood and is not edited. This section lists, patch by patch,
+every decision that diverges from it or that it left open, so a reader of
+§1–§16 and the fixes knows where the code differs. The rules, numbers and
+sources of each patch are in `CHANGELOG.md`, v0.9.0 (one section per patch).
+Items marked **ruling** are Claude's calls that Erik may overturn. v0.9.0
+stays **Unreleased** (R12): embarkation (#76) and fair starts (#85, #112)
+ship before the bump, so §14's "Q9 dates it" does not hold.
+
+### Q0 -- philox32 RNG (R14, `docs/rng_philox_migration.md`)
+
+- The MapData ceremony world (`tests/test_mapgen_golden.py`, `generate(42,
+  ...)`) did **not** move: it never touches the engine RNG. The world a seeded
+  `reset(seed=42)` builds does change (its master seed is a philox32 draw), so
+  the engine-level vectors in `tests/test_rng.py` and the scenario fixture
+  were regenerated.
+- The stream is keyed `(seed_lo, seed_hi)`, with a constant `STREAM_SALT`
+  (`0xC1171A70`) as the counter word that names the stream (the role PCG32's
+  sequence constant played; changing it moves every seeded world, so it
+  changes only with a CHANGELOG entry). `randint` is the kit's
+  multiply-shift. `PortableRNG` stays as an alias for one release.
+
+### Q1 -- resource tiers (§2)
+
+- **Yields 0** for all twelve strategic and luxury resources (Civ 6 lists no
+  resource tile yields; the values are in the config comment, not modelled).
+- Niter has `frequency = 2` and no fairness guarantee: it comes from the
+  extra pool, split 1:1:2 by `frequency` (Horses, Iron, Niter).
+- The tiered stage has six knobs, `[map.earthlike] tiered_*` (§2.4 named
+  none). Luxuries: **one luxury type per region** (two tiles of it), types
+  differing between regions where possible, never in a founding ring.
+- The `basic` generator does not run the stage; `requires_resource` is
+  honoured only on worlds that have that class (v2 fixes), so basic boards
+  and the matchup board keep the pre-0.9 roster.
+
+### Q2 -- amenities (§3)
+
+- The Worker default's preference for a tile that grants a missing resource
+  is a config dial, `[worker_default] access_bonus` (1 tile nearer), not a
+  constant.
+- Tests whose subject is another rule's arithmetic opt into the
+  `neutral_amenities` fixture (`tests/conftest.py`): with the real bands
+  every size-1 city without a Palace is short of amenities and would move
+  their numbers.
+- **Erik, after the Q2 smoke:** the Displeased band's loyalty column is 0,
+  not −1 (`[-2, -10, 85, 0]`). A new size-1 city still yields 10 % less and
+  grows at 85 %, but no longer loses loyalty every round.
+
+### Q3 -- the Encampment as a fortified district (§4)
+
+- The defender flag is `is_fortification` (a City and a fortified District
+  both answer True); `Unit.attack` reads it for the ranged penalty and the
+  floor at 0.
+- **Divergence from §10:** a loyalty flip also sets a fortified district's
+  health to `captured_health_percent` (50 %) of its maximum. §10 said
+  "health unchanged" on a flip; both doors go through `City.set_owner`, and
+  the patch contract chose one rule.
+- The Encampment spawns **land military** units only (the fighting classes
+  of the land domain): siege support units and civilians do not spawn on it.
+
+### Q4 -- the Industrial Zone (§5)
+
+- The Dam costs **81** (Civ 6 Gathering Storm district base cost, progress
+  model), not the Aqueduct's 36 of the draft (the design believed the digest
+  had no Dam row).
+- The Workshop is **2** production (from 3, a declared rule change), and
+  carries the regional effect.
+- `regional_yield` is a building effect of `scope = "player"` only (the
+  loader refuses city scope and any other source).
+
+### Q5 -- the sea (§6)
+
+- The Great Lighthouse needs to be adjacent to **a Harbor**, not "a Harbor
+  with a Lighthouse": `requires_adjacent_all` matches districts, not their
+  buildings.
+- Tree totals: **4,915** science and **3,550** culture at Civ 6 costs (+850,
+  +220). §11's "2–4 open" tech lattice never held on the default research
+  path (4–6 open before Q5, 5–7 after); no test pins it and the design was
+  not amended.
+- The ship spawn is a district column, `ship_spawn = true` (the Harbor), read
+  by `City.ship_spawn_tiles`, not a name.
+- "Land military" is `is_land_military(unit_type, domain)`: a fighting class
+  **of the land domain**. Faith purchase, the loyalty garrison and the
+  Encampment spawn all read it, so a ship is none of them.
+
+### Q6 -- sea trade (§6.6)
+
+- The domain switch is one function, `unit.naval_domain(player)` (`"coast"`
+  until the owner knows the `ocean_navigation` rule, then `"water"`), the
+  former body of `movement_domain`'s water branch, also asked by
+  `trade.route_kind`.
+- The landmass kernel lives in `mapgen/landmasses.py find_landmasses`
+  (promoted from `starts._find_landmasses`, v2 fixes); `Map.landmass_id`
+  caches it on `terrain_epoch`.
+- No sea route formed organically in the smoke games: the overseas jump was
+  shown by a constructed probe on two-landmass seeds, not by a smoke event.
+
+### Q7 -- religion I (§7.2)
+
+- A **twelfth pantheon, God of Craftsmen**, was added (Civ 6 GS); §7.2 listed
+  eleven.
+- `districts.adjacency_score(type, coords, map, player=None)` takes the
+  district's owner, so `adjacency_row` effects reach the score; without a
+  player it is the config rows only.
+
+### Q8 -- religion II (§7.3)
+
+- The seat qualifier is a config column, `[religion] founding_building =
+  "Temple"` (a building with a `requires_district`): "a complete Holy Site
+  with a Temple" is read from the registry, never a name.
+- Jesuit Education's purchase rides a new `[faith]
+  purchase_building_categories` table (`campus_buildings`,
+  `theater_buildings`) and a building branch in `can_purchase`.
+- Founder pay pays **pool yields only** (science, culture, gold, faith):
+  food and production have no pool.
+- `cross_yield` pays a share of the district's **raw** adjacency score (the
+  owner's rows included, before any `adjacency_percent`).
+
+### Q9 -- religion III (§7.4, §7.5)
+
+- **One formula.** `loyalty.pressure_terms` is the formula both systems call
+  (§7.4's "one function, two callers"); `loyalty.pressures` and
+  `religion.pressure` differ only in their sources, the weight and the
+  ledger. A test still evaluates both on the same board.
+- **L2, the reading of "outward".** On a city that does not follow R, a
+  lapsed (or dead-founder) R presses 0, ledger included. On R's own
+  follower cities **every** term of R stays, the neighbouring followers'
+  terms and ledger entries there included, not only the city's self term
+  (L2 defines "outward" as terms on non-follower cities). **Ruling.**
+- **Lapse and the dead founder are one predicate**, `religion.is_unpaid`
+  (`Religion.lapsed` or the founder dead), computed rather than stored:
+  `Religion.lapsed` is written only by the upkeep, which never charges a dead
+  founder.
+- `faith_spent_religion` accrues the **upkeep** as well as spreads and
+  inquisitions (the Q7 stat comment and §13's dial row read it so).
+  `cities_converted_in` / `_out` are keyed by the religion's founder, not the
+  city's owner. **Ruling.**
+- **Religious victory:** tested in `decisive_outcome` after domination; a
+  dead founder never wins, and a living player with no city (alive by a
+  Settler) blocks it, because more than half of zero cities is not satisfied.
+  **Ruling** (§7.5 was silent on both).
+- **Spread targets:** a spread to one of the religion's own follower cities
+  is allowed (defensive pressure), and a spread while the religion is
+  lapsed is allowed (it buys pressure that counts only once the upkeep is
+  paid again). A player without a religion may hold an inquisition (the city
+  becomes secular, §7.4).
+- **The stage fingerprint** (`tests/test_effects.py`) reads `religion_param`
+  through the numbers it moves (reach, citizen weight, spread amount, spread
+  and inquisition cost), not through a pressure value, because a pressure
+  appears only once a religion exists and would move for every
+  religion-creating kind test.
+- **Smoke:** as in Q8, one religion was founded in nine games (seed 2). It
+  converted two cities by passive pressure and never lapsed; no game spent
+  faith on spreading (no default does, §9).
