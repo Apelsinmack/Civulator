@@ -62,10 +62,17 @@ class Player:
         # GameEnvironment.establish_trade_route, trade.expire_routes and
         # trade.end_routes_touching.
         self.routes = []
+        # Religion (v0.9.0 Q7, districts_religion_design §7.1): the chosen
+        # [pantheons.*] name, None until one is chosen; permanent once set
+        # (Civ 6: kept whatever happens to the cities). Written only by
+        # GameEnvironment.choose_pantheon. Q8/Q9 add the founded religion,
+        # the spread-use counter and the lapsed flag here, beside it.
+        self.pantheon = None
 
     def start_turn(self):
         """Process the start of a player's turn: exploration -> unit reset and
-        heal -> cities -> economy phase (#116: maintenance, bankruptcy,
+        heal -> cities -> economy phase (#116: maintenance, bankruptcy, the
+        religion step (v0.9.0 Q7),
         research, civics, government and loadout defaults, route expiry, the
         Trader default; GameEnvironment.economy_phase lists the order) ->
         city ranged strikes (per city: the centre, then each fortified

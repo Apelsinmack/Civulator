@@ -9,6 +9,7 @@ the tiebreak. The ownership grid itself and its mutation API live on `Map`.
 
 from .. import hexmath
 from ..config import CFG
+from ..effects import KIND_BORDER_COST_PERCENT, active_effects, percent_sum
 
 _TERRITORY_CFG = CFG["territory"]
 CLAIM_RADIUS = int(_TERRITORY_CFG["claim_radius"])
@@ -124,11 +125,31 @@ def border_cost_function(table):
 # --- §3.3 the round-end border phase ----------------------------------------
 
 
+def border_cost_percent(player):
+    """The summed `percent` of the `border_cost_percent` effects in force for
+    `player` (v0.9.0 Q7, Religious Settlements); 0 for no player. Read by
+    `run_border_phase` -- the one consumer of that kind."""
+    if player is None:
+        return 0
+    return percent_sum(active_effects(player, kind=KIND_BORDER_COST_PERCENT))
+
+
+def claim_cost(cost, n, percent):
+    """Tenths of culture the n-th claim costs a city whose owner's
+    `border_cost_percent` sums to `percent`: `cost(n)` unchanged at 0, else
+    `cost(n) * (100 + percent) // 100`, at least 1. `cost(n)` itself stays
+    player-blind (design "v2 fixes")."""
+    base = cost(n)
+    if not percent:
+        return base
+    return max(1, base * (100 + percent) // 100)
+
+
 class _PhaseCity:
     """One city's state for one border phase. `b0` = pool at phase start
     (= p0 + r), `spent` = S_{k-1}, the culture claimed so far this phase."""
 
-    __slots__ = ("city", "r", "p0", "b0", "spent", "next_cost")
+    __slots__ = ("city", "r", "p0", "b0", "spent", "next_cost", "percent")
 
     def __init__(self, city, cost):
         self.city = city
@@ -136,7 +157,9 @@ class _PhaseCity:
         self.b0 = city.border_culture
         self.p0 = self.b0 - self.r
         self.spent = 0
-        self.next_cost = cost(city.border_claims + 1)
+        # The owner's border_cost_percent at phase start (v0.9.0 Q7).
+        self.percent = border_cost_percent(getattr(city, "player", None))
+        self.next_cost = claim_cost(cost, city.border_claims + 1, self.percent)
 
     def has_event(self):
         """Event k exists iff t_k <= 1, i.e. S_k <= p0 + r. With r = 0 this is
@@ -177,7 +200,9 @@ def run_border_phase(game_map, cities, cost, rng, on_claim=None, claim_radius=No
     by `_compare_events` is popped, ties on both keys are sorted by city id
     and shuffled with the engine RNG (drawn only when two or more tie). The
     popped city claims `choose_claim_tile` at that moment, pays `cost(n+1)`
-    from its pool and increments its `border_claims`; `on_claim(city, pos)`
+    -- scaled by its owner's `border_cost_percent` effects (`claim_cost`,
+    v0.9.0 Q7; the percent is read once per city at phase start) -- from its
+    pool and increments its `border_claims`; `on_claim(city, pos)`
     runs after every claim. A city with no candidate is dropped for the rest
     of the phase (its pool is kept). Finally every city's
     `culture_this_round` is zeroed. Returns the claims as [(city_id, pos)]
@@ -208,7 +233,7 @@ def run_border_phase(game_map, cities, cost, rng, on_claim=None, claim_radius=No
         city.border_culture -= state.next_cost
         city.border_claims += 1
         state.spent += state.next_cost
-        state.next_cost = cost(city.border_claims + 1)
+        state.next_cost = claim_cost(cost, city.border_claims + 1, state.percent)
         claims.append((city.city_id, pos))
         if on_claim is not None:
             on_claim(city, pos)

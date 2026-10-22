@@ -615,6 +615,100 @@ opened 0.9.0.
   progression skill's §4 table: `[trade] sea_range`, `overseas_percent`; read
   them through `sea_routes` and `overseas_routes`.
 
+### Religion I: the religion registry, pantheons and three effect kinds (#128, patch Q7)
+
+**Rule changes, effects NOT yet measured.** Source:
+`docs/districts_religion_design.md` §7.1, §7.2, §7.6, §9 (the
+`choose_pantheon` row), §11 (pantheon rows, kind isolation), §14 (Q7), §15,
+"v2 fixes" (B7; `border_cost_percent` in `run_border_phase`) and "v3 fixes"
+L3; ruling R7 (Erik, 2026-10-22: faith buys religion, the game-altering
+abilities stay). Values: Civ 6 Gathering Storm
+(`docs/civ6_progression_reference.md`, "Pantheon and religion", "Pantheon
+beliefs"). No version bump: Q0 opened 0.9.0.
+
+- **The religion registry.** `civulator/religion_model.py` is the only
+  interpreter of `[religion]`, `[pantheons.*]` and `[beliefs.*]`, loaded with
+  the other `*_model` registries after `unit_model`; strict keys everywhere,
+  `effects` kept raw and validated by `effects.py`. `[religion]` holds all
+  eighteen keys of design §7.6, each validated now (costs ≥ 0, `belief_costs`
+  a list of two, `range` and the `*_rounds` ≥ 1, `exclusive` a bool, and
+  `citizen_weight > range` through `check_pressure_weights`, which takes the
+  two numbers so Q8/Q9 re-run it after a `religion_param`). Only
+  `pantheon_cost = 25` (Civ 6) is read in this patch. `[beliefs.*]` (tier
+  `founder | follower | enhancer`, `counts = all | foreign` on founder
+  beliefs only, optional `requires_building`) parses but is empty: its kinds
+  arrive in Q8.
+- **Twelve pantheons**, each a `[pantheons.<Name>]` table of effects (Civ 6
+  names and GS values; Civ 6 pantheons whose mechanic does not exist here are
+  left out): God of the Forge (+25 % production toward Ancient and Classical
+  melee, ranged, anti-cavalry, light and heavy cavalry and siege units),
+  Fertility Rites (+10 % growth), Religious Settlements (border claims 15 %
+  cheaper; Civ 6 "+15 % border expansion"), City Patron Goddess (+25 %
+  production toward districts in a city with no complete specialty
+  district), God of the Sea (Fishing Boats +1 production), Goddess of the
+  Hunt (Camp +1 food +1 production), Stone Circles (Quarry +2 faith), God of
+  the Open Sky (Pasture +1 culture), **God of Craftsmen** (GS: +1 production
+  and +1 faith from improved strategic resources -- a Mine or a Pasture on a
+  strategic resource, the improvements their `improved_by` columns name; the
+  twelfth choice of §7.2, which listed eleven), and Desert Folklore / Dance of
+  the Aurora / Sacred Path (Holy Site +1 faith per adjacent Desert / Tundra /
+  Rainforest tile). Every pantheon effect is player-scoped (a pantheon
+  stands in no city; the loader refuses city scope and one-shots).
+- **Three effect kinds and one target attribute, one consumer each.**
+  `border_cost_percent { percent }` (> −100): read by
+  `territory.run_border_phase` alone -- a claim costs `claim_cost(cost, n,
+  percent)` = `cost(n) * (100 + percent) // 100`, at least 1, the claiming
+  city's owner's percent read once per city at phase start; `cost(n)` itself
+  stays player-blind. `improvement_yield { improvement, <yields>,
+  resource_class? }`: read by `game/yields.py _improvement_tenths` alone, per
+  centre or worked tile carrying the improvement (and a resource of that
+  class, if named), in tenths of all six yields; food and production reach
+  `calculate_food` / `calculate_production` through `city_yield`, and
+  `Tile.yields` is untouched (player-blind and epoch-cached, design B7).
+  `adjacency_row { district, amount, per?, <source> }`: read by
+  `districts.adjacency_score` alone, which now takes the district's owner
+  (`adjacency_score(type, coords, map, player=None)`; `district_yields`
+  passes `city.player`, the only engine caller) and appends that owner's rows
+  for the type to the config rows, each floored on its own; the row is parsed
+  by `district_model.parse_adjacency_row`, the config's own row grammar
+  (because `district` names the target, a neighbour-district source cannot
+  be written in an effect row). `production_percent`'s target gains
+  `no_specialty_district = true`, a condition on the producing city
+  (`districts.specialty_districts`), matched in `calculate_production` as
+  before. All three kinds are player-only (`effects._PLAYER_ONLY_KINDS`).
+- **The pantheon as a source.** `Player.pantheon` (None or a name; in
+  `reset_state` and so in the episode fingerprint) is an `effects.SOURCES`
+  entry: `active_effects` puts its entries after the techs and before the
+  cities' buildings. Permanent: nothing clears it, a city's loss included
+  (Civ 6).
+- **The action and its default.** `religion.can_choose_pantheon(player,
+  name, env)` (new module `game/religion.py`; Q8/Q9 add the other
+  predicates): no pantheon yet, the name exists, faith ≥ the cost.
+  `GameEnvironment.choose_pantheon` debits exactly the cost (faith tenths)
+  and counts it. The engine default `defaults.default_pantheon` -- the first
+  pantheon of config order the predicate allows, braindead by design, #99
+  replaces it -- runs in a new **religion step** of the economy phase, after
+  maintenance and bankruptcy and before research (design §15(a)); Q8/Q9 add
+  founding, beliefs, upkeep and founder pay to the same step.
+- **Stats.** `episode_stats["pantheons_chosen"]` and
+  `["faith_spent_religion"]` (int tenths; the pantheon now, the rest of
+  religion's faith sinks in Q8/Q9); the smoke end line prints both and the
+  pantheon names.
+- **Nothing outside this patch changed behaviour.** With no pantheon chosen
+  every consumer computes what it did: the border cost is `cost(n)` exactly
+  when the percent is 0, the improvement and adjacency terms are empty, and
+  the three-argument `adjacency_score` is the config rows. `tests/
+  test_yields.py`'s `adjacency_score` stub gained the `player` argument (the
+  declared signature change).
+- **Smoke (not a measurement; `python scripts/smoke_random_selfplay.py`,
+  Duel, random policy).** Seed 4242 and seeds 1-8 run clean; **in all nine
+  games both players chose a pantheon** (`pantheons_chosen=[1, 1]`,
+  `faith_spent_religion_tenths=[250, 250]`), and it was always God of the
+  Forge -- the default takes the first table of config order, which is the
+  point of a braindead default and why the other eleven are exercised by
+  tests only.
+- **Effect NOT yet measured:** nothing was trained or evaluated.
+
 ---
 
 ## v0.8.1 — Erik's rulings on the block's open calls; build charges (2026-10-22)

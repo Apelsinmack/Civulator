@@ -31,6 +31,10 @@ never scaled). The terms:
   `trade.yields_to_origin`): per route, the `[trade]` table entries of its
   destination and the `route_yield` effects in force, in tenths of every
   yield (food and production too, floored with the rest);
+- the improvement term (v0.9.0 Q7, `_improvement_tenths`): the
+  `improvement_yield` effects in force, per centre or worked tile carrying
+  their improvement (and a resource of their `resource_class`, if named), in
+  tenths of every yield;
 - the regional term (v0.9.0 Q4, `_regional_tenths`): the `regional_yield`
   effects in force whose carrier stands in ANOTHER city of the owner and
   whose district tile lies within the effect's `range` of this city's centre
@@ -47,9 +51,11 @@ on its own config table or an effect, never a term here.
 from ..effects import (
     KIND_ADJACENCY_PERCENT,
     KIND_CITY_YIELD,
+    KIND_IMPROVEMENT_YIELD,
     KIND_REGIONAL_YIELD,
     active_effects,
 )
+from ..terrain_model import resource_class
 from ..unit_model import (
     BUILDING_REQUIRES_DISTRICT,
     BUILDING_YIELDS,
@@ -182,10 +188,40 @@ def _tile_gold_tenths(city):
     return 10 * total
 
 
+def _improvement_tenths(city, name, in_force):
+    """Tenths of `name` from the `improvement_yield` effects among `in_force`
+    (v0.9.0 Q7, the yield pantheons): for the city centre and each worked
+    tile, every entry whose `improvement` the tile carries -- and, when the
+    entry names a `resource_class`, whose resource is of that class -- adds
+    its amount of `name`. Read here, never in `Tile.yields` (player-blind and
+    epoch-cached; design "v2 fixes" B7). The one consumer of
+    `improvement_yield`; food and production reach `calculate_food` /
+    `calculate_production` through `city_yield`."""
+    entries = [e for e in in_force
+               if e.kind == KIND_IMPROVEMENT_YIELD and e["yields"].get(name, 0)]
+    if not entries:
+        return 0
+    game_map = city.player.game_env.map
+    total = 0
+    for pos in (city.coordinates, *city.worked_tiles):
+        tile = game_map.get_tile(pos)
+        if tile is None or not tile.improvements:
+            continue
+        for effect in entries:
+            if effect["improvement"] not in tile.improvements:
+                continue
+            wanted = effect["resource_class"]
+            if wanted is not None and (not tile.resource
+                                       or resource_class(tile.resource) != wanted):
+                continue
+            total += effect["yields"][name]
+    return total
+
+
 def _source_tenths(city, name):
     """Every term the six yields share, in tenths: building and complete-
-    district columns, district adjacency, effects, routes and the regional
-    term."""
+    district columns, district adjacency, effects, the improvement effects,
+    routes and the regional term."""
     in_force = active_effects(city.player, city)
     columns = sum(BUILDING_YIELDS[name].get(b, 0) for b in city.buildings)
     columns += sum(
@@ -193,6 +229,7 @@ def _source_tenths(city, name):
     )
     adjacency = 10 * district_yields(city, _effect_adjacency_percents(in_force)).get(name, 0)
     return (columns + adjacency + _effect_yield(city, name, in_force)
+            + _improvement_tenths(city, name, in_force)
             + _route_yield(city, name) + _regional_tenths(city, name, in_force))
 
 

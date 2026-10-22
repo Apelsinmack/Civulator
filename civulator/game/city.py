@@ -292,13 +292,15 @@ class City:
         """The summed `percent` of every `production_percent` effect in force
         for this city whose target matches its current production item (#116
         P4, design §2.3): unit name, unit class, unit era, building name,
-        district, or item kind. 0 when nothing matches."""
+        district, or item kind -- and, for a target with
+        `no_specialty_district` (v0.9.0 Q7), this city having no complete
+        specialty district. 0 when nothing matches."""
         item = self._production_item()
         if item is None:
             return 0
         return percent_sum(
             effect for effect in active_effects(self.player, self, KIND_PRODUCTION_PERCENT)
-            if target_matches(effect["target"], *item)
+            if target_matches(effect["target"], *item, city=self)
         )
 
     def calculate_production(self, game_env):

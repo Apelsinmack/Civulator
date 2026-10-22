@@ -233,7 +233,7 @@ def test_every_configured_district_raises_exactly_its_adjacency_yield(monkeypatc
     if a district yield reaches the wrong consumer, is double-counted, or
     counts while incomplete."""
     score = 4
-    monkeypatch.setattr(districts_mod, "adjacency_score", lambda t, c, m: score)
+    monkeypatch.setattr(districts_mod, "adjacency_score", lambda t, c, m, player=None: score)
     typed = [(n, s.adjacency_yield) for n, s in district_model.DISTRICTS.items()
              if s.adjacency_yield != "none"]
     if not typed:

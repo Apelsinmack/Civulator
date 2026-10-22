@@ -1140,6 +1140,91 @@ per_pop = 0.0
 # Civ 6: faith is 2x production (#116 P5). A whole number.
 purchase_multiplier = 2
 
+# --- Religion (v0.9.0 Q7; docs/districts_religion_design.md §7, §7.6) ---------
+# Read only by civulator/religion_model.py. Every key is parsed and validated
+# now; Q7 consumes only `pantheon_cost` (game/religion.py can_choose_pantheon,
+# GameEnvironment.choose_pantheon). Faith costs are whole points (the faith
+# pool is int tenths). `citizen_weight` must exceed `range` (v3 fixes L3).
+[religion]
+pantheon_cost = 25            # Civ 6 (Standard speed)
+found_cost = 200              # Claude's starting value (§7.3)
+belief_costs = [300, 500]     # tier 2, tier 3
+max_religions = 0             # 0 = every player may found one
+exclusive = true              # a belief belongs to one religion (Civ 6)
+range = 9                     # pressure range, hexes (= [loyalty] range)
+citizen_weight = 10           # as [loyalty]
+secular_weight = 2            # a religionless city's own resistance per citizen
+conversion_margin = 25        # percent over the incumbent
+conversion_rounds = 3
+spread_cost = 100
+spread_cost_step = 25
+spread_amount = 60
+spread_rounds = 10
+upkeep_per_follower_city = 1
+inquisition_cost = 75
+inquisition_rounds = 10
+foreign_religion_loyalty = -1
+
+# Pantheons (§7.2): a [pantheons.<Name>] table of effects -- nothing else
+# (`description` is for people). Player scope, permanent. Civ 6 Gathering
+# Storm names and values (docs/civ6_progression_reference.md, "Pantheon
+# beliefs"); Civ 6 pantheons whose mechanic does not exist here (Great People,
+# appeal, barbarians, harvesting, healing) are left out. Config order is the
+# engine default's order (defaults.default_pantheon).
+[pantheons."God of the Forge"]
+description = "+25% Production toward Ancient and Classical military units (Civ 6)."
+effects = [{ kind = "production_percent", percent = 25, target = { unit_class = ["melee", "ranged", "anti_cavalry", "light_cavalry", "heavy_cavalry", "siege"], unit_era = ["Ancient", "Classical"] } }]
+
+[pantheons."Fertility Rites"]
+description = "+10% city growth (Civ 6; GS's free Builder is not modelled)."
+effects = [{ kind = "growth_percent", percent = 10 }]
+
+[pantheons."Religious Settlements"]
+description = "Border growth 15% cheaper (Civ 6: +15% border expansion; GS's free Settler is not modelled)."
+effects = [{ kind = "border_cost_percent", percent = -15 }]
+
+[pantheons."City Patron Goddess"]
+description = "+25% Production toward districts in cities without a specialty district (Civ 6)."
+effects = [{ kind = "production_percent", percent = 25, target = { kind = "district", no_specialty_district = true } }]
+
+[pantheons."God of the Sea"]
+description = "+1 Production from Fishing Boats (Civ 6)."
+effects = [{ kind = "improvement_yield", improvement = "Fishing Boats", production = 1 }]
+
+[pantheons."Goddess of the Hunt"]
+description = "+1 Food and +1 Production from Camps (Civ 6 GS)."
+effects = [{ kind = "improvement_yield", improvement = "Camp", food = 1, production = 1 }]
+
+[pantheons."Stone Circles"]
+description = "+2 Faith from Quarries (Civ 6)."
+effects = [{ kind = "improvement_yield", improvement = "Quarry", faith = 2 }]
+
+[pantheons."God of the Open Sky"]
+description = "+1 Culture from Pastures (Civ 6)."
+effects = [{ kind = "improvement_yield", improvement = "Pasture", culture = 1 }]
+
+# Civ 6 GS: +1 Production and +1 Faith from improved strategic resources. A
+# strategic resource is improved by its `improved_by` column: Iron and Niter
+# by the Mine, Horses by the Pasture.
+[pantheons."God of Craftsmen"]
+description = "+1 Production and +1 Faith from improved strategic resources (Civ 6 GS)."
+effects = [
+    { kind = "improvement_yield", improvement = "Mine", resource_class = "strategic", production = 1, faith = 1 },
+    { kind = "improvement_yield", improvement = "Pasture", resource_class = "strategic", production = 1, faith = 1 },
+]
+
+[pantheons."Desert Folklore"]
+description = "Holy Site +1 Faith per adjacent Desert tile (Civ 6)."
+effects = [{ kind = "adjacency_row", district = "Holy Site", amount = 1, terrain = { bases = ["Desert"] } }]
+
+[pantheons."Dance of the Aurora"]
+description = "Holy Site +1 Faith per adjacent Tundra tile (Civ 6)."
+effects = [{ kind = "adjacency_row", district = "Holy Site", amount = 1, terrain = { bases = ["Tundra"] } }]
+
+[pantheons."Sacred Path"]
+description = "Holy Site +1 Faith per adjacent Rainforest tile (Civ 6)."
+effects = [{ kind = "adjacency_row", district = "Holy Site", amount = 1, terrain = { features = ["Rainforest"] } }]
+
 # --- Trade routes (#116 P5; docs/progression_design.md §7.4 and "v2 fixes") ----
 # Read only by civulator/game/trade.py. A route runs from a city centre of its
 # owner (the origin, where a Trader stood) to another city within `range` hexes

@@ -174,3 +174,20 @@ def test_same_seed_same_fortified_district_siege():
     assert first == second
     stats = first[0]
     assert stats[1]["damage_dealt"] > 0 and stats[0]["encampment_strikes"] > 0,         "fixture: the fortification was attacked and fired back"
+
+
+def test_the_episode_fingerprint_sees_the_pantheon():
+    """v0.9.0 Q7: `Player.pantheon` is per-episode state -- reset to None by
+    `reset_state` and part of the episode fingerprint, so two games that
+    differ only in a pantheon do not compare equal. Breaks if the field
+    moves off Player (out of the fingerprint) or out of `reset_state`."""
+    from civulator.religion_model import PANTHEON_ORDER
+
+    a = GameEnvironment(8, 16, num_players=2, map_type="basic").reset(seed=5)
+    b = GameEnvironment(8, 16, num_players=2, map_type="basic").reset(seed=5)
+    assert episode_fingerprint(a) == episode_fingerprint(b)
+    assert a.players[0].pantheon is None
+    a.players[0].pantheon = PANTHEON_ORDER[0]
+    assert episode_fingerprint(a) != episode_fingerprint(b)
+    a.reset(seed=5)
+    assert a.players[0].pantheon is None

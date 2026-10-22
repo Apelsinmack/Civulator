@@ -241,7 +241,10 @@ def main():
           f"regional_production_tenths={[env.episode_stats[i]['regional_production'] for i in range(num_players)]} "
           f"naval_units_built={[env.episode_stats[i]['naval_units_built'] for i in range(num_players)]} "
           f"sea_routes={[env.episode_stats[i]['sea_routes'] for i in range(num_players)]} "
-          f"overseas_routes={[env.episode_stats[i]['overseas_routes'] for i in range(num_players)]}")
+          f"overseas_routes={[env.episode_stats[i]['overseas_routes'] for i in range(num_players)]} "
+          f"pantheons_chosen={[env.episode_stats[i]['pantheons_chosen'] for i in range(num_players)]} "
+          f"faith_spent_religion_tenths={[env.episode_stats[i]['faith_spent_religion'] for i in range(num_players)]} "
+          f"pantheons={[p.pantheon for p in env.players]}")
 
 
 if __name__ == "__main__":
