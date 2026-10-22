@@ -186,8 +186,9 @@ class GameEnvironment:
 
         # All engine randomness (map gen, starting locations, damage rolls)
         # draws from this instance — reset(seed=...) reproduces a world exactly.
-        # PortableRNG (PCG32, civulator/rng.py) so a C++ engine twin can
-        # reproduce the identical stream (issue #33).
+        # PhiloxRNG (philox32 kit, civulator/rng.py; PortableRNG is its alias
+        # for one release) so a C++/CUDA twin can reproduce the identical
+        # stream (issues #33, #128).
         self.rng = PortableRNG(seed)
 
         # Border cost curve (borders design §3.1), read from

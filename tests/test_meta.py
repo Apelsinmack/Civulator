@@ -2,6 +2,7 @@
 which game version/config produced them.
 """
 
+import philox32
 import torch
 
 import civulator
@@ -17,13 +18,16 @@ def test_manifest_has_all_keys_and_matches_current_state():
     # It gained `civulator_core_commit` in issue #47: which commit the loaded
     # civulator_core.pyd was BUILT from, distinct from git_commit above (a
     # stale pyd after a git catch-up otherwise shows up only as a symptom).
+    # It gained `rng` in issue #128 (Q0, v0.9.0): which random stream the
+    # artifact was made under ({"kind": "philox32", "version": <kit version>}).
     # Loaders only ever read `game_version`, so an added key is backward
     # compatible; this pin exists to make schema changes deliberate.
     assert set(build_manifest().keys()) == {
-        "game_version", "git_commit", "git_dirty", "civulator_core_commit",
+        "game_version", "rng", "git_commit", "git_dirty", "civulator_core_commit",
         "config", "date",
     }
     manifest = build_manifest()
+    assert manifest["rng"] == {"kind": "philox32", "version": philox32.__version__}
     assert manifest["game_version"] == civulator.__version__
     assert manifest["config"] == CFG
 

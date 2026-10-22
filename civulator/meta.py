@@ -14,6 +14,7 @@ import os
 import subprocess
 from datetime import datetime, timezone
 
+import philox32
 import torch
 
 from . import __version__
@@ -157,12 +158,16 @@ def build_manifest(mapgen_params=None):
             without ever reading live config.toml.
 
     Returns:
-        dict with keys: game_version, git_commit, git_dirty,
+        dict with keys: game_version, rng, git_commit, git_dirty,
         civulator_core_commit, config, date, and — only when `mapgen_params`
         is given — mapgen_params.
     """
     manifest = {
         "game_version": __version__,
+        # Which random stream the artifact was made under (issue #128, Q0):
+        # the engine RNG is the philox32 kit, and a kit fix that changes a
+        # stream bumps its version. Additive -- no loader requires it.
+        "rng": {"kind": "philox32", "version": philox32.__version__},
         "git_commit": _git_commit(),
         "git_dirty": _git_dirty(),
         # Which commit the loaded civulator_core.pyd was BUILT from — not

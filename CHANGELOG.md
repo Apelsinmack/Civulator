@@ -5,6 +5,55 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
+## v0.9.0 — Unreleased
+
+### Engine RNG: PCG32 -> philox32 (#128, patch Q0)
+
+**Opens the 0.9 rules epoch. Not a bug fix, effect NOT yet measured.**
+`PortableRNG` (PCG32, #33) was already integer arithmetic and already
+machine-independent; the cross-machine divergence remembered from #44 was
+closed as a record error (the skip schedule was bit-identical across
+machines). Nothing gets better here except ownership: Erik's simulation
+projects now share one deterministic generator, the `philox32` kit
+(Philox-4x32-10, gated on Random123's known-answer vectors, bit-identical
+C++/CUDA/Python), so a fix to the kit reaches every consumer and a future C++
+or CUDA subsystem draws the same words from `philox32.h` without a port.
+Design: `docs/rng_philox_migration.md`.
+
+- **`PhiloxRNG`** (`civulator/rng.py`) replaces the PCG32 class behind the same
+  method set; `PortableRNG` stays as an alias for one release, then goes
+  (with its own line here). Stream: `key = (seed_lo, seed_hi)`, `counter =
+  (block, 0, STREAM_SALT, 0)`, four buffered words per block; the module
+  docstring is the contract a C++ twin implements. `randint` is now the kit's
+  multiply-shift (`philox32_below`), one word per call, no modulo. `random`,
+  `uniform`, `shuffle`, `choices` and `next_uint64` keep their rules.
+- **Dependency:** `philox32` pinned to commit `6c33a3d` in a new
+  `requirements.txt` (the kit has no tags yet; the pin becomes `v0.1.0`).
+  `build_manifest` records `rng = {"kind": "philox32", "version": ...}` beside
+  the game version in every artifact (additive; no loader requires it).
+- **Epoch consequences (by design).** Every seeded world, damage roll and
+  shuffle changes. Game version 0.9.0, so `check_version` refuses 0.8
+  scenarios and recordings (a 0.8 recording re-simulated under the new stream
+  diverges). `tests/fixtures/scenario_fixture.json` is regenerated. The #39
+  episode-seed skip set and every pre-0.9 number in `stats/` are not
+  comparable to anything measured under 0.9 (#78 convention; epoch line in
+  `weights/trained/manifest.md`).
+- **Goldens.** The MapData ceremony SHA
+  (`tests/test_mapgen_golden.py`) did **not** move
+  (`c1789b41...01d5f5`): it calls `generate(42, ...)` directly and never
+  touches the engine RNG, so the generator's output is unchanged. The world a
+  seeded `reset(seed=42)` builds *does* change (its master seed is now
+  `PhiloxRNG(42).next_uint64() = 2089907835372453007`); the engine-level
+  vector in `tests/test_rng.py::test_engine_world_is_frozen_across_versions`
+  and the derived-draw vectors are regenerated and frozen again.
+  **Inspection by Erik: pending** (renders of the Standard 48x24, 6-player
+  world for the new engine seed 42 and of the unchanged ceremony world were
+  made for it; not committed).
+- **Effect NOT yet measured:** no agent was trained or evaluated, and no claim
+  is made about play.
+
+---
+
 ## v0.8.1 — Erik's rulings on the block's open calls; build charges (2026-10-22)
 
 **Rule changes, effects NOT yet measured** (#126; the open calls of #116).

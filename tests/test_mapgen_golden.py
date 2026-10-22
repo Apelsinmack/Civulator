@@ -22,6 +22,12 @@ from civulator.mapgen import generate
 # starts are all byte-identical to the v0.6.0 ceremony world (the floor is
 # not binding here -- this world's raw d_min is 7). No re-inspection was
 # needed because the generated world itself did not change.
+#
+# Q0 (#128, v0.9.0, engine RNG PCG32 -> philox32): checked, NOT moved. This
+# golden calls `generate(42, ...)` directly, so it never touches the engine
+# RNG; the world a seeded `GameEnvironment.reset(seed=42)` builds does change
+# (master seed = PhiloxRNG(42).next_uint64()) and is re-frozen in
+# tests/test_rng.py::test_engine_world_is_frozen_across_versions.
 CEREMONY_SHA256 = "c1789b41443379c37399acd9c1c0b28f9cf16ff42c3790403b1da58a5b01d5f5"
 
 # [map.earthlike] as of v0.6.0, frozen (D25 geometry: split elevation).
