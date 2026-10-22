@@ -497,6 +497,11 @@ not here. No version bump: Q0 opened 0.9.0.
   (`get_max_movement`), so it undoes only the placement patch.
   `tests/test_wonders.py` / `tests/test_fortified_districts.py` call
   `movement_domain(t, None)` (the player argument is required).
+  `tests/test_mask_vectorization.py`'s pre-#42 reference mask gets the Q5
+  reorder written in by hand and labelled (its docstring's rule for a
+  deliberate change of what the masks mean; its random states stand units on
+  Ocean and mountain tiles, so the reorder shows). `tests/test_availability.py`'s
+  two tech-gate tests give a ship's city a Lake neighbour (the §6.4 rule).
 - **Smoke observations (not a measurement; `python scripts/smoke_random_selfplay.py
   --seed S`, Duel, random policy, default rounds).** Seed 4242 runs clean,
   `naval_units_built=[0, 1]`. Seeds 1-8: ships were built in 4 of 8 games
