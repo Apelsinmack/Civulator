@@ -1,7 +1,9 @@
 # Districts II and religion (#93 #94 #95 #96 #97 #102): design
 
-> **Status: v2 — critique lens 1 resolved on paper ("v2 fixes" below wins
-> where it differs from §2–§15); awaiting Erik's rulings on §16.** Authored
+> **Status: v2.1 — Erik ruled on §16 (all nine accepted, 2026-10-22 evening);
+> critique lens 1 resolved on paper ("v2 fixes" below wins where it differs
+> from §2–§15); lens 2 (rules semantics) pending, then v3 is the build
+> contract.** Authored
 > 2026-10-22 by Claude as lead game designer, at Erik's request (chat,
 > 2026-10-22, Erik away for the rest of the session). Lens 1's full report:
 > `docs/districts_religion_design_critique_lens1.md`. Rules that are Erik's
@@ -37,6 +39,8 @@ and whose benefits are shared with whoever adopts it.
 | R7 | **Religion**: faith is spent to spread and to maintain a religion; spread is a function of religious population and distance, boosted by faith; the spreading is automated (no missionary micro); the game-altering abilities stay and the most interesting are chosen. | §7. |
 | R8 | **Meaningful choices, no braindead micro** (standing principle, restated). | Every new agent action in §9 is a choice, never a chore: no per-unit religious orders, no per-turn confirmations. |
 | R9 | **State space is not designed now**; it gets one big pass later and may evolve through the whole 0.9 era. | §12 lists what the pass will need to see, nothing more. |
+| R10 | **Open calls C1–C9 all accepted as recommended** (Erik, 2026-10-22 evening: "C1 to C9 all good"). | Boolean strategic access and the gated Swordsman/Horseman; the nine luxuries; the Workshop's regional +1 production within 6 tiles; the Dam ships; the religion numbers and three tiers; `foreign_religion_loyalty = -1`; the religious-victory flag, off; Crusade and Defender of the Faith in combat (C8, explained to Erik: +10 when attacking a city of another or no religion; +5 for units fighting on tiles owned by a city that follows yours); the longer trees, `tech_cost_percent` re-tuned in the balancing pass. §16 is settled; its table stays as the record. |
+| R11 | **Switching the engine RNG to the shared `philox32` kit is wanted if it is not too hard**, now, while 0.9 opens a new epoch anyway (Erik, 2026-10-22 evening). | Not part of this design; feasibility note and patch Q0 proposal in the #31 handoff / `docs/rng_philox_migration.md` when written. If it ships, it ships **before Q1**, so goldens, the fixture and `test_rng` re-baseline once. |
 
 ### 0.3 Principles (from `progression_design.md` §0.2, applied here)
 
@@ -899,7 +903,7 @@ classes; fairness rule; golden).
 
 ---
 
-## 16. Open calls for Erik
+## 16. Open calls for Erik — all accepted (R10, 2026-10-22)
 
 | # | Call | Claude's recommendation |
 |---|---|---|
