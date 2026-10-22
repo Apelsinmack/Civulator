@@ -50,6 +50,16 @@ and the GitHub issues they cite.
 10. **The state space is designed separately** (Erik, 2026-10-22): a design
     lists what an encoder will need to see and stops there. Rewards likewise
     (#123/#124: held value pays; no event payments).
+11. **Routes to success are "builds", and builds should counter and
+    reinforce each other** (Erik, 2026-10-22 evening: "it's great that you
+    can focus on different paths to success now, like different builds … I
+    wonder if we can get some rock-paper-scissors dynamic between the
+    routes, as well as some synergetic effects"). When a design adds a
+    mechanic, it says which build it strengthens, which build it is a
+    counter to, and which other build it synergises with (religion → war
+    through Crusade; trade → gold → purchased armies; culture → loyalty
+    flips against a wide empire). A mechanic that strengthens every build
+    equally is a flat yield and fails principle 1.
 
 ## 2. Standing rulings (do not reopen without Erik)
 
@@ -64,6 +74,11 @@ and the GitHub issues they cite.
 | Alliances are not civic-gated; next version (#62) | Erik 2026-10-21 |
 | Wonders: consolation 0, `max_per_player = 1`, Oracle Ancient | #116 P9 |
 | Loyalty flips pay no event reward; the potential reward covers it | #116 → #124 |
+| Embarkation (#76) and fair starts (#85, #112) are designed and shipped before the 0.9 bump | Erik 2026-10-22 evening (C10) |
+| Religions capped by the four founder beliefs (`exclusive = true`) | Erik 2026-10-22 evening (C11) |
+| Engine RNG moves to the shared `philox32` kit (Q0) | Erik 2026-10-22 evening |
+| Barbarians kill units and capture Settlers/Workers, never settle or build; clearing a camp pays gold; goodie huts join them in one design session; pillage is optional, not core | Erik 2026-10-22 evening (#129) |
+| City-states come with diplomacy (envoy-style investment bonuses), designed in the diplomacy session, not before | Erik 2026-10-22 evening (#130) |
 
 ## 3. The design-doc contract
 
