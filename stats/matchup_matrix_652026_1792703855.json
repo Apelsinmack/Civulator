@@ -1,0 +1,5324 @@
+{
+  "units": [
+    "Warrior",
+    "Slinger",
+    "Archer",
+    "Swordsman",
+    "Spearman",
+    "Horseman",
+    "Catapult",
+    "Galley",
+    "Quadrireme",
+    "Caravel"
+  ],
+  "excluded_civilians": [
+    "Settler",
+    "Worker"
+  ],
+  "duels_per_pairing": 200,
+  "seed": 652026,
+  "board": {
+    "rows": 16,
+    "cols": 16
+  },
+  "positions": {
+    "melee": {
+      "attacker": [
+        5,
+        5
+      ],
+      "defender": [
+        5,
+        6
+      ]
+    },
+    "ranged": {
+      "attacker": [
+        10,
+        5
+      ],
+      "defender": [
+        10,
+        7
+      ]
+    }
+  },
+  "conditions": [
+    {
+      "name": "headline",
+      "terrain": "flat",
+      "fortified": false,
+      "damaged": false,
+      "pairings": [
+        {
+          "attacker": "Warrior",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 30.038514827471225,
+          "mean_damage_taken": 30.103601531716993,
+          "exchange_ratio": 0.9978379097206295,
+          "cost_normalized_ratio": 0.9978379097206295
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 54.864027363518424,
+          "mean_damage_taken": 16.476430376050917,
+          "exchange_ratio": 3.3298491306263314,
+          "cost_normalized_ratio": 2.9136179892980403
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 36.990423957070824,
+          "mean_damage_taken": 24.375476401479933,
+          "exchange_ratio": 1.5175261950911034,
+          "cost_normalized_ratio": 2.276289292636655
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 16.406895002990552,
+          "mean_damage_taken": 54.380342285090784,
+          "exchange_ratio": 0.3017063577308295,
+          "cost_normalized_ratio": 0.6788393048943663
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 30.31946163324639,
+          "mean_damage_taken": 29.940855504521167,
+          "exchange_ratio": 1.0126451339597846,
+          "cost_normalized_ratio": 1.64554834268465
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 16.410693828042085,
+          "mean_damage_taken": 54.14806941598206,
+          "exchange_ratio": 0.3030707097231871,
+          "cost_normalized_ratio": 0.6061414194463742
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 26.92654037387406,
+          "mean_damage_taken": 33.57857276560437,
+          "exchange_ratio": 0.8018965118569839,
+          "cost_normalized_ratio": 2.4056895355709518
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 19.873021194837744,
+          "mean_damage_taken": 45.02333187172663,
+          "exchange_ratio": 0.44139383667687715,
+          "cost_normalized_ratio": 0.7172649845999254
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 29.74332410851959,
+          "mean_damage_taken": 30.001717136576772,
+          "exchange_ratio": 0.9913873920322327,
+          "cost_normalized_ratio": 2.974162176096698
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 7.273766860862805,
+          "mean_damage_taken": 99.89249061972065,
+          "exchange_ratio": 0.07281595258799992,
+          "cost_normalized_ratio": 0.43689571552799944
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 24.854887306503926,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 44.1058436577946,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 29.920324127557688,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 13.438806095416039,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 20.116338927111133,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 13.416701960933906,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 21.757874187304097,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 9.030034251249736,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 13.312647503685195,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 3.375523367497075,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 37.12221533963861,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 66.5843867509721,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 44.27668255403896,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 20.418189610806486,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 29.256371220694856,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 16.75692187958505,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 32.555495996105535,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 12.529479161077592,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 18.66690060831685,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 4.5846920994200255,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 54.50171634319794,
+          "mean_damage_taken": 16.426102556743665,
+          "exchange_ratio": 3.317994402806313,
+          "cost_normalized_ratio": 1.4746641790250279
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 95.1190333503941,
+          "mean_damage_taken": 4.695662858936165,
+          "exchange_ratio": 20.256785081871055,
+          "cost_normalized_ratio": 7.877638642949855
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 66.94010693483654,
+          "mean_damage_taken": 13.551796696858933,
+          "exchange_ratio": 4.939574318610614,
+          "cost_normalized_ratio": 3.2930495457404096
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 29.885488957492633,
+          "mean_damage_taken": 29.868215020266362,
+          "exchange_ratio": 1.0005783384515796,
+          "cost_normalized_ratio": 1.0005783384515798
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 54.86512545187362,
+          "mean_damage_taken": 16.571240906681055,
+          "exchange_ratio": 3.3108640300892342,
+          "cost_normalized_ratio": 2.3911795772866693
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 30.021389673342927,
+          "mean_damage_taken": 30.396885396195575,
+          "exchange_ratio": 0.987646901386165,
+          "cost_normalized_ratio": 0.8779083567877022
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 48.260806649159925,
+          "mean_damage_taken": 18.526273498074485,
+          "exchange_ratio": 2.60499266915043,
+          "cost_normalized_ratio": 3.4733235588672393
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 36.98807075955069,
+          "mean_damage_taken": 24.54048381790753,
+          "exchange_ratio": 1.5072266314717064,
+          "cost_normalized_ratio": 1.0885525671740102
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 54.390464283857774,
+          "mean_damage_taken": 16.580019584027355,
+          "exchange_ratio": 3.280482511387125,
+          "cost_normalized_ratio": 4.3739766818495
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 13.384944315870836,
+          "mean_damage_taken": 67.27149987797958,
+          "exchange_ratio": 0.19896901868026012,
+          "cost_normalized_ratio": 0.5305840498140271
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 29.60181358302478,
+          "mean_damage_taken": 30.43484136032872,
+          "exchange_ratio": 0.9726291401541597,
+          "cost_normalized_ratio": 0.5985410093256367
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 67.4728937021035,
+          "mean_damage_taken": 13.539190036182426,
+          "exchange_ratio": 4.983525123865421,
+          "cost_normalized_ratio": 2.683436605158304
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 44.63859123905658,
+          "mean_damage_taken": 20.05434566749499,
+          "exchange_ratio": 2.2258812119414535,
+          "cost_normalized_ratio": 2.0546595802536496
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 16.636109356423155,
+          "mean_damage_taken": 54.19295233496328,
+          "exchange_ratio": 0.30697920374583754,
+          "cost_normalized_ratio": 0.4250481282634674
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 29.73627025645226,
+          "mean_damage_taken": 29.951268952027895,
+          "exchange_ratio": 0.9928217166384505,
+          "cost_normalized_ratio": 0.9928217166384505
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 29.64208042953629,
+          "mean_damage_taken": 29.674670793372208,
+          "exchange_ratio": 0.9989017447215219,
+          "cost_normalized_ratio": 1.22941753196495
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 32.5076756908501,
+          "mean_damage_taken": 28.030489590477725,
+          "exchange_ratio": 1.159725576177354,
+          "cost_normalized_ratio": 2.141031832942807
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 24.41629399538426,
+          "mean_damage_taken": 36.863314386792815,
+          "exchange_ratio": 0.6623466826447921,
+          "cost_normalized_ratio": 0.6623466826447921
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 36.70040108932015,
+          "mean_damage_taken": 24.532263423284054,
+          "exchange_ratio": 1.4960055032870339,
+          "cost_normalized_ratio": 2.7618563137606778
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 9.074849657035704,
+          "mean_damage_taken": 95.0851869965407,
+          "exchange_ratio": 0.0954391524451212,
+          "cost_normalized_ratio": 0.3523907167204475
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 55.41355612786855,
+          "mean_damage_taken": 16.653274935660974,
+          "exchange_ratio": 3.327487016334975,
+          "cost_normalized_ratio": 1.6637435081674874
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 94.94893779186248,
+          "mean_damage_taken": 4.361596805234288,
+          "exchange_ratio": 21.76930652505882,
+          "cost_normalized_ratio": 9.524071604713233
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 66.94956859254343,
+          "mean_damage_taken": 13.41273206402509,
+          "exchange_ratio": 4.9914937741962335,
+          "cost_normalized_ratio": 3.743620330647175
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 29.265687442263587,
+          "mean_damage_taken": 29.879566982542165,
+          "exchange_ratio": 0.9794548715971269,
+          "cost_normalized_ratio": 1.1018867305467677
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 29.64160995171871,
+          "mean_damage_taken": 30.223995336117223,
+          "exchange_ratio": 0.9807310258646522,
+          "cost_normalized_ratio": 0.7968439585150299
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 29.829379028594122,
+          "mean_damage_taken": 30.117294818758964,
+          "exchange_ratio": 0.9904401842231358,
+          "cost_normalized_ratio": 0.9904401842231358
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 49.189061609231864,
+          "mean_damage_taken": 18.76986959005717,
+          "exchange_ratio": 2.620639497425621,
+          "cost_normalized_ratio": 3.930959246138431
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 36.907334454873684,
+          "mean_damage_taken": 24.755629296068555,
+          "exchange_ratio": 1.4908663404785651,
+          "cost_normalized_ratio": 1.2113289016388342
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 54.188840461648795,
+          "mean_damage_taken": 16.556490529038566,
+          "exchange_ratio": 3.2729665967921484,
+          "cost_normalized_ratio": 4.909449895188223
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 13.433431466482238,
+          "mean_damage_taken": 66.43436254528874,
+          "exchange_ratio": 0.20220607155407838,
+          "cost_normalized_ratio": 0.6066182146622351
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 55.40199228016564,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 93.64424265808782,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 66.33720002335484,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 30.004338743314147,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 45.038122335167756,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 29.897607840956187,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 47.941196340206574,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 36.76747379254834,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 54.172871124878846,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 13.269100995267728,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 43.942173874769594,
+          "mean_damage_taken": 20.163270795050067,
+          "exchange_ratio": 2.1793177466801206,
+          "cost_normalized_ratio": 1.3411186133416129
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 81.07180943481796,
+          "mean_damage_taken": 11.156918596074995,
+          "exchange_ratio": 7.266505418739816,
+          "cost_normalized_ratio": 3.912733687013746
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 55.23725238772284,
+          "mean_damage_taken": 16.24652319404504,
+          "exchange_ratio": 3.399942974135498,
+          "cost_normalized_ratio": 3.138408899201998
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 24.57040731953713,
+          "mean_damage_taken": 36.805941655608834,
+          "exchange_ratio": 0.6675663279978291,
+          "cost_normalized_ratio": 0.9243226079969942
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 36.511580358161744,
+          "mean_damage_taken": 24.796707160597506,
+          "exchange_ratio": 1.4724366474020962,
+          "cost_normalized_ratio": 1.472436647402096
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 24.788022872692785,
+          "mean_damage_taken": 36.92990443430666,
+          "exchange_ratio": 0.6712181700006116,
+          "cost_normalized_ratio": 0.8261146707699835
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 39.59342790998678,
+          "mean_damage_taken": 22.840397746246886,
+          "exchange_ratio": 1.7334824178573132,
+          "cost_normalized_ratio": 3.2002752329673476
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 29.483967101429588,
+          "mean_damage_taken": 30.02689596459735,
+          "exchange_ratio": 0.9819185818005334,
+          "cost_normalized_ratio": 0.9819185818005334
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 44.75484864608139,
+          "mean_damage_taken": 20.11860510267858,
+          "exchange_ratio": 2.22455028157607,
+          "cost_normalized_ratio": 4.106862058294284
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 11.083176510352443,
+          "mean_damage_taken": 81.7334454227553,
+          "exchange_ratio": 0.13560148422749338,
+          "cost_normalized_ratio": 0.500682403301514
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 36.17741662975664,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 66.35156810517235,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 43.816958934999576,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 20.20117600270001,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 29.837067369818687,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 19.790762919374288,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 32.60717019289198,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 24.549451534760443,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 36.78536616937422,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 9.115514800432777,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 99.92732744781883,
+          "mean_damage_taken": 0.4186284571336349,
+          "exchange_ratio": 238.70170731350913,
+          "cost_normalized_ratio": 39.78361788558486
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 100.0,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 100.0,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 66.75009329915979,
+          "mean_damage_taken": 13.237682363360754,
+          "exchange_ratio": 5.042430500063261,
+          "cost_normalized_ratio": 1.8909114375237233
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 95.0268537676864,
+          "mean_damage_taken": 4.587450155553263,
+          "exchange_ratio": 20.714525617821305,
+          "cost_normalized_ratio": 5.610184021493271
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 66.15092694680324,
+          "mean_damage_taken": 13.375142331547579,
+          "exchange_ratio": 4.945811065559645,
+          "cost_normalized_ratio": 1.6486036885198816
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 97.82737690233351,
+          "mean_damage_taken": 2.8037953023309052,
+          "exchange_ratio": 34.89105528531479,
+          "cost_normalized_ratio": 17.445527642657396
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 80.5570603772806,
+          "mean_damage_taken": 11.127314843081212,
+          "exchange_ratio": 7.239577698061605,
+          "cost_normalized_ratio": 1.9607189598916845
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 99.97556190780803,
+          "mean_damage_taken": 0.17899671350377255,
+          "exchange_ratio": 558.5329470627455,
+          "cost_normalized_ratio": 279.26647353137275
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 30.282544885408132,
+          "mean_damage_taken": 30.546208612932823,
+          "exchange_ratio": 0.9913683648643368,
+          "cost_normalized_ratio": 0.9913683648643367
+        }
+      ]
+    },
+    {
+      "name": "terrain=coast",
+      "terrain": "coast",
+      "fortified": false,
+      "damaged": false,
+      "pairings": [
+        {
+          "attacker": "Warrior",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 29.995925284163096,
+          "mean_damage_taken": 30.325249488358384,
+          "exchange_ratio": 0.9891402639796347,
+          "cost_normalized_ratio": 0.9891402639796348
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 55.166505530271564,
+          "mean_damage_taken": 16.39841116818665,
+          "exchange_ratio": 3.36413723039803,
+          "cost_normalized_ratio": 2.9436200765982763
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 36.32545252390682,
+          "mean_damage_taken": 24.856782165210618,
+          "exchange_ratio": 1.4613899853355787,
+          "cost_normalized_ratio": 2.1920849780033684
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 16.56106130431879,
+          "mean_damage_taken": 55.08164364109734,
+          "exchange_ratio": 0.30066389108189767,
+          "cost_normalized_ratio": 0.6764937549342698
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 29.824917714125476,
+          "mean_damage_taken": 29.70975786326453,
+          "exchange_ratio": 1.0038761625520798,
+          "cost_normalized_ratio": 1.6312987641471297
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 16.364889697849172,
+          "mean_damage_taken": 53.42051514443301,
+          "exchange_ratio": 0.3063409189073417,
+          "cost_normalized_ratio": 0.6126818378146834
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 26.48079911494583,
+          "mean_damage_taken": 33.434501976045496,
+          "exchange_ratio": 0.7920201453551867,
+          "cost_normalized_ratio": 2.37606043606556
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 19.95534410527151,
+          "mean_damage_taken": 44.200871262187235,
+          "exchange_ratio": 0.4514694741400453,
+          "cost_normalized_ratio": 0.7336378954775736
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 29.646459077638575,
+          "mean_damage_taken": 29.898078357470222,
+          "exchange_ratio": 0.9915840985891062,
+          "cost_normalized_ratio": 2.9747522957673183
+        },
+        {
+          "attacker": "Warrior",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 7.37837347781875,
+          "mean_damage_taken": 99.91015421064407,
+          "exchange_ratio": 0.07385008597086806,
+          "cost_normalized_ratio": 0.4431005158252083
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 24.464185047173473,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 44.38877789674836,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 30.431470337952486,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 13.286427773342087,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 20.094592935215136,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 13.470117482150618,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 21.75194569890797,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 8.974367832234673,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 13.463689674186421,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Slinger",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 3.3326705032681923,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 36.68245338984796,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 66.51647916834843,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 44.55002015336665,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 19.979481459135915,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 30.364203279716893,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 16.535393300624225,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 32.89019421886074,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 12.393734511508807,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 18.56507644756199,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Archer",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 4.557884197895849,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 54.699713028138206,
+          "mean_damage_taken": 16.769825801455237,
+          "exchange_ratio": 3.2617937524068688,
+          "cost_normalized_ratio": 1.4496861121808304
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 95.62941773127572,
+          "mean_damage_taken": 4.421068523329711,
+          "exchange_ratio": 21.63038578267789,
+          "cost_normalized_ratio": 8.411816693263622
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 66.53863068151348,
+          "mean_damage_taken": 13.697065512059423,
+          "exchange_ratio": 4.857874894657568,
+          "cost_normalized_ratio": 3.238583263105046
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 29.53788845929317,
+          "mean_damage_taken": 29.463435860783793,
+          "exchange_ratio": 1.002526948956706,
+          "cost_normalized_ratio": 1.002526948956706
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 54.75379256144677,
+          "mean_damage_taken": 16.608621431072645,
+          "exchange_ratio": 3.2967090488924806,
+          "cost_normalized_ratio": 2.380956535311236
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 29.63767658667639,
+          "mean_damage_taken": 29.998290979717858,
+          "exchange_ratio": 0.9879788354181481,
+          "cost_normalized_ratio": 0.8782034092605762
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 47.80372947750138,
+          "mean_damage_taken": 18.760425564776188,
+          "exchange_ratio": 2.5481154098793852,
+          "cost_normalized_ratio": 3.3974872131725142
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 36.37135888113639,
+          "mean_damage_taken": 24.968100742922516,
+          "exchange_ratio": 1.4567130778437865,
+          "cost_normalized_ratio": 1.0520705562205124
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 54.29074236639755,
+          "mean_damage_taken": 16.476972175605216,
+          "exchange_ratio": 3.294946534338212,
+          "cost_normalized_ratio": 4.393262045784283
+        },
+        {
+          "attacker": "Swordsman",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 13.722302556241612,
+          "mean_damage_taken": 66.92302733482498,
+          "exchange_ratio": 0.20504605219944805,
+          "cost_normalized_ratio": 0.5467894725318615
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 30.133812913340517,
+          "mean_damage_taken": 30.270698674237355,
+          "exchange_ratio": 0.9954779451122039,
+          "cost_normalized_ratio": 0.6126018123767408
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 67.10966457574814,
+          "mean_damage_taken": 13.552641750375969,
+          "exchange_ratio": 4.951777359117932,
+          "cost_normalized_ratio": 2.666341654909656
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 44.39951844385599,
+          "mean_damage_taken": 20.098704222813364,
+          "exchange_ratio": 2.20907367717067,
+          "cost_normalized_ratio": 2.039144932772926
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 16.367540612803552,
+          "mean_damage_taken": 54.98189824421668,
+          "exchange_ratio": 0.29768962395773935,
+          "cost_normalized_ratio": 0.4121856331722545
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 29.958502049236557,
+          "mean_damage_taken": 30.074897716599516,
+          "exchange_ratio": 0.9961298067092439,
+          "cost_normalized_ratio": 0.996129806709244
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 29.897829374922438,
+          "mean_damage_taken": 29.5511404140573,
+          "exchange_ratio": 1.0117318301766864,
+          "cost_normalized_ratio": 1.2452084063713065
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 32.56010699365819,
+          "mean_damage_taken": 27.678544239695558,
+          "exchange_ratio": 1.1763663114536809,
+          "cost_normalized_ratio": 2.171753190376026
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 24.7265073286813,
+          "mean_damage_taken": 36.2782641149368,
+          "exchange_ratio": 0.6815791199474919,
+          "cost_normalized_ratio": 0.6815791199474919
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 36.97257009808136,
+          "mean_damage_taken": 24.531785185170357,
+          "exchange_ratio": 1.5071292129376526,
+          "cost_normalized_ratio": 2.782392393115666
+        },
+        {
+          "attacker": "Spearman",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 9.063226380951527,
+          "mean_damage_taken": 94.59050863213119,
+          "exchange_ratio": 0.09581538900693536,
+          "cost_normalized_ratio": 0.35377989787176134
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 54.898179373269386,
+          "mean_damage_taken": 16.65741044817481,
+          "exchange_ratio": 3.2957211172811496,
+          "cost_normalized_ratio": 1.6478605586405748
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 94.74453029855651,
+          "mean_damage_taken": 4.599001989508022,
+          "exchange_ratio": 20.60110661284837,
+          "cost_normalized_ratio": 9.01298414312116
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 66.00546958102898,
+          "mean_damage_taken": 13.468601467715878,
+          "exchange_ratio": 4.900692157180797,
+          "cost_normalized_ratio": 3.6755191178855977
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 29.957968900976702,
+          "mean_damage_taken": 30.068959084474482,
+          "exchange_ratio": 0.9963088119151059,
+          "cost_normalized_ratio": 1.1208474134044941
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 30.424484434020705,
+          "mean_damage_taken": 30.08887558668852,
+          "exchange_ratio": 1.011153917877897,
+          "cost_normalized_ratio": 0.8215625582757914
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 29.636817184793763,
+          "mean_damage_taken": 30.061313851475717,
+          "exchange_ratio": 0.9858789715985379,
+          "cost_normalized_ratio": 0.985878971598538
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 48.27268883320548,
+          "mean_damage_taken": 18.704345616773754,
+          "exchange_ratio": 2.5808274623580156,
+          "cost_normalized_ratio": 3.871241193537023
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 36.03410524535069,
+          "mean_damage_taken": 24.520000789141797,
+          "exchange_ratio": 1.4695801013720884,
+          "cost_normalized_ratio": 1.1940338323648219
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 54.72269856662427,
+          "mean_damage_taken": 16.834170788229816,
+          "exchange_ratio": 3.25069165894916,
+          "cost_normalized_ratio": 4.87603748842374
+        },
+        {
+          "attacker": "Horseman",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 13.533870275472076,
+          "mean_damage_taken": 66.88453740119274,
+          "exchange_ratio": 0.20234677253267103,
+          "cost_normalized_ratio": 0.607040317598013
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 54.79181026329807,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 94.67939281971996,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 67.62519008167362,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 30.19409159091767,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 44.21787342135689,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 30.178684879308566,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 48.461514896528314,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 36.7303766934184,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 54.807527288164394,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Catapult",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 13.465676128348944,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 45.03766465440518,
+          "mean_damage_taken": 20.007956468112617,
+          "exchange_ratio": 2.250987737112647,
+          "cost_normalized_ratio": 1.3852232228385524
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 81.96869144201665,
+          "mean_damage_taken": 10.855058924264863,
+          "exchange_ratio": 7.551197281738184,
+          "cost_normalized_ratio": 4.06602930555133
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 54.63728701311945,
+          "mean_damage_taken": 16.399321438661744,
+          "exchange_ratio": 3.3316797415965578,
+          "cost_normalized_ratio": 3.0753966845506686
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 24.595013243281674,
+          "mean_damage_taken": 37.40284107365571,
+          "exchange_ratio": 0.6575707228990396,
+          "cost_normalized_ratio": 0.9104825393986702
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 36.727666600216146,
+          "mean_damage_taken": 24.80058373675609,
+          "exchange_ratio": 1.4809194408510369,
+          "cost_normalized_ratio": 1.480919440851037
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 24.59424105449827,
+          "mean_damage_taken": 36.68538040760634,
+          "exchange_ratio": 0.6704098684880723,
+          "cost_normalized_ratio": 0.825119838139166
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 39.387064122984036,
+          "mean_damage_taken": 22.663279479234188,
+          "exchange_ratio": 1.7379242999263829,
+          "cost_normalized_ratio": 3.2084756306333224
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 29.8877898135921,
+          "mean_damage_taken": 30.47247628242709,
+          "exchange_ratio": 0.9808126368393577,
+          "cost_normalized_ratio": 0.9808126368393577
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 44.305848456721975,
+          "mean_damage_taken": 20.230824979299804,
+          "exchange_ratio": 2.190016892640599,
+          "cost_normalized_ratio": 4.043108109490337
+        },
+        {
+          "attacker": "Galley",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 10.973264910755898,
+          "mean_damage_taken": 80.80698640377184,
+          "exchange_ratio": 0.1357959923901295,
+          "cost_normalized_ratio": 0.501400587286632
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 37.165544682700656,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 65.88100419711812,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 45.658698347672626,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 20.215488934513765,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 30.309482532790863,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 20.005369931233222,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 32.41556667153258,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 24.731172718025395,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 36.292077120339,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Quadrireme",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 9.206210593535568,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Warrior",
+          "duels": 200,
+          "mean_damage_dealt": 99.92900656896838,
+          "mean_damage_taken": 0.35630779290880876,
+          "exchange_ratio": 280.4569772476001,
+          "cost_normalized_ratio": 46.74282954126668
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Slinger",
+          "duels": 200,
+          "mean_damage_dealt": 100.0,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Archer",
+          "duels": 200,
+          "mean_damage_dealt": 100.0,
+          "mean_damage_taken": 0.0,
+          "exchange_ratio": null,
+          "cost_normalized_ratio": null
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Swordsman",
+          "duels": 200,
+          "mean_damage_dealt": 67.21207117903931,
+          "mean_damage_taken": 13.426204623037789,
+          "exchange_ratio": 5.006036558068786,
+          "cost_normalized_ratio": 1.8772637092757947
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Spearman",
+          "duels": 200,
+          "mean_damage_dealt": 94.73146058373848,
+          "mean_damage_taken": 4.919516241655617,
+          "exchange_ratio": 19.25625527599793,
+          "cost_normalized_ratio": 5.215235803916106
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Horseman",
+          "duels": 200,
+          "mean_damage_dealt": 66.72883051868934,
+          "mean_damage_taken": 13.554009937818275,
+          "exchange_ratio": 4.92317999063164,
+          "cost_normalized_ratio": 1.6410599968772135
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Catapult",
+          "duels": 200,
+          "mean_damage_dealt": 97.88536996264843,
+          "mean_damage_taken": 2.454850764787714,
+          "exchange_ratio": 39.87426501305597,
+          "cost_normalized_ratio": 19.937132506527984
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Galley",
+          "duels": 200,
+          "mean_damage_dealt": 82.00008856044049,
+          "mean_damage_taken": 11.064534018714426,
+          "exchange_ratio": 7.411074738596898,
+          "cost_normalized_ratio": 2.00716607503666
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Quadrireme",
+          "duels": 200,
+          "mean_damage_dealt": 99.91626334817718,
+          "mean_damage_taken": 0.4085667728789085,
+          "exchange_ratio": 244.5530816031153,
+          "cost_normalized_ratio": 122.27654080155764
+        },
+        {
+          "attacker": "Caravel",
+          "defender": "Caravel",
+          "duels": 200,
+          "mean_damage_dealt": 30.111954965642653,
+          "mean_damage_taken": 30.36423902938608,
+          "exchange_ratio": 0.9916914083208451,
+          "cost_normalized_ratio": 0.9916914083208451
+        }
+      ]
+    }
+  ],
+  "manifest": {
+    "game_version": "0.9.0",
+    "rng": {
+      "kind": "philox32",
+      "version": "0.1.0"
+    },
+    "git_commit": "89c3409",
+    "git_dirty": false,
+    "civulator_core_commit": null,
+    "config": {
+      "map": {
+        "rows": 24,
+        "columns": 48,
+        "type": "earthlike",
+        "size": "standard",
+        "max_world_retries": 10,
+        "earthlike": {
+          "continent_wavelength": 3,
+          "octaves": "auto",
+          "mountain_wavelength": 5,
+          "mountain_belt_percent": 0.35,
+          "mountain_amp_coast": 0.0,
+          "mountain_amp_relief": 1.5,
+          "warp_amp": 4.0,
+          "warp_octaves": 3,
+          "land_percent": 0.45,
+          "mountain_percent": 0.08,
+          "hill_percent": 0.2,
+          "smooth_iterations": 3,
+          "talus_slope": 0.08,
+          "diffusion_coeff": 0.4,
+          "lake_max_size": 12,
+          "temp_wobble_amp": 0.3,
+          "temp_wobble_wavelength": 4,
+          "temp_lapse_rate": 0.8,
+          "temp_snow_percentile": 0.25,
+          "temp_tundra_percentile": 0.3,
+          "moisture_wavelength": 5,
+          "moisture_octaves": 4,
+          "moisture_desert_percentile": 0.36,
+          "moisture_plains_percentile": 0.56,
+          "river_percent": 0.18,
+          "river_moisture_bonus": 0.1,
+          "river_min_length": 2,
+          "river_pd_epsilon": 0.0001,
+          "river_altitude_jitter": 1e-07,
+          "tiered_luxury_per_region": 2,
+          "tiered_strategic_per_region": 1,
+          "tiered_guaranteed": [
+            "Horses",
+            "Iron"
+          ],
+          "tiered_fair_radius": 3,
+          "tiered_strategic_per_100_land": 2,
+          "tiered_founding_ring": 1,
+          "feature_chance": {
+            "woods": 0.35,
+            "rainforest": 0.5,
+            "marsh": 0.15,
+            "ice": 0.7,
+            "reef": 0.3,
+            "oasis": 0.2
+          }
+        },
+        "sizes": {
+          "duel": {
+            "rows": 12,
+            "cols": 24,
+            "default_players": 2,
+            "max_players": 3
+          },
+          "tiny": {
+            "rows": 16,
+            "cols": 32,
+            "default_players": 3,
+            "max_players": 4
+          },
+          "small": {
+            "rows": 20,
+            "cols": 40,
+            "default_players": 4,
+            "max_players": 6
+          },
+          "standard": {
+            "rows": 24,
+            "cols": 48,
+            "default_players": 6,
+            "max_players": 8
+          },
+          "large": {
+            "rows": 32,
+            "cols": 64,
+            "default_players": 8,
+            "max_players": 12
+          },
+          "huge": {
+            "rows": 42,
+            "cols": 84,
+            "default_players": 12,
+            "max_players": 16
+          },
+          "colossal": {
+            "rows": 66,
+            "cols": 106,
+            "default_players": 12,
+            "max_players": 24
+          }
+        },
+        "starts": {
+          "ring2_weight": 0.5,
+          "fresh_water_weight": 8.0,
+          "coastal_weight": 4.0,
+          "min_passable_ring1": 3,
+          "d_min_players_factor": 3.5,
+          "d_min_floor": 4,
+          "food_total_min": 6.0,
+          "food_best_min": 2.5714285714285716,
+          "prod_total_min": 0.75,
+          "prod_best_min": 0.3
+        },
+        "terrain_weights": {
+          "Plains": 0.3,
+          "Grassland": 0.3,
+          "Desert": 0.1,
+          "Tundra": 0.1,
+          "Hills": 0.1,
+          "Woods": 0.05,
+          "Mountain": 0.05
+        },
+        "features": {
+          "woods_chance": 0.2,
+          "rainforest_chance": 0.1
+        }
+      },
+      "terrain": {
+        "base": {
+          "Grassland": {
+            "yields": [
+              2,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "land"
+          },
+          "Plains": {
+            "yields": [
+              1,
+              1
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "land"
+          },
+          "Desert": {
+            "yields": [
+              0,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "land"
+          },
+          "Tundra": {
+            "yields": [
+              1,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "land"
+          },
+          "Snow": {
+            "yields": [
+              0,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "land"
+          },
+          "Coast": {
+            "yields": [
+              1,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "water"
+          },
+          "Lake": {
+            "yields": [
+              2,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "water"
+          },
+          "Ocean": {
+            "yields": [
+              1,
+              0
+            ],
+            "movement": 1,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "domain": "water",
+            "deep": true
+          }
+        },
+        "relief": {
+          "flat": {
+            "yields": [
+              0,
+              0
+            ],
+            "movement": 0,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ]
+          },
+          "hills": {
+            "yields": [
+              0,
+              1
+            ],
+            "movement": 1,
+            "defense": 3,
+            "los": [
+              1,
+              1
+            ]
+          },
+          "mountain": {
+            "yields": [
+              0,
+              0
+            ],
+            "movement": 0,
+            "defense": 0,
+            "los": [
+              3,
+              0
+            ],
+            "impassable": true
+          }
+        },
+        "feature": {
+          "Woods": {
+            "yields": [
+              0,
+              1
+            ],
+            "movement": 1,
+            "defense": 3,
+            "los": [
+              1,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Plains",
+                "Grassland",
+                "Tundra"
+              ],
+              "relief": [
+                "flat",
+                "hills"
+              ]
+            }
+          },
+          "Rainforest": {
+            "yields": [
+              1,
+              0
+            ],
+            "movement": 1,
+            "defense": 3,
+            "los": [
+              1,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Plains"
+              ],
+              "relief": [
+                "flat",
+                "hills"
+              ]
+            }
+          },
+          "Marsh": {
+            "yields": [
+              1,
+              0
+            ],
+            "movement": 1,
+            "defense": -2,
+            "los": [
+              0,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Grassland"
+              ],
+              "relief": [
+                "flat"
+              ]
+            }
+          },
+          "Floodplains": {
+            "yields": [
+              3,
+              0
+            ],
+            "movement": 0,
+            "defense": -2,
+            "los": [
+              0,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Desert"
+              ],
+              "relief": [
+                "flat"
+              ]
+            }
+          },
+          "Oasis": {
+            "yields": [
+              3,
+              0
+            ],
+            "movement": 0,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Desert"
+              ],
+              "relief": [
+                "flat"
+              ]
+            }
+          },
+          "Reef": {
+            "yields": [
+              1,
+              1
+            ],
+            "movement": 0,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Coast"
+              ]
+            }
+          },
+          "Ice": {
+            "yields": [
+              0,
+              0
+            ],
+            "movement": 0,
+            "defense": 0,
+            "los": [
+              0,
+              0
+            ],
+            "on": {
+              "bases": [
+                "Coast",
+                "Ocean"
+              ]
+            }
+          }
+        },
+        "resource": {
+          "Wheat": {
+            "class": "bonus",
+            "yields": [
+              1,
+              0
+            ],
+            "chance": 0.05,
+            "on": [
+              {
+                "bases": [
+                  "Plains"
+                ],
+                "relief": [
+                  "flat"
+                ],
+                "features": [
+                  "none"
+                ]
+              },
+              {
+                "bases": [
+                  "Desert"
+                ],
+                "relief": [
+                  "flat"
+                ],
+                "features": [
+                  "Floodplains"
+                ]
+              }
+            ]
+          },
+          "Rice": {
+            "class": "bonus",
+            "yields": [
+              1,
+              0
+            ],
+            "chance": 0.04,
+            "on": {
+              "bases": [
+                "Grassland"
+              ],
+              "relief": [
+                "flat"
+              ],
+              "features": [
+                "none",
+                "Marsh"
+              ]
+            }
+          },
+          "Cattle": {
+            "class": "bonus",
+            "yields": [
+              1,
+              0
+            ],
+            "chance": 0.04,
+            "on": {
+              "bases": [
+                "Grassland"
+              ],
+              "relief": [
+                "flat"
+              ],
+              "features": [
+                "none"
+              ]
+            }
+          },
+          "Sheep": {
+            "class": "bonus",
+            "yields": [
+              0,
+              1
+            ],
+            "chance": 0.04,
+            "on": {
+              "relief": [
+                "hills"
+              ],
+              "features": [
+                "none"
+              ]
+            }
+          },
+          "Stone": {
+            "class": "bonus",
+            "yields": [
+              0,
+              1
+            ],
+            "chance": 0.04,
+            "on": {
+              "bases": [
+                "Grassland"
+              ],
+              "relief": [
+                "flat",
+                "hills"
+              ],
+              "features": [
+                "none"
+              ]
+            }
+          },
+          "Deer": {
+            "class": "bonus",
+            "yields": [
+              0,
+              1
+            ],
+            "chance": 0.04,
+            "on": [
+              {
+                "features": [
+                  "Woods"
+                ]
+              },
+              {
+                "bases": [
+                  "Tundra"
+                ]
+              }
+            ]
+          },
+          "Bananas": {
+            "class": "bonus",
+            "yields": [
+              1,
+              0
+            ],
+            "chance": 0.35,
+            "on": {
+              "features": [
+                "Rainforest"
+              ]
+            }
+          },
+          "Fish": {
+            "class": "bonus",
+            "yields": [
+              1,
+              0
+            ],
+            "chance": 0.008,
+            "on": {
+              "bases": [
+                "Coast",
+                "Lake"
+              ]
+            }
+          },
+          "Horses": {
+            "class": "strategic",
+            "on": {
+              "bases": [
+                "Grassland",
+                "Plains"
+              ],
+              "relief": [
+                "flat"
+              ]
+            },
+            "improved_by": [
+              "Pasture"
+            ],
+            "reveals": "Animal Husbandry",
+            "frequency": 1
+          },
+          "Iron": {
+            "class": "strategic",
+            "on": [
+              {
+                "relief": [
+                  "hills"
+                ]
+              },
+              {
+                "bases": [
+                  "Desert",
+                  "Tundra"
+                ],
+                "relief": [
+                  "flat"
+                ]
+              }
+            ],
+            "improved_by": [
+              "Mine"
+            ],
+            "reveals": "Bronze Working",
+            "frequency": 1
+          },
+          "Niter": {
+            "class": "strategic",
+            "on": {
+              "bases": [
+                "Grassland",
+                "Plains",
+                "Desert",
+                "Tundra"
+              ],
+              "relief": [
+                "flat"
+              ]
+            },
+            "improved_by": [
+              "Mine"
+            ],
+            "reveals": "Military Engineering",
+            "frequency": 2
+          },
+          "Wine": {
+            "class": "luxury",
+            "on": {
+              "bases": [
+                "Grassland",
+                "Plains"
+              ],
+              "relief": [
+                "flat"
+              ]
+            },
+            "improved_by": [
+              "Plantation"
+            ],
+            "frequency": 1
+          },
+          "Silk": {
+            "class": "luxury",
+            "on": {
+              "bases": [
+                "Grassland",
+                "Plains"
+              ],
+              "relief": [
+                "flat"
+              ]
+            },
+            "improved_by": [
+              "Plantation"
+            ],
+            "frequency": 1
+          },
+          "Dyes": {
+            "class": "luxury",
+            "on": [
+              {
+                "bases": [
+                  "Grassland",
+                  "Plains"
+                ],
+                "relief": [
+                  "flat"
+                ]
+              },
+              {
+                "features": [
+                  "Woods"
+                ]
+              },
+              {
+                "features": [
+                  "Rainforest"
+                ]
+              }
+            ],
+            "improved_by": [
+              "Plantation"
+            ],
+            "frequency": 1
+          },
+          "Cotton": {
+            "class": "luxury",
+            "on": {
+              "bases": [
+                "Grassland",
+                "Plains"
+              ],
+              "relief": [
+                "flat"
+              ]
+            },
+            "improved_by": [
+              "Plantation"
+            ],
+            "frequency": 1
+          },
+          "Salt": {
+            "class": "luxury",
+            "on": {
+              "bases": [
+                "Desert",
+                "Tundra"
+              ],
+              "relief": [
+                "flat"
+              ]
+            },
+            "improved_by": [
+              "Mine"
+            ],
+            "frequency": 1
+          },
+          "Silver": {
+            "class": "luxury",
+            "on": [
+              {
+                "relief": [
+                  "hills"
+                ]
+              },
+              {
+                "bases": [
+                  "Tundra"
+                ],
+                "relief": [
+                  "flat"
+                ]
+              }
+            ],
+            "improved_by": [
+              "Mine"
+            ],
+            "frequency": 1
+          },
+          "Furs": {
+            "class": "luxury",
+            "on": [
+              {
+                "bases": [
+                  "Tundra"
+                ],
+                "relief": [
+                  "flat"
+                ]
+              },
+              {
+                "features": [
+                  "Woods"
+                ]
+              }
+            ],
+            "improved_by": [
+              "Camp"
+            ],
+            "frequency": 1
+          },
+          "Pearls": {
+            "class": "luxury",
+            "on": {
+              "bases": [
+                "Coast"
+              ]
+            },
+            "improved_by": [
+              "Fishing Boats"
+            ],
+            "frequency": 1
+          },
+          "Whales": {
+            "class": "luxury",
+            "on": {
+              "bases": [
+                "Coast"
+              ]
+            },
+            "improved_by": [
+              "Fishing Boats"
+            ],
+            "frequency": 1
+          }
+        },
+        "river": {
+          "crossing_cost": 1
+        }
+      },
+      "improvements": {
+        "Farm": {
+          "housing": 0.5,
+          "food": 1,
+          "on": [
+            {
+              "bases": [
+                "Plains",
+                "Grassland",
+                "Desert"
+              ],
+              "relief": [
+                "flat"
+              ]
+            },
+            {
+              "features": [
+                "Floodplains"
+              ]
+            }
+          ]
+        },
+        "Mine": {
+          "requires_tech": "Mining",
+          "production": 1,
+          "on": [
+            {
+              "relief": [
+                "hills"
+              ]
+            },
+            {
+              "bases": [
+                "Desert",
+                "Tundra",
+                "Snow"
+              ],
+              "relief": [
+                "flat"
+              ]
+            }
+          ]
+        },
+        "Plantation": {
+          "requires_tech": "Irrigation",
+          "housing": 0.5,
+          "gold": 2,
+          "on": {
+            "bases": [
+              "Plains",
+              "Grassland",
+              "Desert"
+            ],
+            "relief": [
+              "flat"
+            ]
+          }
+        },
+        "Camp": {
+          "requires_tech": "Animal Husbandry",
+          "housing": 0.5,
+          "gold": 2,
+          "on": {
+            "bases": [
+              "Plains",
+              "Grassland",
+              "Tundra",
+              "Desert"
+            ],
+            "relief": [
+              "flat"
+            ]
+          }
+        },
+        "Pasture": {
+          "requires_tech": "Animal Husbandry",
+          "housing": 0.5,
+          "production": 1,
+          "on": {
+            "bases": [
+              "Plains",
+              "Grassland",
+              "Desert",
+              "Tundra"
+            ],
+            "relief": [
+              "flat"
+            ]
+          }
+        },
+        "Quarry": {
+          "requires_tech": "Mining",
+          "production": 1,
+          "on": {
+            "bases": [
+              "Plains",
+              "Desert",
+              "Grassland",
+              "Tundra"
+            ],
+            "relief": [
+              "flat"
+            ]
+          }
+        },
+        "Fishing Boats": {
+          "requires_tech": "Sailing",
+          "housing": 0.5,
+          "food": 1,
+          "on": {
+            "bases": [
+              "Coast",
+              "Lake"
+            ]
+          }
+        }
+      },
+      "worker_default": {
+        "access_bonus": 1
+      },
+      "game": {
+        "num_players": 8,
+        "max_turns": 1000,
+        "starting_warriors": 3,
+        "min_city_distance": 4,
+        "city_score_weight": 10,
+        "domination_victory": false,
+        "score": {
+          "unit_weight": 1,
+          "population_weight": 1,
+          "tech_weight": 2,
+          "civic_weight": 2,
+          "wonder_weight": 10
+        }
+      },
+      "units": {
+        "Warrior": {
+          "combat_class": "melee",
+          "era": "Ancient",
+          "maintenance": 0,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Swordsman",
+          "max_movement": 2,
+          "combat_strength": 20,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 40
+        },
+        "Slinger": {
+          "combat_class": "ranged",
+          "era": "Ancient",
+          "maintenance": 0,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Archer",
+          "max_movement": 2,
+          "combat_strength": 5,
+          "ranged_strength": 15,
+          "range": 1,
+          "production_cost": 35
+        },
+        "Archer": {
+          "requires_tech": "Archery",
+          "combat_class": "ranged",
+          "era": "Ancient",
+          "maintenance": 1,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Crossbowman",
+          "max_movement": 2,
+          "combat_strength": 15,
+          "ranged_strength": 25,
+          "range": 2,
+          "production_cost": 60
+        },
+        "Swordsman": {
+          "requires_tech": "Iron Working",
+          "requires_resource": "Iron",
+          "combat_class": "melee",
+          "era": "Classical",
+          "maintenance": 2,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Man-At-Arms",
+          "max_movement": 2,
+          "combat_strength": 35,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 90
+        },
+        "Spearman": {
+          "requires_tech": "Bronze Working",
+          "combat_class": "anti_cavalry",
+          "era": "Ancient",
+          "maintenance": 1,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Pikeman",
+          "max_movement": 2,
+          "combat_strength": 25,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 65
+        },
+        "Horseman": {
+          "requires_tech": "Horseback Riding",
+          "requires_resource": "Horses",
+          "combat_class": "light_cavalry",
+          "era": "Classical",
+          "maintenance": 2,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Knight",
+          "max_movement": 4,
+          "combat_strength": 35,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 80
+        },
+        "Settler": {
+          "combat_class": "civilian",
+          "era": "Ancient",
+          "maintenance": 0,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 2,
+          "combat_strength": 0,
+          "ranged_strength": 0,
+          "range": 0,
+          "production_cost": 120
+        },
+        "Worker": {
+          "combat_class": "civilian",
+          "era": "Ancient",
+          "maintenance": 0,
+          "purchasable": [
+            "gold"
+          ],
+          "build_charges": 3,
+          "max_movement": 2,
+          "combat_strength": 0,
+          "ranged_strength": 0,
+          "range": 0,
+          "production_cost": 50
+        },
+        "Catapult": {
+          "requires_tech": "Engineering",
+          "combat_class": "siege",
+          "era": "Classical",
+          "maintenance": 2,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Trebuchet",
+          "max_movement": 2,
+          "combat_strength": 23,
+          "ranged_strength": 35,
+          "range": 2,
+          "production_cost": 120
+        },
+        "BatteringRam": {
+          "requires_tech": "Masonry",
+          "combat_class": "support",
+          "era": "Ancient",
+          "maintenance": 1,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 2,
+          "combat_strength": 0,
+          "ranged_strength": 0,
+          "range": 0,
+          "production_cost": 65
+        },
+        "SiegeTower": {
+          "requires_tech": "Machinery",
+          "combat_class": "support",
+          "era": "Classical",
+          "maintenance": 2,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 2,
+          "combat_strength": 0,
+          "ranged_strength": 0,
+          "range": 0,
+          "production_cost": 100
+        },
+        "Man-At-Arms": {
+          "requires_tech": "Apprenticeship",
+          "requires_resource": "Iron",
+          "combat_class": "melee",
+          "era": "Medieval",
+          "maintenance": 3,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Musketman",
+          "max_movement": 2,
+          "combat_strength": 45,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 160
+        },
+        "Pikeman": {
+          "requires_tech": "Military Tactics",
+          "combat_class": "anti_cavalry",
+          "era": "Medieval",
+          "maintenance": 2,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 2,
+          "combat_strength": 45,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 180
+        },
+        "Crossbowman": {
+          "requires_tech": "Machinery",
+          "combat_class": "ranged",
+          "era": "Medieval",
+          "maintenance": 3,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 2,
+          "combat_strength": 30,
+          "ranged_strength": 40,
+          "range": 2,
+          "production_cost": 180
+        },
+        "Knight": {
+          "requires_tech": "Stirrups",
+          "requires_resource": "Horses",
+          "combat_class": "heavy_cavalry",
+          "era": "Medieval",
+          "maintenance": 4,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 4,
+          "combat_strength": 50,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 220
+        },
+        "Trebuchet": {
+          "requires_tech": "Military Engineering",
+          "combat_class": "siege",
+          "era": "Medieval",
+          "maintenance": 3,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 2,
+          "combat_strength": 35,
+          "ranged_strength": 45,
+          "range": 2,
+          "production_cost": 200
+        },
+        "Musketman": {
+          "requires_tech": "Gunpowder",
+          "requires_resource": "Niter",
+          "combat_class": "melee",
+          "era": "Renaissance",
+          "maintenance": 4,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 2,
+          "combat_strength": 55,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 240
+        },
+        "Trader": {
+          "requires_civic": "Foreign Trade",
+          "combat_class": "civilian",
+          "era": "Ancient",
+          "maintenance": 0,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 2,
+          "combat_strength": 0,
+          "ranged_strength": 0,
+          "range": 0,
+          "production_cost": 40
+        },
+        "Galley": {
+          "requires_tech": "Sailing",
+          "combat_class": "naval_melee",
+          "era": "Ancient",
+          "maintenance": 1,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Caravel",
+          "max_movement": 3,
+          "combat_strength": 30,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 65
+        },
+        "Quadrireme": {
+          "requires_tech": "Shipbuilding",
+          "combat_class": "naval_ranged",
+          "era": "Classical",
+          "maintenance": 2,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 3,
+          "combat_strength": 20,
+          "ranged_strength": 25,
+          "range": 1,
+          "production_cost": 120
+        },
+        "Caravel": {
+          "requires_tech": "Cartography",
+          "combat_class": "naval_melee",
+          "era": "Renaissance",
+          "maintenance": 4,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 4,
+          "combat_strength": 55,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 240
+        }
+      },
+      "combat": {
+        "class_bonuses": [
+          {
+            "unit": "anti_cavalry",
+            "target": "light_cavalry",
+            "amount": 10,
+            "strength": "combat"
+          },
+          {
+            "unit": "melee",
+            "target": "anti_cavalry",
+            "amount": 5,
+            "strength": "combat"
+          },
+          {
+            "unit": "Archer",
+            "target": "light_cavalry",
+            "amount": -5,
+            "strength": "ranged"
+          },
+          {
+            "unit": "anti_cavalry",
+            "target": "heavy_cavalry",
+            "amount": 10,
+            "strength": "combat"
+          },
+          {
+            "unit": "Archer",
+            "target": "heavy_cavalry",
+            "amount": -5,
+            "strength": "ranged"
+          },
+          {
+            "unit": "Crossbowman",
+            "target": "light_cavalry",
+            "amount": -5,
+            "strength": "ranged"
+          },
+          {
+            "unit": "Crossbowman",
+            "target": "heavy_cavalry",
+            "amount": -5,
+            "strength": "ranged"
+          },
+          {
+            "unit": "ranged",
+            "target": "naval_melee",
+            "amount": -17,
+            "strength": "ranged"
+          },
+          {
+            "unit": "ranged",
+            "target": "naval_ranged",
+            "amount": -17,
+            "strength": "ranged"
+          }
+        ],
+        "ranged_city_penalty": 17,
+        "fortification_bonus": [
+          3,
+          6
+        ],
+        "hp_penalty_coefficient": -10,
+        "damage_base": 30,
+        "damage_exponent_coefficient": 0.04,
+        "damage_roll_min": 0.8,
+        "damage_roll_max": 1.2,
+        "heal_fortified": 20,
+        "heal_normal": 10,
+        "flanking_bonus": 2,
+        "zone_of_control_from_ranged": false
+      },
+      "city": {
+        "health": 200,
+        "defense_strength": 20,
+        "ranged_building": "Walls",
+        "capital_building": "Palace",
+        "ranged_strength": 25,
+        "ranged_range": 2,
+        "heal_per_turn": 20
+      },
+      "culture": {
+        "base": 1.0,
+        "per_pop": 0.3
+      },
+      "science": {
+        "base": 0.0,
+        "per_pop": 0.5
+      },
+      "gold": {
+        "base": 0.0,
+        "per_pop": 0.0,
+        "upgrade_per_production": 2,
+        "upgrade_base": 10,
+        "purchase_multiplier": 4
+      },
+      "faith": {
+        "base": 0.0,
+        "per_pop": 0.0,
+        "purchase_multiplier": 2
+      },
+      "trade": {
+        "unit": "Trader",
+        "range": 15,
+        "duration_turns": 21,
+        "domestic": {
+          "City Center": {
+            "food": 1,
+            "production": 1
+          },
+          "Campus": {
+            "food": 1
+          },
+          "Holy Site": {
+            "food": 1
+          },
+          "Theater Square": {
+            "food": 1
+          },
+          "Entertainment Complex": {
+            "food": 1
+          },
+          "Encampment": {
+            "production": 1
+          },
+          "Industrial Zone": {
+            "production": 1
+          },
+          "Commercial Hub": {
+            "production": 1
+          },
+          "Harbor": {
+            "production": 1
+          },
+          "Government Plaza": {
+            "food": 1,
+            "production": 1
+          }
+        },
+        "international": {
+          "City Center": {
+            "gold": 3
+          },
+          "Campus": {
+            "science": 1
+          },
+          "Holy Site": {
+            "faith": 1
+          },
+          "Theater Square": {
+            "culture": 1
+          },
+          "Entertainment Complex": {
+            "food": 1
+          },
+          "Encampment": {
+            "production": 1
+          },
+          "Industrial Zone": {
+            "production": 1
+          },
+          "Commercial Hub": {
+            "gold": 3
+          },
+          "Harbor": {
+            "gold": 3
+          },
+          "Government Plaza": {
+            "gold": 2
+          }
+        }
+      },
+      "housing": {
+        "water_fresh": 5,
+        "water_coastal": 3,
+        "water_dry": 2,
+        "improvement_radius": 3,
+        "growth_bands": [
+          [
+            2.0,
+            100
+          ],
+          [
+            1.0,
+            50
+          ],
+          [
+            -4.9,
+            25
+          ]
+        ]
+      },
+      "territory": {
+        "claim_radius": 5,
+        "work_radius": 3,
+        "founding_ring": 1,
+        "border_cost": {
+          "curve": "civ6_community",
+          "a": 10,
+          "b": 6,
+          "p": 1.3
+        }
+      },
+      "loyalty": {
+        "maximum": 100,
+        "founded": 100,
+        "captured": 50,
+        "range": 9,
+        "citizen_weight": 10,
+        "drift_gain": 10,
+        "drift_cap": 20,
+        "garrison": 2,
+        "bands": [
+          [
+            76,
+            100,
+            100
+          ],
+          [
+            51,
+            75,
+            75
+          ],
+          [
+            26,
+            50,
+            25
+          ],
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      },
+      "amenities": {
+        "need_divisor": 2,
+        "free_first": 0,
+        "luxury_cities": 4,
+        "bands": [
+          [
+            5,
+            20,
+            100,
+            1
+          ],
+          [
+            3,
+            10,
+            100,
+            0
+          ],
+          [
+            0,
+            0,
+            100,
+            0
+          ],
+          [
+            -2,
+            -10,
+            85,
+            0
+          ],
+          [
+            -4,
+            -20,
+            70,
+            -2
+          ],
+          [
+            -6,
+            -30,
+            50,
+            -3
+          ],
+          [
+            -99,
+            -40,
+            25,
+            -4
+          ]
+        ]
+      },
+      "research": {
+        "tech_cost_percent": 75,
+        "civic_cost_percent": 75
+      },
+      "techs": {
+        "Pottery": {
+          "cost": 25,
+          "era": "Ancient"
+        },
+        "Animal Husbandry": {
+          "cost": 25,
+          "era": "Ancient"
+        },
+        "Mining": {
+          "cost": 25,
+          "era": "Ancient"
+        },
+        "Astrology": {
+          "cost": 50,
+          "era": "Ancient"
+        },
+        "Sailing": {
+          "cost": 50,
+          "era": "Ancient"
+        },
+        "Irrigation": {
+          "cost": 50,
+          "era": "Ancient",
+          "requires": [
+            "Pottery"
+          ]
+        },
+        "Writing": {
+          "cost": 50,
+          "era": "Ancient",
+          "requires": [
+            "Pottery"
+          ]
+        },
+        "Archery": {
+          "cost": 50,
+          "era": "Ancient",
+          "requires": [
+            "Animal Husbandry"
+          ]
+        },
+        "Masonry": {
+          "cost": 80,
+          "era": "Ancient",
+          "requires": [
+            "Mining"
+          ]
+        },
+        "Bronze Working": {
+          "cost": 80,
+          "era": "Ancient",
+          "requires": [
+            "Mining"
+          ]
+        },
+        "Celestial Navigation": {
+          "cost": 120,
+          "era": "Classical",
+          "requires": [
+            "Sailing",
+            "Astrology"
+          ]
+        },
+        "Currency": {
+          "cost": 120,
+          "era": "Classical",
+          "requires": [
+            "Writing"
+          ]
+        },
+        "Horseback Riding": {
+          "cost": 120,
+          "era": "Classical",
+          "requires": [
+            "Archery"
+          ]
+        },
+        "Iron Working": {
+          "cost": 120,
+          "era": "Classical",
+          "requires": [
+            "Bronze Working"
+          ]
+        },
+        "Shipbuilding": {
+          "cost": 200,
+          "era": "Classical",
+          "requires": [
+            "Sailing"
+          ]
+        },
+        "Engineering": {
+          "cost": 200,
+          "era": "Classical",
+          "requires": [
+            "Masonry"
+          ]
+        },
+        "Military Tactics": {
+          "cost": 300,
+          "era": "Medieval",
+          "requires": [
+            "Bronze Working",
+            "Currency"
+          ]
+        },
+        "Apprenticeship": {
+          "cost": 300,
+          "era": "Medieval",
+          "requires": [
+            "Currency",
+            "Horseback Riding"
+          ]
+        },
+        "Machinery": {
+          "cost": 300,
+          "era": "Medieval",
+          "requires": [
+            "Iron Working",
+            "Engineering"
+          ]
+        },
+        "Education": {
+          "cost": 335,
+          "era": "Medieval",
+          "requires": [
+            "Apprenticeship"
+          ]
+        },
+        "Military Engineering": {
+          "cost": 335,
+          "era": "Medieval",
+          "requires": [
+            "Engineering"
+          ]
+        },
+        "Stirrups": {
+          "cost": 390,
+          "era": "Medieval",
+          "requires": [
+            "Horseback Riding",
+            "Apprenticeship"
+          ]
+        },
+        "Castles": {
+          "cost": 390,
+          "era": "Medieval",
+          "requires": [
+            "Military Engineering"
+          ]
+        },
+        "Gunpowder": {
+          "cost": 600,
+          "era": "Renaissance",
+          "requires": [
+            "Apprenticeship",
+            "Stirrups",
+            "Military Engineering"
+          ]
+        },
+        "Cartography": {
+          "cost": 600,
+          "era": "Renaissance",
+          "requires": [
+            "Shipbuilding",
+            "Celestial Navigation"
+          ],
+          "effects": [
+            {
+              "kind": "enables",
+              "rules": [
+                "ocean_navigation"
+              ]
+            }
+          ]
+        }
+      },
+      "civics": {
+        "Code of Laws": {
+          "cost": 20,
+          "era": "Ancient"
+        },
+        "Craftsmanship": {
+          "cost": 40,
+          "era": "Ancient",
+          "requires": [
+            "Code of Laws"
+          ]
+        },
+        "Foreign Trade": {
+          "cost": 40,
+          "era": "Ancient",
+          "requires": [
+            "Code of Laws"
+          ],
+          "effects": [
+            {
+              "kind": "trade_route_capacity",
+              "amount": 1
+            }
+          ]
+        },
+        "Military Tradition": {
+          "cost": 50,
+          "era": "Ancient",
+          "requires": [
+            "Craftsmanship"
+          ],
+          "effects": [
+            {
+              "kind": "enables",
+              "rules": [
+                "flanking"
+              ]
+            }
+          ]
+        },
+        "State Workforce": {
+          "cost": 70,
+          "era": "Ancient",
+          "requires": [
+            "Craftsmanship"
+          ]
+        },
+        "Early Empire": {
+          "cost": 70,
+          "era": "Ancient",
+          "requires": [
+            "Foreign Trade"
+          ]
+        },
+        "Games and Recreation": {
+          "cost": 110,
+          "era": "Classical",
+          "requires": [
+            "State Workforce"
+          ]
+        },
+        "Political Philosophy": {
+          "cost": 110,
+          "era": "Classical",
+          "requires": [
+            "State Workforce",
+            "Early Empire"
+          ]
+        },
+        "Drama and Poetry": {
+          "cost": 110,
+          "era": "Classical",
+          "requires": [
+            "Early Empire"
+          ]
+        },
+        "Military Training": {
+          "cost": 120,
+          "era": "Classical",
+          "requires": [
+            "Military Tradition"
+          ]
+        },
+        "Theology": {
+          "cost": 120,
+          "era": "Classical",
+          "requires": [
+            "Drama and Poetry"
+          ]
+        },
+        "Defensive Tactics": {
+          "cost": 175,
+          "era": "Classical",
+          "requires": [
+            "Games and Recreation",
+            "Political Philosophy"
+          ]
+        },
+        "Recorded History": {
+          "cost": 175,
+          "era": "Classical",
+          "requires": [
+            "Drama and Poetry",
+            "Political Philosophy"
+          ]
+        },
+        "Naval Tradition": {
+          "cost": 220,
+          "era": "Classical",
+          "requires": [
+            "Defensive Tactics"
+          ]
+        },
+        "Feudalism": {
+          "cost": 300,
+          "era": "Medieval",
+          "requires": [
+            "Defensive Tactics"
+          ]
+        },
+        "Civil Service": {
+          "cost": 300,
+          "era": "Medieval",
+          "requires": [
+            "Defensive Tactics",
+            "Recorded History"
+          ]
+        },
+        "Mercenaries": {
+          "cost": 340,
+          "era": "Medieval",
+          "requires": [
+            "Feudalism",
+            "Military Training"
+          ]
+        },
+        "Divine Right": {
+          "cost": 340,
+          "era": "Medieval",
+          "requires": [
+            "Civil Service",
+            "Theology"
+          ]
+        },
+        "Medieval Faires": {
+          "cost": 420,
+          "era": "Medieval",
+          "requires": [
+            "Feudalism"
+          ]
+        },
+        "Guilds": {
+          "cost": 420,
+          "era": "Medieval",
+          "requires": [
+            "Feudalism",
+            "Civil Service"
+          ]
+        }
+      },
+      "governments": {
+        "Chiefdom": {
+          "requires_civic": "Code of Laws",
+          "tier": 0,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "military": 1,
+              "economic": 1
+            }
+          ]
+        },
+        "Autocracy": {
+          "requires_civic": "Political Philosophy",
+          "tier": 1,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "military": 1,
+              "economic": 1,
+              "wildcard": 2
+            },
+            {
+              "kind": "city_yield",
+              "food": 1,
+              "production": 1,
+              "science": 1,
+              "culture": 1,
+              "gold": 1,
+              "faith": 1,
+              "capital_only": true
+            },
+            {
+              "kind": "production_percent",
+              "target": {
+                "kind": "wonder"
+              },
+              "percent": 10
+            }
+          ]
+        },
+        "Classical Republic": {
+          "requires_civic": "Political Philosophy",
+          "tier": 1,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "economic": 2,
+              "wildcard": 2
+            },
+            {
+              "kind": "housing_if_districts",
+              "amount": 1,
+              "min_districts": 1
+            },
+            {
+              "kind": "amenity",
+              "amount": 1,
+              "min_districts": 1
+            }
+          ]
+        },
+        "Oligarchy": {
+          "requires_civic": "Political Philosophy",
+          "tier": 1,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "military": 2,
+              "economic": 1,
+              "wildcard": 1
+            },
+            {
+              "kind": "combat_strength",
+              "applies_to": [
+                "melee",
+                "anti_cavalry"
+              ],
+              "amount": 4
+            }
+          ]
+        },
+        "Monarchy": {
+          "requires_civic": "Divine Right",
+          "tier": 2,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "military": 2,
+              "economic": 1,
+              "wildcard": 3
+            },
+            {
+              "kind": "housing_with_building",
+              "building": "Walls",
+              "amount": 1
+            },
+            {
+              "kind": "housing_with_building",
+              "building": "Medieval Walls",
+              "amount": 1
+            },
+            {
+              "kind": "production_percent",
+              "target": {
+                "building": [
+                  "Walls",
+                  "Medieval Walls"
+                ]
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Theocracy": {
+          "requires_civic": "Divine Right",
+          "tier": 2,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "military": 2,
+              "economic": 2,
+              "wildcard": 2
+            },
+            {
+              "kind": "faith_purchase",
+              "categories": [
+                "land_military"
+              ]
+            },
+            {
+              "kind": "purchase_percent",
+              "resource": "faith",
+              "percent": -15
+            }
+          ]
+        }
+      },
+      "policies": {
+        "God King": {
+          "type": "economic",
+          "requires_civic": "Code of Laws",
+          "obsolete_with": "Theology",
+          "effects": [
+            {
+              "kind": "city_yield",
+              "faith": 1,
+              "gold": 1,
+              "capital_only": true
+            }
+          ]
+        },
+        "Urban Planning": {
+          "type": "economic",
+          "requires_civic": "Code of Laws",
+          "effects": [
+            {
+              "kind": "city_yield",
+              "production": 1
+            }
+          ]
+        },
+        "Ilkum": {
+          "type": "economic",
+          "requires_civic": "Craftsmanship",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit": "Worker"
+              },
+              "percent": 30
+            }
+          ]
+        },
+        "Agoge": {
+          "type": "military",
+          "requires_civic": "Craftsmanship",
+          "obsolete_with": "Feudalism",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit_class": [
+                  "melee",
+                  "ranged",
+                  "anti_cavalry"
+                ],
+                "unit_era": [
+                  "Ancient",
+                  "Classical"
+                ]
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Caravansaries": {
+          "type": "economic",
+          "requires_civic": "Foreign Trade",
+          "effects": [
+            {
+              "kind": "route_yield",
+              "gold": 2
+            }
+          ]
+        },
+        "Maneuver": {
+          "type": "military",
+          "requires_civic": "Military Tradition",
+          "obsolete_with": "Divine Right",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit_class": [
+                  "light_cavalry",
+                  "heavy_cavalry"
+                ],
+                "unit_era": [
+                  "Ancient",
+                  "Classical"
+                ]
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Conscription": {
+          "type": "military",
+          "requires_civic": "State Workforce",
+          "effects": [
+            {
+              "kind": "unit_maintenance_delta",
+              "amount": -1
+            }
+          ]
+        },
+        "Corvee": {
+          "type": "economic",
+          "requires_civic": "State Workforce",
+          "obsolete_with": "Divine Right",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "kind": "wonder",
+                "wonder_era": [
+                  "Ancient",
+                  "Classical"
+                ]
+              },
+              "percent": 15
+            }
+          ]
+        },
+        "Colonization": {
+          "type": "economic",
+          "requires_civic": "Early Empire",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit": "Settler"
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Limitanei": {
+          "type": "military",
+          "requires_civic": "Early Empire",
+          "effects": [
+            {
+              "kind": "loyalty",
+              "amount": 2,
+              "requires_garrison": true
+            }
+          ]
+        },
+        "Insulae": {
+          "type": "economic",
+          "requires_civic": "Games and Recreation",
+          "obsolete_with": "Medieval Faires",
+          "effects": [
+            {
+              "kind": "housing_if_districts",
+              "amount": 1,
+              "min_districts": 2
+            }
+          ]
+        },
+        "Veterancy": {
+          "type": "military",
+          "requires_civic": "Military Training",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "district": [
+                  "Encampment",
+                  "Harbor"
+                ]
+              },
+              "percent": 30
+            },
+            {
+              "kind": "production_percent",
+              "target": {
+                "in_district": [
+                  "Encampment",
+                  "Harbor"
+                ]
+              },
+              "percent": 30
+            }
+          ]
+        },
+        "Maritime Industries": {
+          "type": "military",
+          "requires_civic": "Naval Tradition",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit_class": [
+                  "naval_melee",
+                  "naval_ranged"
+                ],
+                "unit_era": [
+                  "Ancient",
+                  "Classical"
+                ]
+              },
+              "percent": 100
+            }
+          ]
+        },
+        "Naval Infrastructure": {
+          "type": "economic",
+          "requires_civic": "Naval Tradition",
+          "effects": [
+            {
+              "kind": "adjacency_percent",
+              "district": "Harbor",
+              "percent": 100
+            }
+          ]
+        },
+        "Scripture": {
+          "type": "economic",
+          "requires_civic": "Theology",
+          "effects": [
+            {
+              "kind": "adjacency_percent",
+              "district": "Holy Site",
+              "percent": 100
+            }
+          ]
+        },
+        "Bastions": {
+          "type": "military",
+          "requires_civic": "Defensive Tactics",
+          "effects": [
+            {
+              "kind": "combat_strength",
+              "applies_to": "city",
+              "amount": 6
+            },
+            {
+              "kind": "city_ranged_strength",
+              "amount": 5
+            }
+          ]
+        },
+        "Limes": {
+          "type": "military",
+          "requires_civic": "Defensive Tactics",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "building": [
+                  "Walls",
+                  "Medieval Walls"
+                ]
+              },
+              "percent": 100
+            }
+          ]
+        },
+        "Natural Philosophy": {
+          "type": "economic",
+          "requires_civic": "Recorded History",
+          "effects": [
+            {
+              "kind": "adjacency_percent",
+              "district": "Campus",
+              "percent": 100
+            }
+          ]
+        },
+        "Feudal Contract": {
+          "type": "military",
+          "requires_civic": "Feudalism",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit_class": [
+                  "melee",
+                  "ranged",
+                  "anti_cavalry"
+                ],
+                "unit_era": [
+                  "Ancient",
+                  "Classical",
+                  "Medieval",
+                  "Renaissance"
+                ]
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Serfdom": {
+          "type": "economic",
+          "requires_civic": "Feudalism",
+          "effects": [
+            {
+              "kind": "build_charges_trained",
+              "amount": 2
+            }
+          ]
+        },
+        "Meritocracy": {
+          "type": "economic",
+          "requires_civic": "Civil Service",
+          "effects": [
+            {
+              "kind": "city_yield",
+              "culture": 1,
+              "per_district": true
+            }
+          ]
+        },
+        "Professional Army": {
+          "type": "military",
+          "requires_civic": "Mercenaries",
+          "effects": [
+            {
+              "kind": "upgrade_cost_percent",
+              "percent": -50
+            }
+          ]
+        },
+        "Retainers": {
+          "type": "military",
+          "requires_civic": "Civil Service",
+          "effects": [
+            {
+              "kind": "amenity",
+              "amount": 1,
+              "requires_garrison": true
+            }
+          ]
+        },
+        "Trade Confederation": {
+          "type": "economic",
+          "requires_civic": "Mercenaries",
+          "effects": [
+            {
+              "kind": "route_yield",
+              "culture": 1,
+              "science": 1,
+              "international_only": true
+            }
+          ]
+        },
+        "Aesthetics": {
+          "type": "economic",
+          "requires_civic": "Medieval Faires",
+          "effects": [
+            {
+              "kind": "adjacency_percent",
+              "district": "Theater Square",
+              "percent": 100
+            }
+          ]
+        },
+        "Medina Quarter": {
+          "type": "economic",
+          "requires_civic": "Medieval Faires",
+          "effects": [
+            {
+              "kind": "housing_if_districts",
+              "amount": 2,
+              "min_districts": 3
+            }
+          ]
+        },
+        "Craftsmen": {
+          "type": "economic",
+          "requires_civic": "Guilds",
+          "effects": [
+            {
+              "kind": "adjacency_percent",
+              "district": "Industrial Zone",
+              "percent": 100
+            }
+          ]
+        },
+        "Town Charters": {
+          "type": "economic",
+          "requires_civic": "Guilds",
+          "effects": [
+            {
+              "kind": "adjacency_percent",
+              "district": "Commercial Hub",
+              "percent": 100
+            }
+          ]
+        },
+        "Chivalry": {
+          "type": "military",
+          "requires_civic": "Divine Right",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit_class": [
+                  "light_cavalry",
+                  "heavy_cavalry"
+                ]
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Gothic Architecture": {
+          "type": "economic",
+          "requires_civic": "Divine Right",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "kind": "wonder",
+                "wonder_era": [
+                  "Ancient",
+                  "Classical",
+                  "Medieval",
+                  "Renaissance"
+                ]
+              },
+              "percent": 15
+            }
+          ]
+        }
+      },
+      "buildings": {
+        "Granary": {
+          "production_cost": 60,
+          "requires_tech": "Pottery",
+          "housing": 2,
+          "food": 1
+        },
+        "Monument": {
+          "production_cost": 50,
+          "culture": 2,
+          "loyalty": 1
+        },
+        "Walls": {
+          "production_cost": 100,
+          "requires_tech": "Masonry",
+          "defense_bonus": 30,
+          "purchasable": []
+        },
+        "Workshop": {
+          "production_cost": 195,
+          "requires_tech": "Apprenticeship",
+          "requires_district": "Industrial Zone",
+          "production": 2,
+          "maintenance": 1,
+          "effects": [
+            {
+              "kind": "regional_yield",
+              "production": 1,
+              "range": 6,
+              "scope": "player"
+            }
+          ]
+        },
+        "Library": {
+          "production_cost": 90,
+          "requires_tech": "Writing",
+          "requires_district": "Campus",
+          "science": 2,
+          "maintenance": 1
+        },
+        "University": {
+          "production_cost": 250,
+          "requires_tech": "Education",
+          "requires_district": "Campus",
+          "requires_building": "Library",
+          "science": 4,
+          "housing": 1,
+          "maintenance": 2
+        },
+        "Shrine": {
+          "production_cost": 70,
+          "requires_tech": "Astrology",
+          "requires_district": "Holy Site",
+          "faith": 2,
+          "maintenance": 1,
+          "purchasable": [
+            "gold",
+            "faith"
+          ]
+        },
+        "Temple": {
+          "production_cost": 120,
+          "requires_civic": "Theology",
+          "requires_district": "Holy Site",
+          "requires_building": "Shrine",
+          "faith": 4,
+          "maintenance": 2,
+          "purchasable": [
+            "gold",
+            "faith"
+          ]
+        },
+        "Amphitheater": {
+          "production_cost": 150,
+          "requires_civic": "Drama and Poetry",
+          "requires_district": "Theater Square",
+          "culture": 2,
+          "maintenance": 1
+        },
+        "Arena": {
+          "production_cost": 150,
+          "requires_civic": "Games and Recreation",
+          "requires_district": "Entertainment Complex",
+          "amenity": 2,
+          "culture": 1,
+          "maintenance": 1
+        },
+        "Ancestral Hall": {
+          "production_cost": 150,
+          "requires_government_tier": 1,
+          "requires_district": "Government Plaza",
+          "maintenance": 1,
+          "purchasable": [],
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit": "Settler"
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Grand Master's Chapel": {
+          "production_cost": 290,
+          "requires_government_tier": 2,
+          "requires_district": "Government Plaza",
+          "requires_building": "Ancestral Hall",
+          "faith": 5,
+          "maintenance": 2,
+          "purchasable": [],
+          "effects": [
+            {
+              "kind": "faith_purchase",
+              "categories": [
+                "land_military"
+              ],
+              "scope": "player"
+            }
+          ]
+        },
+        "Barracks": {
+          "production_cost": 90,
+          "requires_tech": "Bronze Working",
+          "requires_district": "Encampment",
+          "production": 1,
+          "housing": 1,
+          "maintenance": 1
+        },
+        "Market": {
+          "production_cost": 120,
+          "requires_tech": "Currency",
+          "requires_district": "Commercial Hub",
+          "gold": 3,
+          "maintenance": 0,
+          "effects": [
+            {
+              "kind": "trade_route_capacity",
+              "amount": 1
+            }
+          ]
+        },
+        "Lighthouse": {
+          "production_cost": 120,
+          "requires_tech": "Celestial Navigation",
+          "requires_district": "Harbor",
+          "food": 1,
+          "gold": 1,
+          "housing": 1,
+          "maintenance": 0,
+          "effects": [
+            {
+              "kind": "trade_route_capacity",
+              "amount": 1
+            }
+          ]
+        },
+        "Medieval Walls": {
+          "production_cost": 220,
+          "requires_tech": "Castles",
+          "requires_building": "Walls",
+          "defense_bonus": 30,
+          "purchasable": []
+        },
+        "Palace": {
+          "housing": 1,
+          "purchasable": [],
+          "science": 2,
+          "gold": 5,
+          "production": 2,
+          "amenity": 1,
+          "effects": [
+            {
+              "kind": "loyalty",
+              "amount": 1,
+              "per_population": true
+            }
+          ]
+        }
+      },
+      "districts": {
+        "population_per_district": 3,
+        "cost_progress_factor": 9,
+        "removable_features": [
+          "Woods",
+          "Rainforest",
+          "Marsh"
+        ],
+        "allowed_features": [
+          "Floodplains"
+        ],
+        "Campus": {
+          "production_cost": 54,
+          "requires_tech": "Writing",
+          "maintenance": 1,
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacency_yield": "science",
+          "adjacency": [
+            {
+              "amount": 1,
+              "terrain": {
+                "relief": [
+                  "mountain"
+                ]
+              }
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "terrain": {
+                "features": [
+                  "Rainforest"
+                ]
+              }
+            },
+            {
+              "amount": 2,
+              "terrain": {
+                "features": [
+                  "Reef"
+                ]
+              }
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "district": "any"
+            },
+            {
+              "amount": 1,
+              "district": [
+                "Government Plaza"
+              ]
+            }
+          ]
+        },
+        "Commercial Hub": {
+          "production_cost": 54,
+          "requires_tech": "Currency",
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacency_yield": "gold",
+          "adjacency": [
+            {
+              "amount": 2,
+              "river_on_tile": true
+            },
+            {
+              "amount": 2,
+              "district": [
+                "Harbor"
+              ]
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "district": "any"
+            },
+            {
+              "amount": 1,
+              "district": [
+                "Government Plaza"
+              ]
+            }
+          ]
+        },
+        "Theater Square": {
+          "production_cost": 54,
+          "requires_civic": "Drama and Poetry",
+          "maintenance": 1,
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacency_yield": "culture",
+          "adjacency": [
+            {
+              "amount": 2,
+              "wonder": "any"
+            },
+            {
+              "amount": 2,
+              "district": [
+                "Entertainment Complex"
+              ]
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "district": "any"
+            },
+            {
+              "amount": 1,
+              "district": [
+                "Government Plaza"
+              ]
+            }
+          ]
+        },
+        "Holy Site": {
+          "production_cost": 54,
+          "requires_tech": "Astrology",
+          "maintenance": 1,
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacency_yield": "faith",
+          "adjacency": [
+            {
+              "amount": 1,
+              "terrain": {
+                "relief": [
+                  "mountain"
+                ]
+              }
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "terrain": {
+                "features": [
+                  "Woods"
+                ]
+              }
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "district": "any"
+            },
+            {
+              "amount": 1,
+              "district": [
+                "Government Plaza"
+              ]
+            }
+          ]
+        },
+        "Industrial Zone": {
+          "production_cost": 54,
+          "requires_tech": "Apprenticeship",
+          "maintenance": 1,
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacency_yield": "production",
+          "adjacency": [
+            {
+              "amount": 2,
+              "district": [
+                "Aqueduct"
+              ]
+            },
+            {
+              "amount": 1,
+              "improvement": [
+                "Quarry"
+              ]
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "improvement": [
+                "Mine"
+              ]
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "district": "any"
+            },
+            {
+              "amount": 1,
+              "district": [
+                "Government Plaza"
+              ]
+            },
+            {
+              "amount": 1,
+              "terrain": {
+                "resources": [
+                  "strategic"
+                ]
+              }
+            },
+            {
+              "amount": 2,
+              "district": [
+                "Dam"
+              ]
+            }
+          ]
+        },
+        "Harbor": {
+          "production_cost": 54,
+          "requires_tech": "Celestial Navigation",
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacency_yield": "gold",
+          "ship_spawn": true,
+          "on": {
+            "bases": [
+              "Coast",
+              "Lake"
+            ]
+          },
+          "requires_adjacent": [
+            {
+              "terrain": {
+                "bases": [
+                  "Grassland",
+                  "Plains",
+                  "Desert",
+                  "Tundra",
+                  "Snow"
+                ]
+              }
+            }
+          ],
+          "adjacency": [
+            {
+              "amount": 2,
+              "district": [
+                "City Center"
+              ]
+            },
+            {
+              "amount": 1,
+              "terrain": {
+                "bases": [
+                  "Coast",
+                  "Lake",
+                  "Ocean"
+                ],
+                "resources": [
+                  "any"
+                ]
+              }
+            },
+            {
+              "amount": 1,
+              "per": 2,
+              "district": "any"
+            },
+            {
+              "amount": 1,
+              "district": [
+                "Government Plaza"
+              ]
+            }
+          ]
+        },
+        "Encampment": {
+          "production_cost": 54,
+          "requires_tech": "Bronze Working",
+          "maintenance": 1,
+          "cost_model": "discounted",
+          "discount_percent": 40,
+          "adjacent_to_city_center": false,
+          "health": 100,
+          "captured_health_percent": 50
+        },
+        "Entertainment Complex": {
+          "production_cost": 54,
+          "requires_civic": "Games and Recreation",
+          "maintenance": 1,
+          "amenity": 1,
+          "cost_model": "discounted",
+          "discount_percent": 40
+        },
+        "Government Plaza": {
+          "production_cost": 30,
+          "requires_civic": "State Workforce",
+          "loyalty": 8,
+          "cost_model": "discounted",
+          "discount_percent": 25,
+          "max_per_player": 1
+        },
+        "Aqueduct": {
+          "production_cost": 36,
+          "requires_tech": "Engineering",
+          "cost_model": "progress",
+          "counts_toward_limit": false,
+          "adjacent_to_city_center": true,
+          "requires_adjacent": [
+            {
+              "river_edge_not_shared_with_center": true
+            },
+            {
+              "terrain": {
+                "bases": [
+                  "Lake"
+                ]
+              }
+            },
+            {
+              "terrain": {
+                "features": [
+                  "Oasis"
+                ]
+              }
+            },
+            {
+              "terrain": {
+                "relief": [
+                  "mountain"
+                ]
+              }
+            }
+          ],
+          "water_housing_min": 6,
+          "water_housing_boost": 2
+        },
+        "Dam": {
+          "production_cost": 81,
+          "requires_tech": "Engineering",
+          "cost_model": "progress",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "on": {
+            "features": [
+              "Floodplains"
+            ]
+          },
+          "requires_adjacent": [
+            {
+              "river_on_tile": true
+            }
+          ],
+          "housing": 1,
+          "amenity": 1,
+          "maintenance": 0
+        },
+        "Pyramids": {
+          "kind": "wonder",
+          "era": "Ancient",
+          "production_cost": 220,
+          "requires_tech": "Masonry",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "flat"
+            ],
+            "bases": [
+              "Desert",
+              "Plains"
+            ]
+          },
+          "culture": 2,
+          "effects": [
+            {
+              "kind": "free_units",
+              "units": [
+                {
+                  "unit": "Worker",
+                  "count": 1
+                }
+              ]
+            },
+            {
+              "kind": "build_charges",
+              "amount": 1,
+              "scope": "player"
+            }
+          ]
+        },
+        "Stonehenge": {
+          "kind": "wonder",
+          "era": "Ancient",
+          "production_cost": 180,
+          "requires_tech": "Astrology",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "flat"
+            ],
+            "bases": [
+              "Grassland",
+              "Plains",
+              "Desert",
+              "Tundra",
+              "Snow"
+            ]
+          },
+          "requires_adjacent": [
+            {
+              "terrain": {
+                "resources": [
+                  "Stone"
+                ]
+              }
+            }
+          ],
+          "faith": 4
+        },
+        "Hanging Gardens": {
+          "kind": "wonder",
+          "era": "Ancient",
+          "production_cost": 180,
+          "requires_tech": "Irrigation",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "requires_adjacent": [
+            {
+              "river_on_tile": true
+            }
+          ],
+          "housing": 2,
+          "effects": [
+            {
+              "kind": "growth_percent",
+              "percent": 15,
+              "scope": "player"
+            }
+          ]
+        },
+        "Temple of Artemis": {
+          "kind": "wonder",
+          "era": "Ancient",
+          "production_cost": 180,
+          "requires_tech": "Archery",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "requires_adjacent": [
+            {
+              "terrain": {
+                "resources": [
+                  "Cattle",
+                  "Sheep",
+                  "Deer"
+                ]
+              }
+            }
+          ],
+          "food": 4,
+          "housing": 3
+        },
+        "Oracle": {
+          "kind": "wonder",
+          "era": "Ancient",
+          "production_cost": 290,
+          "requires_civic": "State Workforce",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "hills"
+            ]
+          },
+          "culture": 2,
+          "faith": 2,
+          "effects": [
+            {
+              "kind": "free_civic",
+              "count": 1
+            }
+          ]
+        },
+        "Statue of Zeus": {
+          "kind": "wonder",
+          "era": "Classical",
+          "production_cost": 400,
+          "requires_civic": "Military Training",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "flat"
+            ],
+            "bases": [
+              "Grassland",
+              "Plains",
+              "Desert",
+              "Tundra",
+              "Snow"
+            ]
+          },
+          "requires_adjacent": [
+            {
+              "district": [
+                "Encampment"
+              ]
+            }
+          ],
+          "gold": 3,
+          "effects": [
+            {
+              "kind": "free_units",
+              "units": [
+                {
+                  "unit": "Spearman",
+                  "count": 3
+                },
+                {
+                  "unit": "Archer",
+                  "count": 3
+                }
+              ]
+            },
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit_class": [
+                  "anti_cavalry"
+                ]
+              },
+              "percent": 50,
+              "scope": "player"
+            }
+          ]
+        },
+        "Great Library": {
+          "kind": "wonder",
+          "era": "Classical",
+          "production_cost": 400,
+          "requires_civic": "Recorded History",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "flat"
+            ],
+            "bases": [
+              "Grassland",
+              "Plains",
+              "Desert",
+              "Tundra",
+              "Snow"
+            ]
+          },
+          "requires_adjacent": [
+            {
+              "district": [
+                "Campus"
+              ]
+            }
+          ],
+          "science": 3,
+          "effects": [
+            {
+              "kind": "free_tech",
+              "count": 1
+            }
+          ]
+        },
+        "Colossus": {
+          "kind": "wonder",
+          "era": "Classical",
+          "production_cost": 400,
+          "requires_tech": "Shipbuilding",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "bases": [
+              "Coast"
+            ]
+          },
+          "requires_adjacent_all": [
+            {
+              "terrain": {
+                "bases": [
+                  "Grassland",
+                  "Plains",
+                  "Desert",
+                  "Tundra",
+                  "Snow"
+                ]
+              }
+            },
+            {
+              "district": [
+                "Harbor"
+              ]
+            }
+          ],
+          "gold": 3,
+          "effects": [
+            {
+              "kind": "trade_route_capacity",
+              "amount": 1,
+              "scope": "player"
+            },
+            {
+              "kind": "free_units",
+              "units": [
+                {
+                  "unit": "Trader",
+                  "count": 1
+                }
+              ]
+            }
+          ]
+        },
+        "Great Lighthouse": {
+          "kind": "wonder",
+          "era": "Classical",
+          "production_cost": 290,
+          "requires_tech": "Celestial Navigation",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "bases": [
+              "Coast"
+            ]
+          },
+          "requires_adjacent_all": [
+            {
+              "terrain": {
+                "bases": [
+                  "Grassland",
+                  "Plains",
+                  "Desert",
+                  "Tundra",
+                  "Snow"
+                ]
+              }
+            },
+            {
+              "district": [
+                "Harbor"
+              ]
+            }
+          ],
+          "gold": 3,
+          "effects": [
+            {
+              "kind": "movement_delta",
+              "domain": "water",
+              "amount": 1,
+              "scope": "player"
+            }
+          ]
+        },
+        "Colosseum": {
+          "kind": "wonder",
+          "era": "Classical",
+          "production_cost": 400,
+          "requires_civic": "Games and Recreation",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "flat"
+            ],
+            "bases": [
+              "Grassland",
+              "Plains",
+              "Desert",
+              "Tundra",
+              "Snow"
+            ]
+          },
+          "requires_adjacent": [
+            {
+              "district": [
+                "Entertainment Complex"
+              ]
+            }
+          ],
+          "culture": 2,
+          "effects": [
+            {
+              "kind": "loyalty",
+              "amount": 2,
+              "range": 6,
+              "scope": "player"
+            },
+            {
+              "kind": "amenity",
+              "amount": 2,
+              "range": 6,
+              "scope": "player"
+            }
+          ]
+        },
+        "Alhambra": {
+          "kind": "wonder",
+          "era": "Medieval",
+          "production_cost": 710,
+          "requires_tech": "Castles",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "hills"
+            ]
+          },
+          "requires_adjacent": [
+            {
+              "district": [
+                "Encampment"
+              ]
+            }
+          ],
+          "amenity": 2,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "military": 1,
+              "scope": "player"
+            },
+            {
+              "kind": "combat_strength",
+              "applies_to": [
+                "city"
+              ],
+              "amount": 6,
+              "scope": "city"
+            }
+          ]
+        },
+        "Angkor Wat": {
+          "kind": "wonder",
+          "era": "Medieval",
+          "production_cost": 710,
+          "requires_civic": "Medieval Faires",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "requires_adjacent": [
+            {
+              "district": [
+                "Aqueduct"
+              ]
+            }
+          ],
+          "faith": 2,
+          "effects": [
+            {
+              "kind": "free_population",
+              "amount": 1,
+              "all_cities": true
+            },
+            {
+              "kind": "housing_if_districts",
+              "amount": 1,
+              "min_districts": 0,
+              "scope": "player"
+            }
+          ]
+        },
+        "Forbidden City": {
+          "kind": "wonder",
+          "era": "Renaissance",
+          "production_cost": 920,
+          "requires_civic": "Divine Right",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "flat"
+            ],
+            "bases": [
+              "Grassland",
+              "Plains",
+              "Desert",
+              "Tundra",
+              "Snow"
+            ]
+          },
+          "adjacent_to_city_center": true,
+          "culture": 5,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "wildcard": 1,
+              "scope": "player"
+            }
+          ]
+        }
+      },
+      "wonders": {
+        "consolation_percent": 0
+      },
+      "training": {
+        "episodes": 64,
+        "batch_size": 32,
+        "max_turns": 250,
+        "learning_rate": 0.001,
+        "gamma": 0.9,
+        "epsilon_start": 1.0,
+        "epsilon_end": 0.05,
+        "epsilon_decay_episodes": 800,
+        "target_update_freq": 100,
+        "encoder": "enhanced",
+        "fully_conv": true,
+        "fog_of_war": false,
+        "rewards": {
+          "invalid_action": -1,
+          "fortify": 0,
+          "damage_per_hp": 0.1,
+          "kill": 10,
+          "unit_lost": -5,
+          "capture_civilian": 15,
+          "capture_city": 80,
+          "found_city": 40,
+          "win": 100,
+          "loss": -100,
+          "draw": 0,
+          "proximity_weight": 0.5,
+          "proximity_radius": 0
+        }
+      }
+    },
+    "date": "2026-10-22T21:17:35.705108+00:00"
+  },
+  "elapsed_seconds": 1.8341650000074878
+}

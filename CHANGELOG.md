@@ -374,6 +374,145 @@ Factory and Dam. No version bump: Q0 opened 0.9.0.
   progression skill's §4 table: `[buildings.Workshop]` production and its
   effect's `range` / amount, `[districts.Dam]`.
 
+### The sea: naval techs, ships, coast and ocean, the Great Lighthouse (#128, patch Q5)
+
+**Rule changes, effects NOT yet measured.** Source:
+`docs/districts_religion_design.md` §6.1-§6.5 and §6.7, "v2 fixes" B5 and its
+non-blocking naval items, ruling R3 (Erik, 2026-10-22: Harbor, naval units,
+sea trade); Civ 6 Gathering Storm values from
+`docs/civ6_progression_reference.md` §1, §2, §5, §6. Sea trade (§6.6) is Q6,
+not here. No version bump: Q0 opened 0.9.0.
+
+- **Three techs return.** `[techs.Sailing]` (Ancient, 50, no prerequisite: Civ
+  6's fifth starting tech), `[techs.Shipbuilding]` (Classical, 200, Sailing),
+  `[techs.Cartography]` (Renaissance, 600, Shipbuilding + Celestial
+  Navigation; Civ 6 GS lists Buttress, cut) carrying `{ kind = "enables",
+  rules = ["ocean_navigation"] }`. Celestial Navigation now requires Sailing
+  and Astrology (Civ 6). **Moves:** Fishing Boats Celestial Navigation ->
+  Sailing, the Colossus Celestial Navigation -> Shipbuilding (both Civ 6's
+  placement). The tech tree sums to **4,915 science** at Civ 6 costs (+850;
+  3,680 at `tech_cost_percent` 75), to re-tune in the balancing pass. Five
+  techs are open at the start; the progression design's "2-4 open" lattice
+  statement is pinned by no test and already did not hold on the default
+  research path before Q5 (4-6 open early; now 5-7) -- reported, not
+  amended.
+- **One civic, two cards.** `[civics."Naval Tradition"]` (Classical, GS 220,
+  requires Defensive Tactics, the digest's row). `[policies."Maritime
+  Industries"]` (military: +100 % production toward Ancient and Classical
+  units of the two naval classes; Civ 6 hangs it on Foreign Trade, moved here
+  so Foreign Trade stays Trader + Caravansaries; no `obsolete_with`, Civ 6's
+  Exploration is cut) and `[policies."Naval Infrastructure"]` (economic: +100 %
+  Harbor adjacency). The culture tree sums to 3,550 (+220).
+- **Ships and classes.** Two combat classes, `naval_melee` and `naval_ranged`,
+  join `unit_model.COMBAT_CLASSES` (fighting classes). `[units.Galley]`
+  (naval_melee, Ancient, 65, CS 30, move 3, upkeep 1, Sailing, upgrades to the
+  Caravel), `[units.Quadrireme]` (naval_ranged, Classical, 120, CS 20 / RS 25 /
+  range 1, move 3, upkeep 2, Shipbuilding), `[units.Caravel]` (naval_melee,
+  Renaissance, 240, CS 55, move 4, upkeep 4, Cartography): Civ 6 GS stats.
+  Slot 0 (military), `MOVEMENT_DOMAIN` `"water"`, subclasses in
+  `UNIT_CLASSES`, **appended** to `BUILD_OPTIONS` (the build head grows by
+  three; index k keeps its meaning). `CLASS_CHANNEL` maps the naval classes
+  onto the melee and ranged channels: no encoder changes depth (R9; nothing
+  encodes the domain yet).
+- **Not land military.** "Land military" is now `is_land_military` -- a
+  fighting class **of the land domain** (`unit_model.is_land_military`,
+  `game/unit.is_land_military`). Faith purchase (`faith_category` takes the
+  unit's domain), the loyalty garrison (`loyalty.is_garrisoned`) and the
+  Encampment spawn read it, so a ship is none of those. Zone of control and
+  capture were already land-only.
+- **-17 against ships.** `[combat] class_bonuses` gains `{ unit = "ranged",
+  target = "naval_melee", amount = -17, strength = "ranged" }` and the same for
+  `naval_ranged`: every land ranged unit (Slinger, Archer, Crossbowman -- by
+  class, unlike the Archer-by-name cavalry rows; Civ 6 gives all three the
+  penalty), as the shooter only. Siege units and ships shooting are
+  untouched.
+- **Deep water and the coast domain.** `[terrain.base.Ocean] deep = true`
+  (composed into `ComposedProperties.deep` / `Tile.deep`; every other base
+  false; base tables are now read strictly against `terrain_model.BASE_KEYS`,
+  and only a water base may be deep). `movement_domain(unit_type, player)` is
+  the one domain source (B5): `"land"` for land units; for water units
+  `"water"` once the owner holds `ocean_navigation`, else `"coast"`;
+  `Unit.get_movement_domain` delegates, and every caller passes the owner
+  (spawn, start placement, masks, pathing). `can_enter("coast", tile)` = water
+  and not deep. The cost grids are keyed by the domain string, so `"coast"` is
+  a third player-blind grid and `path_finder` is unchanged; the C++ A* reads
+  the same grid and needed no change (it is not built on the machine this ran
+  on: the Python A* was tested, the C++ case of the test skips).
+- **Building and placing ships.** `City.can_produce_unit` admits a water-domain
+  unit only while the city has a spawn water tile (`City.ship_spawn_tiles`):
+  the tile of a complete district with the new column `ship_spawn = true`
+  (the Harbor), else a water tile beside the centre the ship could enter -- a
+  Lake counts (a Lake city builds Galleys that never leave the lake, as in
+  Civ 6), an Ocean neighbour does not before Cartography. The mask, production
+  and purchase share the predicate. `complete_unit_production` places a ship on
+  the first free tile of that list (Harbor, then the centre's water
+  neighbours in `get_adjacent_coords` order), never on land; land units are
+  placed as before and never reach the Harbor tile.
+- **Combat across domains.** Melee crosses domains both ways (Civ 6): a Galley
+  attacks a coastal unit, city or Encampment, a land unit attacks an adjacent
+  ship. The action mask now tests for an enemy unit, city or fortified
+  district on a neighbour **before** the `can_enter` gate, which still gates
+  moves and the capture walk-in. The post-kill move-in gains an explicit
+  `can_enter` clause (B5: it did not exist; a Galley would otherwise have
+  landed). A naval melee unit damages a city but never captures it
+  (`can_capture_city` stays a melee land unit, #84). Ranged attacks across
+  domains, and city and Encampment strikes at ships, needed no change.
+- **The Great Lighthouse.** `[districts."Great Lighthouse"]`: wonder,
+  Classical, 290 (Civ 6 GS), Celestial Navigation, on Coast, adjacent to land
+  **and to a Harbor** -- Civ 6's "a Harbor with a Lighthouse" is relaxed to "a
+  Harbor" because `requires_adjacent_all` matches districts, not their
+  buildings (declared). `gold = 3`; effect `{ kind = "movement_delta", domain =
+  "water", amount = 1, scope = "player" }`; the Great Admiral point is cut. New
+  effect kind **`movement_delta`** (`domain` = `"land"` | `"water"`, `amount`;
+  player scope only) with one consumer, `Unit.get_max_movement` -- the one
+  reader of `max_movement` -- for the owner's units of that domain kind.
+- **Rules measurement.** `scripts/matchup_matrix.py` gains a `coast` defender
+  terrain condition (the defender stands on Coast; attacker tiles stay Plains,
+  which never enter combat). **Oracle:** `--seed 652026 --terrain
+  flat,hills,woods --fortified --damaged --units Warrior Slinger Archer
+  Swordsman Spearman Horseman Catapult` before and after this patch: 462 of
+  the 463 output lines are byte-identical (the one that differs is the
+  trailing timing / artifact-path line). **First measurement of the ships** (`--seed 652026 --terrain
+  coast --units <the seven> Galley Quadrireme Caravel`, 200 duels per ordered
+  pairing, artifact `stats/matchup_matrix_652026_1792703855.json`, defender on
+  Coast, full HP, unfortified), mean damage dealt / taken per attack: Warrior
+  -> Galley 19.96 / 44.20; Galley -> Warrior 45.04 / 20.01; Galley -> Galley
+  29.89 / 30.47; Slinger -> Galley 8.97, Archer -> Galley 12.39 (the -17), Catapult
+  -> Galley 36.73 (no -17); Quadrireme -> Warrior 37.17, -> Galley 24.73;
+  Caravel -> Warrior 99.93 / 0.36, -> Galley 82.00 / 11.06. A rules
+  measurement, not an agent result.
+- **Stats.** `episode_stats["naval_units_built"]`: ships this player's cities
+  put on the board (trained, bought or granted), counted by
+  `complete_unit_production`; the smoke end line prints it.
+- **Existing tests changed (declared).** Fixtures that took "the first unit"
+  of a class by name now filter to land units, because a ship needs water:
+  `tests/test_effects.py` `_unit_types` (it picked the Galley as the fighter),
+  `tests/test_gold.py` `_land_military_unit` (`faith_category` now takes the
+  domain). `tests/test_combat_classes.py`: the class/strength property counts
+  `naval_ranged` as ranged, and the every-buildable-unit production test gives
+  a ship's city a Coast neighbour (the §6.4 rule, not an exemption).
+  `tests/test_wonders.py` `test_free_units_are_queued_when_the_city_has_no_room`
+  undid every monkeypatch (its synthetic wonder registry included) while the
+  wonder still stood; placing a unit now reads the effects in force
+  (`get_max_movement`), so it undoes only the placement patch.
+  `tests/test_wonders.py` / `tests/test_fortified_districts.py` call
+  `movement_domain(t, None)` (the player argument is required).
+- **Smoke observations (not a measurement; `python scripts/smoke_random_selfplay.py
+  --seed S`, Duel, random policy, default rounds).** Seed 4242 runs clean,
+  `naval_units_built=[0, 1]`. Seeds 1-8: ships were built in 4 of 8 games
+  (seed 3: [2, 3]; seeds 5 and 7: [0, 1]; seed 8: [1, 0]; seeds 1, 2, 4, 6:
+  none).
+- **Declared gaps.** Embarkation stays out (ACCEPTED GAP #76, designed next,
+  R12): no land unit ever enters water, so a ship can never be captured or
+  carry anything. Ships do not count toward a blockade (`is_city_under_siege`
+  treats water as held, declared in Q3). Ships cannot enter a coastal city.
+  Oligarchy's Civ 6 bonus to naval melee is not added (its config comment
+  still says "no navy"; an open call, not a fix). Civ 6's Mathematics +1
+  naval movement is not in the tree (Mathematics is cut).
+- **Effect NOT yet measured:** nothing was trained or evaluated. Dials in the
+  progression skill's §4 table: the naval techs' costs, the three `[units.*]`
+  tables, `naval_units_built` to read them.
+
 ---
 
 ## v0.8.1 — Erik's rulings on the block's open calls; build charges (2026-10-22)
