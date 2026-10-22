@@ -240,11 +240,15 @@ def test_river_on_tile_source_is_counted_once():
 
 def test_resource_source_counts_only_tiles_with_a_matching_resource():
     """A `resources` row counts neighbours carrying a matching resource,
-    through terrain_model.matches. Breaks if the resource is not passed."""
-    name = type_with(lambda s: any(r.source.kind == "terrain" and "resources" in r.source.value
-                                   for r in s.adjacency))
-    row = next(r for r in DISTRICTS[name].adjacency
-               if r.source.kind == "terrain" and "resources" in r.source.value)
+    through terrain_model.matches. Breaks if the resource is not passed.
+    (The row under test is the one that accepts `any` resource on Coast, which
+    the test builds; the class rows -- v0.9.0 Q4's strategic row -- are in
+    tests/test_industrial_zone.py.)"""
+    def any_row(s):
+        return [r for r in s.adjacency if r.source.kind == "terrain"
+                and "any" in r.source.value.get("resources", ())]
+    name = type_with(any_row)
+    row = any_row(DISTRICTS[name])[0]
     env = board()
     pos = (4, 8)
     nbs = neighbours(env, pos)
