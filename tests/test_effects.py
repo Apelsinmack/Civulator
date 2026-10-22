@@ -27,7 +27,7 @@ from civulator.effects import (
     rule_enabled,
     slot_counts,
 )
-from civulator.game import districts as districts_mod
+from civulator.game import amenities, districts as districts_mod
 from civulator.game.housing import housing
 from civulator.game.loyalty import loyalty_delta
 from civulator.game.maintenance import maintenance_due
@@ -40,6 +40,10 @@ from civulator.unit_model import CAPITAL_BUILDING, YIELD_COLUMNS
 
 from conftest import stand, synthetic_civic, synthetic_government, synthetic_policy
 from test_districts import board, make_city, neighbours, ring
+
+
+# v0.9.0 Q2: this module pins other rules' exact arithmetic, not the amenity band.
+pytestmark = pytest.mark.usefixtures("neutral_amenities")
 
 # A civic with no effects of its own: what the synthetic sources unlock with,
 # so no configured civic effect is in force on the staged player.
@@ -154,6 +158,9 @@ class Stage:
         out["growth gain"] = city.growth_bucket_gain(7, 100)
         # The #116 P7 consumer: the capital's loyalty delta this round.
         out["loyalty delta"] = loyalty_delta(city, env)
+        # The v0.9.0 Q2 consumer: the capital's amenity supply (its band is
+        # neutralised by this module, so supply moves nothing downstream).
+        out["amenity supply"] = amenities.supply(city, env)
         return out
 
 
@@ -327,6 +334,32 @@ def test_loyalty_moves_exactly_the_loyalty_delta(monkeypatch, entry, garrisoned,
     after = stage.fingerprint()
     assert _moved(before, after) == ({"loyalty delta"} if gain else set()), entry
     assert after["loyalty delta"] - before["loyalty delta"] == gain
+    assert [e.kind for e in active_effects(stage.player)
+            if e.source == ("policy", CARD)] == [entry["kind"]], "the card is in force"
+
+
+@pytest.mark.parametrize("entry, garrisoned, gain", [
+    ({"kind": "amenity", "amount": 2}, False, 2),
+    ({"kind": "amenity", "amount": 1, "min_districts": 2}, False, 1),     # the stage has two
+    ({"kind": "amenity", "amount": 1, "min_districts": 3}, False, 0),
+    ({"kind": "amenity", "amount": 3, "requires_garrison": True}, True, 3),
+    ({"kind": "amenity", "amount": 3, "requires_garrison": True}, False, 0),
+])
+def test_amenity_moves_exactly_the_amenity_supply(monkeypatch, entry, garrisoned, gain):
+    """v0.9.0 Q2: an `amenity` card moves only `amenities.supply` of the city,
+    by its amount, honouring `min_districts` and `requires_garrison`; with the
+    band table neutralised (this module's fixture) nothing a band feeds
+    (yields, production, growth, loyalty) moves, because supply reaches them
+    only through the band. Breaks if the kind gains a second consumer, loses
+    its one, or drops a condition."""
+    stage = Stage(monkeypatch)
+    if garrisoned:
+        stand(stage.env, stage.fighter_type, 0, stage.city.coordinates)
+    before = stage.fingerprint()
+    stage.slot(monkeypatch, [entry], card_type="military")
+    after = stage.fingerprint()
+    assert _moved(before, after) == ({"amenity supply"} if gain else set()), entry
+    assert after["amenity supply"] - before["amenity supply"] == gain
     assert [e.kind for e in active_effects(stage.player)
             if e.source == ("policy", CARD)] == [entry["kind"]], "the card is in force"
 

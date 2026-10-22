@@ -72,6 +72,7 @@ def test_an_improvement_adds_exactly_its_columns_to_its_tile():
         assert tile.composed == composed
 
 
+@pytest.mark.usefixtures("neutral_amenities")  # v0.9.0 Q2: not about the amenity band
 def test_improvement_yields_reach_the_city_working_the_tile_and_only_it():
     """A worked improved tile adds the improvement's food and production to
     the city's food and production and 10 x its gold to city_yield gold

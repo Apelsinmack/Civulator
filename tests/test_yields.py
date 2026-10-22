@@ -23,6 +23,10 @@ from civulator.game.yields import city_yield
 
 from test_districts import board, make_city, neighbours, own, plain_types
 
+
+# v0.9.0 Q2: this module pins other rules' exact arithmetic, not the amenity band.
+pytestmark = pytest.mark.usefixtures("neutral_amenities")
+
 POOL_YIELDS = ("science", "culture", "gold", "faith")      # int tenths
 TILE_YIELDS = ("food", "production")                       # whole points
 ALL_YIELDS = POOL_YIELDS + TILE_YIELDS

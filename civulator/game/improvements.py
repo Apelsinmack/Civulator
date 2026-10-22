@@ -32,12 +32,40 @@ improvement therefore makes the tile work again, and two equal improvements
 can never replace each other back and forth. A future agent action to build
 improvements (#99) is free to replace anything the engine allows.
 
+**Access-aware (v0.9.0 Q2, an engine-default change; defaults are placeholders
+for #99).** Tiered resources yield 0, so ranking by yield alone never prefers
+the improvement that grants a luxury or strategic resource. Two additions, both
+declared in the CHANGELOG: (1) among improvements of equal gain the one in the
+tile's resource's `improved_by` ranks higher, so the order on a tile is
+(`improvement_gain`, "grants the resource here", config order); (2)
+`access_walk_bonus` -- a build that would grant a resource its player has no
+access to yet is worth `[worker_default] access_bonus` tiles of walking, so
+`defaults.worker_target` heads for it before an equally near plain tile.
+
 Pure: reads live state, mutates nothing. Imports no `defaults` (the defaults
 are called only from `GameEnvironment`; this module is what `City` may call).
 """
 
 from .. import terrain_model
+from ..config import CFG
+from .resources import player_has_access
 from .unit import WorkerUnit
+
+
+def _access_bonus(cfg):
+    """`[worker_default] access_bonus`: a non-negative int, in tiles of walking
+    (the unit `defaults.worker_target` measures distance in)."""
+    table = cfg.get("worker_default")
+    if not isinstance(table, dict) or set(table) != {"access_bonus"}:
+        raise ValueError("[worker_default] must be a table with exactly the key access_bonus")
+    value = table["access_bonus"]
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"[worker_default] access_bonus must be a non-negative int, got {value!r}")
+    return value
+
+
+# Read at call time (a test may patch it).
+ACCESS_BONUS = _access_bonus(CFG)
 
 
 def improvement_gain(name):
@@ -49,10 +77,19 @@ def improvement_gain(name):
     return points, terrain_model.IMPROVEMENT_HOUSING.get(name, 0)
 
 
-def _rank(name):
-    """The default's total order over improvements, larger is better:
-    `improvement_gain`, then the earlier in config order."""
-    return improvement_gain(name), -terrain_model.IMPROVEMENT_ORDER.index(name)
+def _grants(name, tile):
+    """Whether improvement `name` is one of the improvements that grant the
+    resource on `tile` (`terrain_model.RESOURCE_IMPROVED_BY`; False on a tile
+    without a resource or for a bonus resource, which declares none)."""
+    return name in terrain_model.RESOURCE_IMPROVED_BY.get(tile.resource, ())
+
+
+def _rank(name, tile):
+    """The default's total order over improvements on `tile`, larger is
+    better: `improvement_gain`, then whether `name` grants the tile's
+    resource, then the earlier in config order."""
+    return (improvement_gain(name), int(_grants(name, tile)),
+            -terrain_model.IMPROVEMENT_ORDER.index(name))
 
 
 def _buildable(player, tile, env):
@@ -77,10 +114,10 @@ def _best_on(player, tile, env):
     `_rank` of what `player` may build there, provided it ranks above every
     improvement already on the tile (so a tile already holding its best is
     left alone)."""
-    best = max(_buildable(player, tile, env), key=_rank, default=None)
+    best = max(_buildable(player, tile, env), key=lambda name: _rank(name, tile), default=None)
     if best is None:
         return None
-    if any(_rank(present) >= _rank(best) for present in tile.improvements
+    if any(_rank(present, tile) >= _rank(best, tile) for present in tile.improvements
            if present in terrain_model.IMPROVEMENT_YIELDS):
         return None
     return best
@@ -89,10 +126,27 @@ def _best_on(player, tile, env):
 def best_improvement(player, coordinates, env):
     """The improvement a Worker of `player` builds on this tile, or None when
     there is nothing to build: the largest `improvement_gain`, among equals
-    the first in config order, and only when the tile does not already hold
-    an improvement that ranks at least as high (`_best_on`)."""
+    the one that grants the tile's resource, then the first in config order,
+    and only when the tile does not already hold an improvement that ranks at
+    least as high (`_best_on`)."""
     tile = env.map.get_tile(coordinates)
     return None if tile is None else _best_on(player, tile, env)
+
+
+def access_walk_bonus(player, coordinates, env):
+    """How many tiles of walking the default's build on this tile is worth
+    beyond its distance: `ACCESS_BONUS` when the improvement it would build
+    grants a resource on the tile that `player` has no access to yet
+    (`resources.player_has_access`), else 0. Read only by
+    `defaults.worker_target`."""
+    tile = env.map.get_tile(coordinates)
+    if tile is None or tile.resource not in terrain_model.RESOURCE_IMPROVED_BY:
+        return 0
+    best = _best_on(player, tile, env)
+    if (best is None or not _grants(best, tile)
+            or player_has_access(player, tile.resource, env)):
+        return 0
+    return ACCESS_BONUS
 
 
 def worker_targets(player, env):

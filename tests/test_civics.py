@@ -397,6 +397,7 @@ def test_set_policies_refuses_an_illegal_loadout_and_changes_nothing(monkeypatch
     assert stage.player.policies == [] and stage.yields() == before, why
 
 
+@pytest.mark.usefixtures("neutral_amenities")  # v0.9.0 Q2: not about the amenity band
 def test_an_obsolete_card_is_refused_and_has_no_effect_even_if_slotted(monkeypatch):
     """Once its obsolete_with civic is known a card cannot be slotted, and a
     card already in the list (written there directly) has no effect.
@@ -412,6 +413,7 @@ def test_an_obsolete_card_is_refused_and_has_no_effect_even_if_slotted(monkeypat
     assert stage.env.set_policies(stage.player, ["Old"]) is False
 
 
+@pytest.mark.usefixtures("neutral_amenities")  # v0.9.0 Q2: not about the amenity band
 def test_only_slotted_legal_cards_have_effects(monkeypatch):
     """An unlocked but unslotted card has no effect; a slotted one has; a
     wildcard slot takes a card of any type; cards written past the slots

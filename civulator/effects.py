@@ -42,7 +42,7 @@ once, when their wonder completes (`GameEnvironment._one_shot_effects`,
 #116 P6), and are read there through `effects_of`. Every entry in force
 carries its `source_city` (#116 P7): the city holding the building or the
 complete district it comes from, None for a government, policy, civic or
-tech -- what a `loyalty` effect with a `range` measures from.
+tech -- what a `loyalty` or `amenity` effect with a `range` measures from.
 
 Pure: reads parsed specs and live state; mutates nothing (the parse memo
 below caches validated entries per raw list, never game state).
@@ -95,6 +95,7 @@ KIND_FREE_CIVIC = "free_civic"
 KIND_FREE_POPULATION = "free_population"
 KIND_BUILD_CHARGES = "build_charges"
 KIND_BUILD_CHARGES_TRAINED = "build_charges_trained"
+KIND_AMENITY = "amenity"  # v0.9.0 Q2
 
 # The one consumer of each kind (design §3, "consumed by"). Since #116 P7
 # every kind is wired: each names its reader.
@@ -132,6 +133,7 @@ CONSUMERS = {
                         "player, existing and future, while the source is in force; #127)",
     KIND_BUILD_CHARGES_TRAINED: "game/unit.py WorkerUnit.__init__ (fixed when the Worker is "
                                 "made: trained, bought or granted while in force; #127)",
+    KIND_AMENITY: "game/amenities.py supply (effect_supply; v0.9.0 Q2)",
 }
 KINDS = tuple(CONSUMERS)
 # Kinds validated before their consumer exists, each naming in CONSUMERS the
@@ -383,6 +385,16 @@ def _parse_loyalty(raw, where, ctx):
             "per_population": _bool(raw.get("per_population", False), f"{where} per_population")}
 
 
+def _parse_amenity(raw, where, ctx):
+    _keys(raw, ("amount", "range", "min_districts", "requires_garrison"), ("amount",), where)
+    return {"amount": _int(raw["amount"], f"{where} amount"),
+            "range": _non_negative_int(raw.get("range", 0), f"{where} range"),
+            "min_districts": _non_negative_int(raw.get("min_districts", 0),
+                                               f"{where} min_districts"),
+            "requires_garrison": _bool(raw.get("requires_garrison", False),
+                                       f"{where} requires_garrison")}
+
+
 def _parse_policy_slots(raw, where, ctx):
     _keys(raw, research_model.POLICY_TYPES, (), where)
     if not raw:
@@ -463,6 +475,7 @@ _PARSERS = {
     KIND_FREE_POPULATION: _parse_free_population,
     KIND_BUILD_CHARGES: _amount_only(_positive_int),
     KIND_BUILD_CHARGES_TRAINED: _amount_only(_positive_int),
+    KIND_AMENITY: _parse_amenity,
 }
 assert set(_PARSERS) == set(KINDS), "every kind has one parser and one consumer"
 
@@ -516,6 +529,8 @@ def parse_effect(entry, source_kind, source_name, districts=None):
     attrs = _PARSERS[kind](raw, where, ctx)
     if kind == KIND_LOYALTY:
         _check_loyalty_reach(attrs, scope, source_kind, where)
+    if kind == KIND_AMENITY:
+        _check_amenity_reach(attrs, scope, source_kind, where)
     return Effect(kind=kind, scope=scope, source=(source_kind, source_name),
                   attrs=MappingProxyType(attrs))
 
@@ -532,6 +547,21 @@ def _check_loyalty_reach(attrs, scope, source_kind, where):
     if (source_kind in _CITY_SOURCES and scope == SCOPE_CITY
             and not attrs["per_population"] and not attrs["requires_garrison"]):
         raise ValueError(f"{where}: a flat loyalty of its own city is the `loyalty` "
+                         f"column, not an effect")
+
+
+def _check_amenity_reach(attrs, scope, source_kind, where):
+    """An `amenity` entry's reach (v0.9.0 Q2, design §3.3), the `loyalty`
+    kind's rule: `range` measures from the city holding the source, so it
+    needs a building or district of scope "player"; a flat, unconditional
+    entry of a building's or district's own city is what the `amenity` column
+    says -- one way to say it."""
+    if attrs["range"] > 0 and (source_kind not in _CITY_SOURCES or scope != SCOPE_PLAYER):
+        raise ValueError(f"{where}: range measures from the city holding the source; "
+                         f"it needs a building or district of scope \"player\"")
+    if (source_kind in _CITY_SOURCES and scope == SCOPE_CITY
+            and not attrs["min_districts"] and not attrs["requires_garrison"]):
+        raise ValueError(f"{where}: a flat amenity of its own city is the `amenity` "
                          f"column, not an effect")
 
 

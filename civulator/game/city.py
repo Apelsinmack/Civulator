@@ -34,6 +34,8 @@ from .districts import district_spec, district_yields, is_wonder
 from .housing import housing
 from .improvements import worker_has_work
 from .loyalty import CAPTURED as LOYALTY_CAPTURED, FOUNDED as LOYALTY_FOUNDED
+from .amenities import growth_percent as amenity_growth_percent
+from .amenities import yield_percent as amenity_yield_percent
 from .loyalty import growth_share, loyalty_percent
 from .trade import TRADER_UNIT, end_routes_touching, trader_slot_free
 from .yields import city_yield
@@ -296,12 +298,15 @@ class City:
         summed `production_percent` effects toward the current item, applied
         once with one integer floor (`base * (100 + percent) // 100`; the one
         consumer of that kind, #116 P4), then scaled once by the city's
-        loyalty band (`loyalty.loyalty_percent`, integer floor; #116 P7),
-        with a floor of 1, so a city can always build, slowly -- even in
-        unrest."""
+        loyalty band (`loyalty.loyalty_percent`, integer floor; #116 P7) and
+        then by its amenity band (`(100 + amenities.yield_percent) / 100`,
+        integer floor; v0.9.0 Q2 -- production's amenity percent is applied
+        here, beside its loyalty percent, not in `city_yield`), with a floor
+        of 1, so a city can always build, slowly -- even in unrest."""
         base = city_yield(self, "production")
         raised = base * (100 + self.production_percent()) // 100
-        return max(1, raised * loyalty_percent(self) // 100)
+        scaled = raised * loyalty_percent(self) // 100
+        return max(1, scaled * (100 + amenity_yield_percent(self, game_env)) // 100)
 
     def _growth_percent(self):
         """The summed `percent` of the `growth_percent` effects in force for
@@ -314,13 +319,16 @@ class City:
         """What a non-negative `food_net` adds to the growth bucket this turn,
         in hundredths of food (progression design "v2 fixes", yields):
         `food_net * housing_percent * growth_share * (100 + growth_percent)
-        // 10000` -- the housing band (#88), the loyalty band's growth share
-        (`loyalty.growth_share`, #116 P7) and the summed `growth_percent`
-        effects, one integer floor. The one consumer of `growth_percent`.
-        With no effect and full loyalty it is `food_net * housing_percent`,
-        the v0.7 bucket exactly."""
+        * amenity_growth // 1000000` -- the housing band (#88), the loyalty
+        band's growth share (`loyalty.growth_share`, #116 P7), the summed
+        `growth_percent` effects and the amenity band's growth percent
+        (`amenities.growth_percent`, v0.9.0 Q2), one integer floor at the end.
+        The one consumer of `growth_percent`. With no effect, full loyalty and
+        a content city it is `food_net * housing_percent`, the v0.7 bucket
+        exactly."""
         return (food_net * housing_percent * growth_share(self)
-                * (100 + self._growth_percent()) // 10000)
+                * (100 + self._growth_percent())
+                * amenity_growth_percent(self, self.player.game_env) // 1000000)
 
     def get_growth_threshold(self):
         """Food surplus needed to grow to next population level.

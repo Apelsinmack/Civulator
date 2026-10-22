@@ -18,7 +18,23 @@ import contextlib
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+@pytest.fixture
+def neutral_amenities(monkeypatch):
+    """The amenity band table that changes nothing (one row: no yield or
+    growth change, no loyalty term), for the tests whose subject is some other
+    rule's exact arithmetic (v0.9.0 Q2). With the configured bands a city
+    short of amenities -- every size-1 city without a Palace -- yields 10 %
+    less, grows 15 % slower and loses loyalty each round, which is the rule
+    `tests/test_amenities.py` pins and these tests are not about. Opt in with
+    `pytest.mark.usefixtures("neutral_amenities")`."""
+    from civulator.game import amenities
+
+    monkeypatch.setattr(amenities, "BANDS", amenities.parse_bands([[0, 0, 100, 0]]))
 
 
 def grant_all(player):

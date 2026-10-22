@@ -135,6 +135,91 @@ Design: `docs/rng_philox_migration.md`.
   line prints both. **Luxuries have no consumer yet** -- amenities are Q2.
 - **Effect NOT yet measured:** nothing was trained or evaluated.
 
+### Amenities and the Entertainment Complex (#128, patch Q2)
+
+**Rule change, effect NOT yet measured.** Source:
+`docs/districts_religion_design.md` §3 and its "v2/v3 fixes" (L7: greedy
+luxury assignment). No version bump: Q0 opened 0.9.0.
+
+- **The mechanic** (`civulator/game/amenities.py`, the only interpreter of the
+  new `[amenities]` table and the only happiness computation): a city needs
+  `ceil(population / need_divisor) - free_first` amenities (Civ 6 GS: one per
+  two citizens rounded up, so a size-1 city needs 1; `free_first = 0`) and has
+  the `amenity` columns of its buildings and complete districts, the `amenity`
+  effects in force for it, and its share of the player's luxuries. The surplus
+  picks a band row of `[amenities] bands` = `[min surplus, yield %, growth %,
+  loyalty / round]`. **Yield and growth percents are Civ 6 GS's** (Ecstatic
+  +20 %, Happy +10 %, Content 0, Displeased -10 % yields / -15 % growth, Unhappy
+  -20 % / -30 %, Unrest -30 %, Revolt -40 %; the growth column is 100 minus
+  Civ 6's penalty). **The loyalty column is Claude's starting values** (Civ 6
+  spawns rebels at Unrest; we have no barbarians, so the loyalty column
+  replaces them, and Rise and Fall's amenity-to-loyalty values are not in the
+  digest) -- a dial for Erik. The default table is design §3.1's, verbatim.
+- **Consumers**, one each, in this order: `city_yield` scales science,
+  culture, gold and faith by `(100 + yield %) / 100` **after** the loyalty
+  percent, each step an integer floor in tenths, never food; production gets
+  the same factor in `City.calculate_production`, beside its loyalty percent
+  (not in `city_yield`); `City.growth_bucket_gain` multiplies the bucket by
+  `growth % / 100` (floor once, at the end); `loyalty.loyalty_delta` adds the
+  band's loyalty column. **Consequence, by the rule: a city short of amenities
+  is penalised from the start** -- with `free_first = 0` every size-1 city
+  without a Palace needs 1 and has 0 (surplus -1: yields -10 %, growth 85 %,
+  loyalty -1 per round) until a source or a luxury covers it.
+- **Luxuries** (L7): every distinct luxury the player has access to (two Wine
+  are one Wine) gives +1 amenity to up to `luxury_cities` (4) of its cities,
+  assigned greedily -- luxuries in config order, each to the cities with the
+  largest *current* deficit counting luxuries already assigned, ties by city
+  id -- computed for the whole player in one call and cached nowhere.
+- **New column and effect kind.** `amenity` (whole points) on `[buildings.*]`
+  and `[districts.*]`: Palace 1, Entertainment Complex 1, Alhambra 2 (GS), and
+  the **new building Arena** (150 production, maintenance 1, Games and
+  Recreation, needs a complete Entertainment Complex, `amenity` 2, culture 1;
+  appended to `BUILD_OPTIONS`, so the build head is one channel wider and
+  archived heads stay evaluable at their own width). New effect kind `amenity`
+  `{ amount, range, min_districts, requires_garrison }`, parsed like the
+  `loyalty` kind (including its reach rule), one consumer
+  (`amenities.effect_supply`). Carriers: Colosseum (+2 amenity and its existing
+  +2 loyalty, both `range = 6` from its city, owner's cities only), Classical
+  Republic (+1 in a city with a specialty district), and the new policy
+  **Retainers** (military, Civil Service: +1 in a garrisoned city, reading
+  `loyalty.is_garrisoned`). Zen Meditation is Q8's.
+- **Engine-default change (declared; defaults are placeholders for #99).**
+  Tiered resources yield 0, so the Worker default ranked by yield alone never
+  chose the improvement that grants a luxury. Now: among improvements of equal
+  gain the one in the tile's resource's `improved_by` ranks higher (order:
+  gain, grants-the-resource, config order); and `defaults.worker_target` counts
+  a build that would grant a resource its player has no access to as
+  `[worker_default] access_bonus` (1) tiles nearer (order: distance minus
+  bonus, bigger bonus, row, column). The scalar lives in its own
+  `[worker_default]` table rather than under `[improvements]`, whose keys are
+  all improvement names (several readers and tests iterate them). A pre-Q2
+  game's Workers may therefore build a different improvement on a resource
+  tile; no test pinned one.
+- **Stats.** `episode_stats` gains `amenity_surplus_mean` (mean city surplus at
+  each round end, then the mean over rounds, in **int tenths of an amenity**,
+  floored) and `cities_unhappy_rounds` (city-rounds with surplus below 0);
+  the smoke script's end line prints both beside `luxuries_accessible`.
+- **Tests un-coupled by this rule** (declared): with the configured bands a
+  size-1 city without a Palace is 10 % short, so tests that pin other rules'
+  exact arithmetic (`test_yields`, `test_loyalty`, `test_effects` at module
+  level; one test each in `test_civics`, `test_culture`,
+  `test_improvement_yields`, `test_wonders`) now use the `neutral_amenities`
+  fixture (`tests/conftest.py`: one band row, no change). `tests/test_amenities.py`
+  pins the rule itself.
+- **Smoke observations (not a measurement; `python scripts/smoke_random_selfplay.py
+  --seed S`, Duel, 250 rounds, random policy, one city per player for most of
+  the game).** Seed 4242: `luxuries_accessible=[0, 0]` -- neither player's
+  territory held a luxury tile (the only non-bonus resource each owned was
+  Horses), so the Worker change had nothing to act on;
+  `amenity_surplus_mean_tenths=[-22, -18]`, `cities_unhappy_rounds=[240, 261]`
+  (a size-9 city short of amenities for nearly every round, which the rule
+  predicts and the random policy does nothing about). Seeds 2 and 3 end with
+  `luxuries_accessible=[1, 0]`, the access coming from a Camp on Furs and a
+  Plantation on Dyes built by the Worker default (read from a per-tile listing
+  of the final boards). 3 games; wall time 2.7-3.9 s each.
+- **Effect NOT yet measured:** nothing was trained or evaluated; the bands'
+  loyalty column and the order of the two percents are starting values.
+
 ---
 
 ## v0.8.1 — Erik's rulings on the block's open calls; build charges (2026-10-22)

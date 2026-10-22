@@ -26,6 +26,9 @@ digested in docs/civ6_progression_reference.md §11), in integers:
                        city's population, and an entry with a `range` counts
                        only when the city holding its source is the city's
                        owner's and within that range of it
+                     + the loyalty column of the city's amenity band
+                       (`amenities.loyalty_term`, v0.9.0 Q2: an unhappy city
+                       loses loyalty -- the replacement for Civ 6's rebels)
 
 `GameEnvironment._loyalty_phase` applies the deltas once per round, at round
 end, computed for every city from the state at the start of the phase, and
@@ -247,11 +250,15 @@ def effect_loyalty(city, env, garrisoned):
 
 def loyalty_delta(city, env):
     """What the city's loyalty moves by this round (before the clamp to
-    LOYALTY_MIN..MAXIMUM): drift + garrison + columns + effects."""
+    LOYALTY_MIN..MAXIMUM): drift + garrison + columns + effects + the
+    city's amenity band (`amenities.loyalty_term`, v0.9.0 Q2)."""
+    from . import amenities  # amenities reads `is_garrisoned` from this module
+
     own, foreign = _own_and_foreign(city, pressures(city, env))
     garrisoned = is_garrisoned(city, env)
     return (drift(own, foreign) + (GARRISON if garrisoned else 0)
-            + column_loyalty(city) + effect_loyalty(city, env, garrisoned))
+            + column_loyalty(city) + effect_loyalty(city, env, garrisoned)
+            + amenities.loyalty_term(city, env))
 
 
 def clamp(loyalty):

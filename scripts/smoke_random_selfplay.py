@@ -233,6 +233,8 @@ def main():
           f"terms={[score_breakdown(p) for p in env.players]}")
     print(f"done={env.done} steps={steps} wall={time.perf_counter() - t0:.1f}s "
           f"luxuries_accessible={[env.episode_stats[i]['luxuries_accessible'] for i in range(num_players)]} "
+          f"amenity_surplus_mean_tenths={[env.episode_stats[i]['amenity_surplus_mean'] for i in range(num_players)]} "
+          f"cities_unhappy_rounds={[env.episode_stats[i]['cities_unhappy_rounds'] for i in range(num_players)]} "
           f"units_refused_resource={[env.episode_stats[i]['units_refused_resource'] for i in range(num_players)]}")
 
 
