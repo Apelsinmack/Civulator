@@ -55,7 +55,9 @@ def _religion_table(**overrides):
                  conversion_margin=25, conversion_rounds=3, spread_cost=100,
                  spread_cost_step=25, spread_amount=60, spread_rounds=10,
                  upkeep_per_follower_city=1, inquisition_cost=75, inquisition_rounds=10,
-                 foreign_religion_loyalty=-1)
+                 foreign_religion_loyalty=-1,
+                 # v0.9.0 Q8: the seat qualifier -- a building with a district.
+                 founding_building=religion_model.RULES.founding_building)
     table.update(overrides)
     return {k: v for k, v in table.items() if v is not None}
 

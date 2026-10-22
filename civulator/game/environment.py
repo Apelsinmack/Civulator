@@ -32,10 +32,20 @@ from .availability import player_can_build
 from .resources import accessible_resources
 from .city import _create_unit
 from .defaults import (
-    default_civic, default_government, default_loadout, default_pantheon, default_research,
-    default_trade, default_workers,
+    default_add_belief, default_civic, default_found_religion, default_government,
+    default_loadout, default_pantheon, default_research, default_trade, default_workers,
 )
-from .religion import can_choose_pantheon, pantheon_cost_tenths
+from .religion import (
+    Religion,
+    belief_cost_tenths,
+    can_add_belief,
+    can_choose_pantheon,
+    can_found_religion,
+    found_cost_tenths,
+    founder_pay_tenths,
+    pantheon_cost_tenths,
+    seat_city,
+)
 from .districts import (
     YIELD_NAMES as DISTRICT_YIELD_NAMES, District, can_place_district, district_cost,
     district_keeps_resource, is_wonder,
@@ -69,6 +79,7 @@ from .unit import WarriorUnit, WorkerUnit, calculate_damage, movement_domain
 from .upgrades import can_upgrade, upgrade_cost, upgrade_target
 from ..config import CFG
 from ..unit_model import CAPITAL_BUILDING, CITY_RANGED_BUILDING
+from ..religion_model import TIER_ENHANCER
 
 logger = logging.getLogger(__name__)
 
@@ -333,10 +344,17 @@ class GameEnvironment:
                 # City.complete_unit_production, the one spawn routine.
                 "naval_units_built": 0,
                 # Religion (v0.9.0 Q7): pantheons chosen (0 or 1), and the
-                # faith spent on religion -- int TENTHS -- (the pantheon now;
-                # founding, beliefs, spread, upkeep and inquisition in Q8/Q9).
+                # faith spent on religion -- int TENTHS -- (the pantheon,
+                # founding and beliefs; spread, upkeep and inquisition in Q9).
                 "pantheons_chosen": 0,
                 "faith_spent_religion": 0,
+                # Religion (v0.9.0 Q8): religions founded (0 or 1), beliefs
+                # bought after founding, and the int TENTHS the founder
+                # belief paid into this player's pools (`_founder_pay`, all
+                # yields summed).
+                "religions_founded": 0,
+                "beliefs_added": 0,
+                "founder_pay_tenths": 0,
                 # Summed adjacency score per yield, per city-round (#86 s5)
                 **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
             }
@@ -1590,7 +1608,7 @@ class GameEnvironment:
         tile.add_improvement(improvement_type, map_ref=self.map)
         return True
 
-    # --- Religion (v0.9.0 Q7, docs/districts_religion_design.md §7.2, §9) ---
+    # --- Religion (v0.9.0 Q7/Q8, docs/districts_religion_design.md §7.2, §7.3, §9) ---
 
     def choose_pantheon(self, player, name):
         """`player` chooses pantheon `name`: refused (False, nothing changed)
@@ -1610,14 +1628,99 @@ class GameEnvironment:
         stats["faith_spent_religion"] += cost
         return True
 
+    def found_religion(self, player, founder_belief, follower_belief):
+        """`player` founds a religion with `founder_belief` and
+        `follower_belief` (v0.9.0 Q8, districts_religion_design §7.3, §9;
+        v3 fixes L1): refused (False, nothing changed) unless
+        `religion.can_found_religion` holds (`founding_refusals` lists every
+        clause: pantheon, no religion yet, a seat city, `found_cost` faith,
+        `max_religions`, a free founder belief, both beliefs of the right
+        tier and free). Debits exactly `found_cost` from the faith pool,
+        sets `Player.religion` -- a `Religion` whose identity is this
+        player's index -- and CONVERTS THE SEAT: the qualifying own city with
+        the lowest id (`religion.seat_city`) gets `City.religion` = this
+        index, whatever it followed (Q9 clears its conversion streak here).
+        A religion is never born dead. Counts `religions_founded` and
+        `faith_spent_religion` (tenths). The agent action of #99; the engine
+        default calls it through `_religion_step`."""
+        if not can_found_religion(player, founder_belief, follower_belief, self):
+            return False
+        seat = seat_city(player)
+        cost = found_cost_tenths()
+        player.faith -= cost
+        player.religion = Religion(founder=player.player_index, founder_belief=founder_belief,
+                                   follower_beliefs=[follower_belief])
+        seat.religion = player.player_index
+        stats = self.episode_stats[player.player_index]
+        stats["religions_founded"] += 1
+        stats["faith_spent_religion"] += cost
+        return True
+
+    def add_belief(self, player, name):
+        """`player` adds belief `name` to its religion (v0.9.0 Q8, design
+        §7.3): refused (False, nothing changed) unless `religion.can_add_belief`
+        holds (`belief_refusals`: a religion, a tier due -- the second
+        follower belief before the enhancer -- `name` of that tier, not held,
+        free under `exclusive`, the rung's `belief_costs` covered). Debits
+        exactly that cost and appends the belief to its tier. Counts
+        `beliefs_added` and `faith_spent_religion`. The agent action of #99;
+        the engine default calls it through `_religion_step`."""
+        if not can_add_belief(player, name, self):
+            return False
+        religion = player.religion
+        cost = belief_cost_tenths(religion.rung)
+        player.faith -= cost
+        if religion.due_tier == TIER_ENHANCER:
+            religion.enhancer_belief = name
+        else:
+            religion.follower_beliefs.append(name)
+        stats = self.episode_stats[player.player_index]
+        stats["beliefs_added"] += 1
+        stats["faith_spent_religion"] += cost
+        return True
+
     def _religion_step(self, player):
-        """The economy phase's religion step (v0.9.0 Q7; after maintenance and
-        bankruptcy, before research -- design §15(a)): the pantheon default
-        (`defaults.default_pantheon`). Q8/Q9 add founding, beliefs, upkeep
-        and founder pay to this step."""
+        """The economy phase's religion step (after maintenance and
+        bankruptcy, before research -- design §15(a)), one sub-step per rule,
+        in this order:
+
+        1. the pantheon default (v0.9.0 Q7, `defaults.default_pantheon`);
+        2. the founding default (v0.9.0 Q8, `defaults.default_found_religion`
+           through `found_religion`);
+        3. the belief default (v0.9.0 Q8, `defaults.default_add_belief`
+           through `add_belief`);
+        4. UPKEEP -- Q9's slot (`_religion_upkeep(player)` goes HERE, before
+           founder pay: v3 fixes L2, "upkeep is checked and debited before
+           founder pay; a short treasury pays nothing and keeps its faith");
+        5. founder pay (v0.9.0 Q8, `_founder_pay`).
+
+        The choices (2, 3) come before the pay so a religion founded this
+        turn is paid for its seat this turn, and spends faith the pay has not
+        yet added -- the one order every player sees alike."""
         name = default_pantheon(player, self)
         if name is not None:
             self.choose_pantheon(player, name)
+        pair = default_found_religion(player, self)
+        if pair is not None:
+            self.found_religion(player, *pair)
+        belief = default_add_belief(player, self)
+        if belief is not None:
+            self.add_belief(player, belief)
+        # --- Q9: religion upkeep (`_religion_upkeep`) is inserted here, before
+        # founder pay (v3 fixes L2). ---
+        self._founder_pay(player)
+
+    def _founder_pay(self, player):
+        """Add `religion.founder_pay_tenths(player, self)` to `player`'s pools
+        (v0.9.0 Q8, the one consumer of `per_follower_city`): the founder
+        belief's tenths of each pool yield per follower city it counts. A
+        player without a religion, or a dead founder (v3 fixes L2), is paid
+        nothing. Counts the tenths paid, all yields summed, in
+        `founder_pay_tenths`. Q9's lapse gates this call, not this method."""
+        pay = founder_pay_tenths(player, self)
+        for name, tenths in pay.items():
+            setattr(player, name, getattr(player, name) + tenths)
+        self.episode_stats[player.player_index]["founder_pay_tenths"] += sum(pay.values())
 
     # --- Research (#116 P2, docs/progression_design.md §4.3) ---
 
@@ -1903,7 +2006,8 @@ class GameEnvironment:
         2. bankruptcy -- `_resolve_bankruptcy` (#116 P5); what the two steps
            took from the treasury counts in `episode_stats["gold_maintenance"]`
         3. religion -- `_religion_step` (v0.9.0 Q7: the pantheon default;
-           Q8/Q9 add founding, beliefs, upkeep and founder pay here)
+           Q8: the founding and belief defaults, then founder pay, with
+           Q9's upkeep slot named between them)
         4. research -- `resolve_research` (#116 P2)
         5. civics -- `resolve_civic` (#116 P4)
         6. government and loadout defaults -- `_government_and_loadout_defaults`

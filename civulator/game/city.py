@@ -105,6 +105,13 @@ class City:
         # set_owner, moved only by GameEnvironment._loyalty_phase. Travels
         # with the city.
         self.loyalty = LOYALTY_FOUNDED
+        # Religion (v0.9.0 Q8, districts_religion_design §7.1, §7.5): the
+        # founder index of the religion this city follows, None while
+        # secular. Written by GameEnvironment.found_religion (the seat, v3
+        # fixes L1) and, in Q9, by conversion and inquisition. The city's,
+        # not the owner's: it travels through set_owner (capture and flip)
+        # and outlives its founder.
+        self.religion = None
 
     def get_combat_strength(self, is_attacking=False, target=None):
         """Return the defensive combat strength of the city.
@@ -629,6 +636,9 @@ class City:
         changed, so both loadouts are re-fit through the engine's government
         and loadout defaults -- the old owner's falls back to what its slots
         hold, the new owner's fills the new slot.
+        v0.9.0 Q8 (districts_religion_design §7.5): `religion` is the city's,
+        not the owner's -- it is kept through either door, so the follower
+        beliefs keep holding here and the founder keeps being paid for it.
         """
         old_player = self.player
         if old_player:

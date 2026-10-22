@@ -758,15 +758,27 @@ def test_junk_in_a_registry_raises_when_the_interpreter_loads(monkeypatch):
         effects._validate_registries()
 
 
-def test_scope_defaults_to_the_city_on_buildings_and_districts_only():
+def test_scope_defaults_to_the_city_on_buildings_and_districts_only(monkeypatch):
     """A building's and a district's effects default to city scope, every
-    other source's to player scope; a building may declare player. Breaks
-    if the default flips."""
+    other source's to player scope; a building may declare player. A belief
+    (v0.9.0 Q8) is scoped by its tier: a follower belief's entries default to
+    city, an enhancer's to player, and a name that is no belief cannot be
+    parsed at all. Breaks if a default flips or a belief parses without its
+    tier."""
     entry = {"kind": "city_ranged_strength", "amount": 5}
     for source in effects.SOURCES:
+        if source == effects.SOURCE_BELIEF:
+            continue
         expected = "city" if source in ("building", "district") else "player"
         assert parse_effect(entry, source, "Probe").scope == expected, source
     assert parse_effect({**entry, "scope": "player"}, "building", "Probe").scope == "player"
+    with pytest.raises(ValueError):
+        parse_effect(entry, effects.SOURCE_BELIEF, "Probe")
+    for tier, expected in ((religion_model.TIER_FOLLOWER, "city"),
+                           (religion_model.TIER_ENHANCER, "player")):
+        monkeypatch.setitem(religion_model.BELIEFS, "Probe",
+                            religion_model.BeliefSpec(name="Probe", tier=tier, effects=(entry,)))
+        assert parse_effect(entry, effects.SOURCE_BELIEF, "Probe").scope == expected, tier
 
 
 def test_valid_entries_normalise_their_values():

@@ -65,9 +65,16 @@ class Player:
         # Religion (v0.9.0 Q7, districts_religion_design §7.1): the chosen
         # [pantheons.*] name, None until one is chosen; permanent once set
         # (Civ 6: kept whatever happens to the cities). Written only by
-        # GameEnvironment.choose_pantheon. Q8/Q9 add the founded religion,
-        # the spread-use counter and the lapsed flag here, beside it.
+        # GameEnvironment.choose_pantheon.
         self.pantheon = None
+        # The religion this player FOUNDED (v0.9.0 Q8): a
+        # `game/religion.Religion` (founder index, beliefs by tier, the
+        # `lapsed` flag Q9 writes), None until `GameEnvironment.found_religion`;
+        # its beliefs grow only through `GameEnvironment.add_belief`. Never
+        # cleared: a religion outlives its founder (§7.5), and the follower
+        # source reads it through the dead Player. Q9 adds the spread-use
+        # counter beside it.
+        self.religion = None
 
     def start_turn(self):
         """Process the start of a player's turn: exploration -> unit reset and

@@ -244,7 +244,13 @@ def main():
           f"overseas_routes={[env.episode_stats[i]['overseas_routes'] for i in range(num_players)]} "
           f"pantheons_chosen={[env.episode_stats[i]['pantheons_chosen'] for i in range(num_players)]} "
           f"faith_spent_religion_tenths={[env.episode_stats[i]['faith_spent_religion'] for i in range(num_players)]} "
-          f"pantheons={[p.pantheon for p in env.players]}")
+          f"pantheons={[p.pantheon for p in env.players]} "
+          f"religions_founded={[env.episode_stats[i]['religions_founded'] for i in range(num_players)]} "
+          f"beliefs_added={[env.episode_stats[i]['beliefs_added'] for i in range(num_players)]} "
+          f"founder_pay_tenths={[env.episode_stats[i]['founder_pay_tenths'] for i in range(num_players)]} "
+          f"religions={[None if p.religion is None else p.religion.beliefs for p in env.players]} "
+          f"follower_cities={[sum(c.religion == p.player_index for q in env.players for c in q.cities) if p.religion is not None else 0 for p in env.players]} "
+          f"faith_pool_tenths={[p.faith for p in env.players]}")
 
 
 if __name__ == "__main__":

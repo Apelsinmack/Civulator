@@ -1,8 +1,8 @@
 """The one interpreter of `effects` lists (issue #116 P4, docs/progression_design.md
 §3, §5 and "v2 fixes").
 
-Any tech, civic, government, policy, building, district or pantheon (v0.9.0
-Q7, `religion_model`) table may declare
+Any tech, civic, government, policy, building, district, pantheon (v0.9.0
+Q7, `religion_model`) or belief (v0.9.0 Q8) table may declare
 
     effects = [
         { kind = "production_percent", target = { unit = "Settler" }, percent = 50 },
@@ -30,19 +30,32 @@ Scope. Every entry has `scope = "player" | "city"`: buildings and districts
 default to "city" (the effect holds in that city only), every other source
 to "player" (it holds in every city of the player, and for its units). A
 policy, government, civic, tech or pantheon may not declare "city" -- it has
-no city.
+no city. A belief (v0.9.0 Q8, districts_religion_design §7.3) is scoped by
+its tier: a FOLLOWER belief is city-scoped (it holds in every city that
+follows the religion, whoever owns it) and may carry only kinds whose
+consumer passes a city; an ENHANCER belief is player-scoped (it holds for
+the founder); a FOUNDER belief carries only `per_follower_city`, which is
+never in force -- the religion step of the economy phase reads it through
+`effects_of` (founder pay). Three kinds belong to one tier each:
+`per_follower_city` (founder), `cross_yield` (follower), `religion_param`
+(enhancer); anywhere else they raise.
 
 What is in force (`active_effects`, deterministic order, recomputed on every
 call, never cached): the government's entries; the slotted policies that are
 legal now (`policies_in_force`), in loadout order; the effects of every
 known civic, then every known tech, in completion order; the player's
 pantheon (v0.9.0 Q7; scope player only -- a pantheon stands in no city); the
+enhancer belief of the religion the player founded (v0.9.0 Q8); the
 player-scoped
 entries of every building and every complete district (wonders are
 districts, #116 P6) in the player's cities (`player.cities` order, then
 `city.buildings` / `city.districts` order); and, when a city is given, that
 city's city-scoped building entries and complete-district entries in the
-same order. One-shot entries (ONE_SHOT_KINDS) are never in force: they fire
+same order, then the follower beliefs of the religion the city follows
+(`city.religion`, the founder's index; the founder's `Player.religion`, dead
+or alive, holds them -- v0.9.0 Q8, the `belief` source), in the religion's
+order, each skipped where its `requires_building` is not among the city's
+buildings. One-shot entries (ONE_SHOT_KINDS) are never in force: they fire
 once, when their wonder completes (`GameEnvironment._one_shot_effects`,
 #116 P6), and are read there through `effects_of`. Every entry in force
 carries its `source_city` (#116 P7): the city holding the building or the
@@ -68,9 +81,11 @@ SOURCE_POLICY = "policy"
 SOURCE_BUILDING = "building"
 SOURCE_DISTRICT = "district"
 SOURCE_PANTHEON = "pantheon"  # v0.9.0 Q7: the player's chosen pantheon
+SOURCE_BELIEF = "belief"  # v0.9.0 Q8: a religion's beliefs, scoped by tier
 SOURCES = (SOURCE_TECH, SOURCE_CIVIC, SOURCE_GOVERNMENT, SOURCE_POLICY,
-           SOURCE_BUILDING, SOURCE_DISTRICT, SOURCE_PANTHEON)
-# Sources that stand in a city and may therefore hold a city-scoped effect.
+           SOURCE_BUILDING, SOURCE_DISTRICT, SOURCE_PANTHEON, SOURCE_BELIEF)
+# Sources that stand in a city and may therefore hold a city-scoped effect
+# (a follower belief stands in its follower cities: see _belief_scope).
 _CITY_SOURCES = (SOURCE_BUILDING, SOURCE_DISTRICT)
 
 SCOPE_PLAYER = "player"
@@ -107,6 +122,9 @@ KIND_MOVEMENT_DELTA = "movement_delta"  # v0.9.0 Q5
 KIND_BORDER_COST_PERCENT = "border_cost_percent"  # v0.9.0 Q7
 KIND_IMPROVEMENT_YIELD = "improvement_yield"  # v0.9.0 Q7
 KIND_ADJACENCY_ROW = "adjacency_row"  # v0.9.0 Q7
+KIND_CROSS_YIELD = "cross_yield"  # v0.9.0 Q8 (follower beliefs)
+KIND_PER_FOLLOWER_CITY = "per_follower_city"  # v0.9.0 Q8 (founder beliefs)
+KIND_RELIGION_PARAM = "religion_param"  # v0.9.0 Q8 (enhancer beliefs)
 
 # The one consumer of each kind (design §3, "consumed by"). Since #116 P7
 # every kind is wired: each names its reader.
@@ -156,10 +174,18 @@ CONSUMERS = {
                             "calculate_production through it; v0.9.0 Q7)",
     KIND_ADJACENCY_ROW: "game/districts.py adjacency_score (the owner's rows beside the "
                         "config rows; v0.9.0 Q7)",
+    KIND_CROSS_YIELD: "game/yields.py city_yield (_cross_yield_tenths: a complete district's "
+                      "adjacency score paid again as another yield; v0.9.0 Q8)",
+    KIND_PER_FOLLOWER_CITY: "game/religion.py founder_pay_tenths (the religion step of "
+                            "GameEnvironment.economy_phase, _founder_pay; v0.9.0 Q8)",
+    KIND_RELIGION_PARAM: "game/religion.py pressure parameters (religion_params: range, "
+                         "spread amount and cost of the founder's religion; v0.9.0 Q9, "
+                         "built on the Q8 branch before the merge)",
 }
 KINDS = tuple(CONSUMERS)
 # Kinds validated before their consumer exists, each naming in CONSUMERS the
-# patch that will read it. Empty since #116 P7 (loyalty was the last).
+# patch that will read it. Empty since #116 P7 (loyalty was the last); Q8's
+# `religion_param` is read by Q9 on the same branch, so it is not listed.
 DEFERRED_KINDS = frozenset()
 # One-shot kinds fire once when a wonder completes (design §3, §9.3), so they
 # belong on `kind = "wonder"` tables only, and are never in force.
@@ -172,7 +198,24 @@ _PLAYER_ONLY_KINDS = frozenset({KIND_POLICY_SLOTS, KIND_ENABLES, KIND_BUILD_CHAR
                                 # entries (the claiming city's owner, the
                                 # district's owner, the city's owner).
                                 KIND_BORDER_COST_PERCENT, KIND_IMPROVEMENT_YIELD,
-                                KIND_ADJACENCY_ROW})
+                                KIND_ADJACENCY_ROW,
+                                # v0.9.0 Q8: read for the founder (founder pay)
+                                # and for the founder's religion (pressure).
+                                KIND_PER_FOLLOWER_CITY, KIND_RELIGION_PARAM})
+# The kinds that belong to one belief tier (v0.9.0 Q8, design §7.3): on any
+# other source, or a belief of another tier, they raise at load.
+_TIER_KINDS = {KIND_PER_FOLLOWER_CITY: religion_model.TIER_FOUNDER,
+               KIND_CROSS_YIELD: religion_model.TIER_FOLLOWER,
+               KIND_RELIGION_PARAM: religion_model.TIER_ENHANCER}
+# The pool yields a founder belief may pay (there is a Player pool for each;
+# food and production have none): the keys of `[science]`/`[culture]`/
+# `[gold]`/`[faith]`.
+POOL_YIELDS = tuple(unit_model.YIELD_BASE)
+# What a `religion_param` entry may set (design §7.3, v3 fixes L3): `range`
+# raises the pressure range AND citizen_weight of the founder's religion;
+# the percents scale directed-spread pressure and the spread/inquisition
+# cost. All ints, read by game/religion.py (Q9).
+RELIGION_PARAMS = ("range", "spread_amount_percent", "cost_percent")
 
 # The rules an `enables` effect may switch on, each gated where it is applied.
 RULE_FLANKING = "flanking"  # #59, Unit.get_combat_strength
@@ -309,10 +352,20 @@ def _yield_map(raw, where):
 
 
 def _parse_city_yield(raw, where, ctx):
-    _keys(raw, (*unit_model.YIELD_COLUMNS, "capital_only", "per_district"), (), where)
-    return {"yields": MappingProxyType(_yield_map(raw, where)),
-            "capital_only": _bool(raw.get("capital_only", False), f"{where} capital_only"),
-            "per_district": _bool(raw.get("per_district", False), f"{where} per_district")}
+    """`city_yield { <yields>, capital_only?, per_district?, per_wonder? }`:
+    `per_wonder` (v0.9.0 Q8, Divine Inspiration) multiplies the amounts by
+    the city's complete wonders, as `per_district` does by its complete
+    specialty districts; one multiplier per entry."""
+    _keys(raw, (*unit_model.YIELD_COLUMNS, "capital_only", "per_district", "per_wonder"),
+          (), where)
+    attrs = {"yields": MappingProxyType(_yield_map(raw, where)),
+             "capital_only": _bool(raw.get("capital_only", False), f"{where} capital_only"),
+             "per_district": _bool(raw.get("per_district", False), f"{where} per_district"),
+             "per_wonder": _bool(raw.get("per_wonder", False), f"{where} per_wonder")}
+    if attrs["per_district"] and attrs["per_wonder"]:
+        raise ValueError(f"{where}: per_district and per_wonder are two multipliers; "
+                         f"an entry takes one")
+    return attrs
 
 
 def _parse_target(target, where, ctx):
@@ -381,10 +434,27 @@ def _parse_adjacency_percent(raw, where, ctx):
 
 
 def _parse_combat_strength(raw, where, ctx):
-    _keys(raw, ("applies_to", "amount"), ("applies_to", "amount"), where)
-    return {"applies_to": _names(raw["applies_to"], _APPLIES_TO, "combat strength target",
-                                 f"{where} applies_to"),
-            "amount": _int(raw["amount"], f"{where} amount")}
+    """`combat_strength { applies_to, amount, vs_city_of_other_religion?,
+    in_follower_territory? }`. The two conditions (v0.9.0 Q8, Crusade and
+    Defender of the Faith, districts_religion_design §7.3 and v3 fixes L9)
+    are read by `combat_strength_amounts` from the target and the receiving
+    unit's tile; an entry carries at most one of them."""
+    _keys(raw, ("applies_to", "amount", "vs_city_of_other_religion", "in_follower_territory"),
+          ("applies_to", "amount"), where)
+    attrs = {"applies_to": _names(raw["applies_to"], _APPLIES_TO, "combat strength target",
+                                  f"{where} applies_to"),
+             "amount": _int(raw["amount"], f"{where} amount"),
+             "vs_city_of_other_religion": _bool(raw.get("vs_city_of_other_religion", False),
+                                                f"{where} vs_city_of_other_religion"),
+             "in_follower_territory": _bool(raw.get("in_follower_territory", False),
+                                            f"{where} in_follower_territory")}
+    if attrs["vs_city_of_other_religion"] and attrs["in_follower_territory"]:
+        raise ValueError(f"{where}: an entry carries one religious condition, not both")
+    if (attrs["vs_city_of_other_religion"] or attrs["in_follower_territory"]) \
+            and APPLIES_CITY in attrs["applies_to"]:
+        raise ValueError(f"{where}: the religious conditions are read for units "
+                         f"(a target and a tile); applies_to may not include \"city\"")
+    return attrs
 
 
 def _amount_only(check):
@@ -497,6 +567,57 @@ def _parse_adjacency_row(raw, where, ctx):
             "row": district_model.parse_adjacency_row(row, where, registry)}
 
 
+def _parse_cross_yield(raw, where, ctx):
+    """`cross_yield { from_district, to, percent }` (v0.9.0 Q8, Work Ethic and
+    kin): each complete `from_district` of a follower city pays `percent` of
+    its adjacency score as the `to` yield, beside its normal yield. `to` may
+    not be the district's own adjacency yield -- that is `adjacency_percent`
+    (one way to say each thing)."""
+    _keys(raw, ("from_district", "to", "percent"), ("from_district", "to", "percent"), where)
+    registry = ctx["districts"]
+    district = _name(raw["from_district"], registry, "district", f"{where} from_district")
+    adjacency = registry[district].adjacency_yield
+    if adjacency == "none":
+        raise ValueError(f"{where}: district {district!r} has no adjacency yield")
+    to = _name(raw["to"], unit_model.YIELD_COLUMNS, "yield", f"{where} to")
+    if to == adjacency:
+        raise ValueError(f"{where}: {district!r} already yields {to}; raising it is "
+                         f"adjacency_percent, not cross_yield")
+    return {"from_district": district, "to": to,
+            "percent": _positive_int(raw["percent"], f"{where} percent")}
+
+
+def _parse_per_follower_city(raw, where, ctx):
+    """`per_follower_city { <pool yields> }` (v0.9.0 Q8, the founder beliefs):
+    tenths of each named pool yield the founder is paid per follower city
+    (the belief's `counts` says which cities). Pool yields only: food and
+    production have no Player pool to pay into."""
+    _keys(raw, POOL_YIELDS, (), where)
+    return {"yields": MappingProxyType(_yield_map(raw, where))}
+
+
+def _parse_religion_param(raw, where, ctx):
+    """`religion_param { range?, spread_amount_percent?, cost_percent? }`
+    (v0.9.0 Q8, the enhancer beliefs; read by game/religion.py in Q9): at
+    least one of RELIGION_PARAMS, every one an int; `range` >= 0 and still
+    passing `check_pressure_weights` with both numbers raised by it (v3
+    fixes L3: Itinerant Preachers raises range AND citizen_weight);
+    `cost_percent` > -100 so a spread always costs something."""
+    _keys(raw, RELIGION_PARAMS, (), where)
+    if not any(k in raw for k in RELIGION_PARAMS):
+        raise ValueError(f"{where}: names none of {RELIGION_PARAMS}")
+    attrs = {"range": _non_negative_int(raw.get("range", 0), f"{where} range"),
+             "spread_amount_percent": _int(raw.get("spread_amount_percent", 0),
+                                           f"{where} spread_amount_percent"),
+             "cost_percent": _int(raw.get("cost_percent", 0), f"{where} cost_percent")}
+    rules = religion_model.RULES
+    religion_model.check_pressure_weights(rules.citizen_weight + attrs["range"],
+                                          rules.range + attrs["range"], where)
+    if attrs["cost_percent"] <= -100:
+        raise ValueError(f"{where} cost_percent must be > -100, got {attrs['cost_percent']}")
+    return attrs
+
+
 def _parse_policy_slots(raw, where, ctx):
     _keys(raw, research_model.POLICY_TYPES, (), where)
     if not raw:
@@ -583,13 +704,55 @@ _PARSERS = {
     KIND_BORDER_COST_PERCENT: _parse_border_cost_percent,
     KIND_IMPROVEMENT_YIELD: _parse_improvement_yield,
     KIND_ADJACENCY_ROW: _parse_adjacency_row,
+    KIND_CROSS_YIELD: _parse_cross_yield,
+    KIND_PER_FOLLOWER_CITY: _parse_per_follower_city,
+    KIND_RELIGION_PARAM: _parse_religion_param,
 }
 assert set(_PARSERS) == set(KINDS), "every kind has one parser and one consumer"
 
 
-def default_scope(source_kind):
-    """"city" for buildings and districts, "player" for every other source."""
+def default_scope(source_kind, source_name=None):
+    """"city" for buildings, districts and follower beliefs (v0.9.0 Q8: a
+    belief's scope is its tier's, `_belief_scope`), "player" for every other
+    source."""
+    if source_kind == SOURCE_BELIEF:
+        return _belief_scope(_belief_tier(source_name, f"[belief {source_name}]"))
     return SCOPE_CITY if source_kind in _CITY_SOURCES else SCOPE_PLAYER
+
+
+def _belief_tier(source_name, where):
+    """The tier of belief `source_name` from the religion registry (read at
+    call time, so a synthetic belief is seen); a name that is no belief
+    raises -- a belief's effects cannot be validated without its tier."""
+    tier = religion_model.belief_tier(source_name)
+    if tier is None:
+        raise ValueError(f"{where}: {source_name!r} is not a [beliefs.*] table")
+    return tier
+
+
+def _belief_scope(tier):
+    """The one scope a belief of `tier` holds (design §7.3): follower beliefs
+    stand in their follower cities (city), founder and enhancer beliefs with
+    the founder (player)."""
+    return SCOPE_CITY if tier == religion_model.TIER_FOLLOWER else SCOPE_PLAYER
+
+
+def _check_belief(kind, scope, tier, where):
+    """The tier rules of a belief's entry (v0.9.0 Q8): its scope is the
+    tier's (`_belief_scope`); a founder belief carries only
+    `per_follower_city`; a follower belief only kinds whose consumer passes a
+    city (not _PLAYER_ONLY_KINDS -- its entries hold in cities it does not
+    own, so a player-read kind would never be read); an enhancer only
+    player-scoped kinds, never a follower-only one."""
+    if scope != _belief_scope(tier):
+        raise ValueError(f"{where}: a {tier} belief holds with scope "
+                         f"\"{_belief_scope(tier)}\"")
+    if tier == religion_model.TIER_FOUNDER and kind != KIND_PER_FOLLOWER_CITY:
+        raise ValueError(f"{where}: a founder belief carries {KIND_PER_FOLLOWER_CITY} only "
+                         f"(it pays the founder; it is never in force)")
+    if tier == religion_model.TIER_FOLLOWER and kind in _PLAYER_ONLY_KINDS:
+        raise ValueError(f"{where}: {kind} is read for the player; a follower belief holds "
+                         f"in follower cities of any owner, so its kinds take a city")
 
 
 def parse_effect(entry, source_kind, source_name, districts=None):
@@ -605,7 +768,9 @@ def parse_effect(entry, source_kind, source_name, districts=None):
     "wonder"` table of the district registry (#116 P6); a `loyalty` entry
     whose reach is wrong (`_check_loyalty_reach`, #116 P7); a `regional_yield`
     entry off a building or without scope "player" (`_check_regional_reach`,
-    v0.9.0 Q4). `districts` is the
+    v0.9.0 Q4); a belief entry against its tier's rules, or a tier-bound kind
+    (`per_follower_city`, `cross_yield`, `religion_param`) off its tier
+    (`_check_belief`, `_TIER_KINDS`, v0.9.0 Q8). `districts` is the
     registry names resolve against (default: district_model.DISTRICTS).
     """
     if source_kind not in SOURCES:
@@ -616,13 +781,18 @@ def parse_effect(entry, source_kind, source_name, districts=None):
     kind = entry.get("kind")
     if kind not in _PARSERS:
         raise ValueError(f"{where}: unknown kind {kind!r}, expected one of {KINDS}")
-    scope = entry.get("scope", default_scope(source_kind))
+    tier = _belief_tier(source_name, where) if source_kind == SOURCE_BELIEF else None
+    scope = entry.get("scope", default_scope(source_kind, source_name))
     if scope not in SCOPES:
         raise ValueError(f"{where}: scope {scope!r} not in {SCOPES}")
-    if scope == SCOPE_CITY and source_kind not in _CITY_SOURCES:
+    if scope == SCOPE_CITY and source_kind not in _CITY_SOURCES and tier is None:
         raise ValueError(f"{where}: a {source_kind} has no city; scope must be \"player\"")
     if scope == SCOPE_CITY and kind in _PLAYER_ONLY_KINDS:
         raise ValueError(f"{where}: {kind} is read for the player only; scope must be \"player\"")
+    if kind in _TIER_KINDS and _TIER_KINDS[kind] != tier:
+        raise ValueError(f"{where}: {kind} belongs on a {_TIER_KINDS[kind]} belief")
+    if tier is not None:
+        _check_belief(kind, scope, tier, where)
     if kind == KIND_CITY_YIELD and source_kind == SOURCE_BUILDING:
         raise ValueError(f"{where}: a building declares yields as columns, not city_yield effects")
     if kind == KIND_POLICY_SLOTS and source_kind == SOURCE_POLICY:
@@ -729,6 +899,8 @@ def _raw(source_kind, name):
         return _districts().district_spec(name).effects
     if source_kind == SOURCE_PANTHEON:
         return religion_model.PANTHEONS[name].effects
+    if source_kind == SOURCE_BELIEF:
+        return religion_model.BELIEFS[name].effects
     raise ValueError(f"unknown effect source {source_kind!r}")
 
 
@@ -758,6 +930,7 @@ def _validate_registries():
         (SOURCE_POLICY, research_model.POLICIES),
         (SOURCE_BUILDING, unit_model.BUILDING_EFFECTS),
         (SOURCE_PANTHEON, religion_model.PANTHEONS),
+        (SOURCE_BELIEF, religion_model.BELIEFS),
     ):
         for name in names:
             raw = _raw(source_kind, name)
@@ -766,6 +939,12 @@ def _validate_registries():
     for name, spec in district_model.DISTRICTS.items():
         if spec.effects:
             parse_effects(spec.effects, SOURCE_DISTRICT, name)
+    # v0.9.0 Q8: the building faith-purchase categories name districts;
+    # unit_model loads before the district registry, so they resolve here.
+    for category, district in unit_model.BUILDING_FAITH_CATEGORIES.items():
+        if district not in district_model.DISTRICTS:
+            raise ValueError(f"[faith] purchase_building_categories {category}: "
+                             f"{district!r} is not a district")
 
 
 def one_shot_effects(district_type):
@@ -868,6 +1047,11 @@ def _gather(player, city, kind, policies):
     pantheon = getattr(player, "pantheon", None)
     if pantheon is not None:
         take(SOURCE_PANTHEON, pantheon, SCOPE_PLAYER)
+    # v0.9.0 Q8: the enhancer belief of the religion the player founded holds
+    # for the founder (player scope) -- dead or alive, lapsed or not.
+    founded = getattr(player, "religion", None)
+    if founded is not None and founded.enhancer_belief is not None:
+        take(SOURCE_BELIEF, founded.enhancer_belief, SCOPE_PLAYER)
     for owned in player.cities:
         for building in owned.buildings:
             take(SOURCE_BUILDING, building, SCOPE_PLAYER, owned)
@@ -880,7 +1064,30 @@ def _gather(player, city, kind, policies):
         for district in city.districts:
             if district.complete:
                 take(SOURCE_DISTRICT, district.type, SCOPE_CITY, city)
+        # v0.9.0 Q8, the `belief` source: the follower beliefs of the
+        # religion the city follows hold in it whoever owns it; one with a
+        # `requires_building` only where the city holds that building.
+        followed = followed_religion(city)
+        if followed is not None:
+            for name in followed.follower_beliefs:
+                needed = religion_model.BELIEFS[name].requires_building
+                if needed is None or needed in city.buildings:
+                    take(SOURCE_BELIEF, name, SCOPE_CITY, city)
     return out
+
+
+def followed_religion(city):
+    """The religion `city` follows -- the `Player.religion` of the founder
+    `city.religion` indexes (dead or alive: a religion outlives its founder,
+    districts_religion_design §7.5) -- or None for a secular city. The one
+    lookup from a city's religion index to the religion's beliefs."""
+    index = getattr(city, "religion", None)
+    if index is None:
+        return None
+    env = getattr(getattr(city, "player", None), "game_env", None)
+    if env is None:
+        return None
+    return env.players[index].religion
 
 
 def active_effects(player, city=None, kind=None):
@@ -930,18 +1137,69 @@ def rule_enabled(player, rule):
                for effect in active_effects(player, kind=KIND_ENABLES))
 
 
-def combat_strength_amounts(player, applies, city=None):
+def combat_strength_amounts(player, applies, city=None, target=None, tile=None):
     """The amounts, in order, of the `combat_strength` effects in force for
     `player` that apply to `applies`: a combat class (matched by that class
     or APPLIES_ALL) or APPLIES_CITY (then pass the `city`, so its own
     city-scoped entries count). The caller adds them one by one, like the
-    class bonuses (`unit_model.class_bonus_amounts`)."""
+    class bonuses (`unit_model.class_bonus_amounts`).
+
+    The religious conditions (v0.9.0 Q8, districts_religion_design §7.3, v3
+    fixes L9) are read here, for the unit that RECEIVES the bonus: an entry
+    with `vs_city_of_other_religion` counts only when `target` is a city or a
+    fortified district whose city does not follow the religion `player`
+    founded (a secular city counts as "other"); one with
+    `in_follower_territory` only when `tile` -- the receiving unit's
+    coordinates -- is owned by a city that follows it. Both conditions read
+    the live board through `player.game_env`, so without a target or tile a
+    conditional entry never applies (a city's own defence passes neither).
+    """
     if applies is None:
         return []
     wanted = (applies,) if applies == APPLIES_CITY else (applies, APPLIES_ALL)
-    return [effect["amount"]
-            for effect in active_effects(player, city, KIND_COMBAT_STRENGTH)
-            if any(a in effect["applies_to"] for a in wanted)]
+    amounts = []
+    for effect in active_effects(player, city, KIND_COMBAT_STRENGTH):
+        if not any(a in effect["applies_to"] for a in wanted):
+            continue
+        if effect["vs_city_of_other_religion"]:
+            defended = _fortification_city(target)
+            if defended is None or _follows(defended, player):
+                continue
+        if effect["in_follower_territory"] and not _follows(_owner_city_at(player, tile), player):
+            continue
+        amounts.append(effect["amount"])
+    return amounts
+
+
+def _fortification_city(target):
+    """The city a combat target stands for: a City itself, a fortified
+    district's city (`District.city`, v0.9.0 Q3); None for a unit or no
+    target. Duck-typed on the defender protocol's flags."""
+    if target is None:
+        return None
+    if getattr(target, "is_city", False):
+        return target
+    if getattr(target, "is_fortification", False):
+        return getattr(target, "city", None)
+    return None
+
+
+def _owner_city_at(player, tile):
+    """The city owning `tile` (coordinates) on `player`'s board, or None
+    (no tile, a neutral tile, no board)."""
+    env = getattr(player, "game_env", None)
+    if tile is None or env is None:
+        return None
+    return env.city_by_id.get(env.map.owner_id_at(tile))
+
+
+def _follows(city, player):
+    """Whether `city` follows the religion `player` founded: both exist and
+    `city.religion` is that religion's founder index."""
+    founded = getattr(player, "religion", None)
+    if city is None or founded is None:
+        return False
+    return getattr(city, "religion", None) == founded.founder
 
 
 def target_matches(target, item_kind, name, city=None):
