@@ -1,9 +1,10 @@
 # Districts II and religion (#93 #94 #95 #96 #97 #102): design
 
-> **Status: v2.1 — Erik ruled on §16 (all nine accepted, 2026-10-22 evening);
-> critique lens 1 resolved on paper ("v2 fixes" below wins where it differs
-> from §2–§15); lens 2 (rules semantics) pending, then v3 is the build
-> contract.** Authored
+> **Status: v3 — the build contract, except for two flagged calls (C10,
+> C11 in §16).** Erik ruled on §16's nine calls (2026-10-22 evening, all
+> accepted); lens 1 (systems) and lens 2 (rules semantics) both "survive with
+> fixes", resolved in "v2 fixes" and "v3 fixes" below, which win over §2–§15
+> where they differ (v3 over v2). Authored
 > 2026-10-22 by Claude as lead game designer, at Erik's request (chat,
 > 2026-10-22, Erik away for the rest of the session). Lens 1's full report:
 > `docs/districts_religion_design_critique_lens1.md`. Rules that are Erik's
@@ -916,6 +917,8 @@ classes; fairness rule; golden).
 | C7 | Religious victory flag exists, off | yes (mirrors domination) |
 | C8 | Crusade and Defender of the Faith touch combat strength through two new attributes | yes — they are the two beliefs that make religion matter in a war, which is the game the agents actually play |
 | C9 | Three techs + one civic lengthen the trees (+850 science, +220 culture) | accept; re-tune `tech_cost_percent` in the balancing pass, not here |
+| **C10** (v3, open) | The overseas x2 fires only on routes to an opponent on another continent until land units can embark (#76) | accept for 0.9; design #76 (embarkation) as the next sea feature |
+| **C11** (v3, open) | `exclusive = true` caps religions at the number of founder beliefs (4) | keep; four religions on a large map is Civ 6's own feel |
 
 ## v2 fixes (critique round 1, lens: systems reuse / regression / determinism)
 
@@ -1068,14 +1071,101 @@ to load from Q1 on (the #116 P1 precedent). Q9 only dates the entry.
   the same day — otherwise Q8 and Q9 merge together. Order: Q1 → Q2 → (Q3,
   Q4) → Q5 → Q6 → Q7 → Q8+Q9.
 
+## v3 fixes (critique round 1, lens 2: rules semantics / edge cases / principles)
+
+Where this section and anything above differ, **this section wins**. Report:
+`docs/districts_religion_design_critique_lens2.md`.
+
+**L1 — founding converts the seat.** `found_religion` sets the seat's
+`City.religion = R` (overriding whatever it followed; streak cleared). The
+seat is the qualifying own city (complete Holy Site + Temple) with the
+lowest city id; #99 may make it an argument. A religion is never born dead.
+
+**L2 — lapse and the dead founder, defined.** Lapse removes R's *outward*
+pressure (terms on cities not following R, and R's ledger entries on them)
+but keeps every follower city's own self-term, so followers keep their
+defence; founder pay stops; follower beliefs and enhancers stay in force
+(lapse touches pressure and founder pay only). In the religion step of the
+economy phase, **upkeep is checked and debited before founder pay**; a short
+treasury pays nothing and keeps its faith (no partial debit). A **dead
+founder's** religion is permanently unpaid: outward pressure 0, self-terms
+kept, follower beliefs kept, founder pay to nobody. The incumbent term in
+the conversion test is `secular_pressure` **iff `City.religion is None`**,
+otherwise the incumbent's own pressure (which may be 0).
+
+**L3 — Itinerant Preachers.** `religion_param { range = 3 }` raises *both*
+`range` and `citizen_weight` by 3 for that religion, so the term stays
+positive to the edge; `religion_model` validates `citizen_weight > range`
+after every param at load (the loyalty parser's rule).
+
+**L4 — `exclusive` caps religions at the founder-belief count (4).**
+`can_found_religion` has the refusal clause "no founder belief left"; §7.3's
+"every player may found" holds only on Duel/Tiny. **Open call C11** for
+Erik: keep (four religions on an 8-player map is Civ 6's own feel), or make
+exclusivity per *follower* tier only, or add founder beliefs. Default if
+silent: keep, `exclusive = true`.
+
+**L5 — the foreign-religion loyalty term** applies iff `city.religion is not
+None and city.religion != owner's founded religion` (a non-founder's follower
+city always pays it: adopting a foreign religion costs its adopter -1 per
+round — the price of the follower beliefs; a founder's secular city pays
+nothing).
+
+**L6 — conversion phase in integers.** Ledger entries are counted in the
+phase, then decremented, removed at 0 (an entry counts in exactly
+`spread_rounds` phases). A candidate needs pressure > 0. Immunity resets the
+streak to 0. A changed candidate restarts the streak at 1. Streak state is
+`(candidate, rounds)` on the city.
+
+**L7 — luxury assignment is greedy.** Luxuries in config order; each goes to
+the `luxury_cities` cities with the largest *current* deficit (counting
+luxuries already assigned this computation), ties by city id.
+
+**L8 — breached Encampment.** An enemy unit standing on the tile blocks
+repair, as the ring does. The Encampment strikes iff its own health > 0, its
+city holds `ranged_building`, and no enemy stands on its tile; it may not
+target a unit on its own tile (there is none when it fires).
+
+**L9 — the two combat beliefs.** Defender of the Faith reads the tile of
+the unit that *receives* the bonus, in both roles. Crusade reads the
+religion of the defending city, or of a fortified district's city. Both hold
+while the religion is lapsed (L2).
+
+**L10 — the overseas jump is international-only in this block.** Land units
+never embark (#76, ACCEPTED GAP), so a player's cities lie on one landmass
+except by loyalty flip; an overseas route therefore runs **to an opponent on
+another continent**, and in a Duel whose two players share a continent it
+never fires. Declared in §1 and §6.6. **Open call C10** for Erik: accept for
+0.9 (the next sea feature is embarkation, #76, which brings domestic
+intercontinental trade), or pull #76 into this block (a Settler that can
+cross coast is the one feature that makes the second continent a *place*,
+not only a trading partner). Claude's recommendation: accept for 0.9 and
+design #76 next — it is a passability and transport design of its own. Q6's
+smoke gate names a seed whose two players start on different landmasses.
+
+**Non-blocking, folded in** (the rest of the lens-2 list is in its report
+and is the implementer's checklist): the amenity need of a size-1 city is 1
+(ceil(1/2)); a religion with zero followers is dead until an inquisition
+in an own city (L1 makes that rare); two players spreading to one city: the
+strongest foreign pressure is the candidate, ties by lower founder index;
+a Harbor on a Lake terminates no sea route (no water path to any other
+Harbor) and the pair falls back to land rules; a pair reachable by land and
+sea is a sea route; a route's kind is decided at establishment and kept for
+its duration (terrain or Cartography changes affect new routes only);
+luxuries lost by capture mid-turn re-count at the next computation (nothing
+is cached); the faith "pump" (Pilgrimage +2 per foreign follower vs upkeep 1
+per follower) is a real economy — it is the designed reason to spread, not a
+bug, and it is a dial.
+
 ## Critique (lens table)
 
 | Lens | Verdict | Blockers |
 |---|---|---|
+| Rules semantics, edge cases, principles (Opus, 2026-10-22; `docs/districts_religion_design_critique_lens2.md`) | survives with fixes | 10: (1) founding converted no city; (2) lapse / dead founder undefined; (3) Itinerant Preachers' range beyond `citizen_weight` gives 0 or negative pressure; (4) `exclusive` caps religions at four vs `max_religions = 0`; (5) foreign-religion loyalty term undefined for founders' secular cities; (6) ledger expiry, zero-pressure candidates, streak under immunity and candidate change unstated; (7) luxury assignment static vs greedy; (8) breached Encampment repairs under an enemy and fires at 0; (9) which tile / which defender for Crusade and Defender; (10) the overseas jump is international-only without embarkation. All resolved in "v3 fixes"; (4) and (10) carry open calls C11 and C10. |
 | Systems reuse, regression, determinism (Opus, 2026-10-22; `docs/districts_religion_design_critique_lens1.md`) | survives with fixes | 9: (1) `matches` takes no resource class; (2) access rule self-contradictory, no `improved_by` data; (3) §2.4 unbuildable in `place_resources` and would move `starts`; (4) Encampment unattackable as written, move-in bypasses its refusal; (5) cross-domain melee unreachable through the mask, no move-in `can_enter`, two domain sources; (6) sea routes via `path_finder` read unit positions, overseas bonus changed land routes, multiplier invisible to the Trader default; (7) `improvement_yield` in `Tile.yields` poisons the epoch cache; (8) `landmass_id` duplicates `starts._find_landmasses`; (9) version gate open Q1–Q8. All resolved in "v2 fixes". 20 non-blocking, folded in. |
 
-**Synthesis (v2).** One lens, survives with fixes, nine blockers resolved on
-paper. A second lens (rules semantics and edge cases) is worth running
-**after Erik's rulings on §16**, since several of its targets (C1, C3, C4,
-C8) may change shape. v2 is not yet the build contract: Erik's rulings
-first.
+**Synthesis (v3).** Two lenses, both survive with fixes; 19 blockers
+resolved on paper, none reopening a ruling. **v3 is the build contract**,
+with two calls flagged for Erik (C10 overseas scope, C11 religion cap) whose
+defaults are stated so Q1–Q5 can start before he answers; Q6 (sea trade)
+and Q8 (beliefs) wait for C10 and C11 respectively.
