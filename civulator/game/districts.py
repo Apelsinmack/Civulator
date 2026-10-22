@@ -44,9 +44,19 @@ from . import territory
 # Reportable yield names; "none" is not a yield.
 YIELD_NAMES = tuple(y for y in ACCEPTED_YIELDS if y != "none")
 
-# The resource class a district tile may carry (design §2). Not a gameplay
-# number: the class name Civ 6's rule is written in.
-_PLACEABLE_RESOURCE_CLASS = "bonus"
+# The resource class a placed district removes (v0.9.0 Q1, districts_religion_
+# design §2.3, R2): a district may stand on any resource; a bonus one is
+# cleared, a strategic or luxury one stays and the district counts as its
+# improvement (game/resources.player_has_access). Not a gameplay number: the
+# class name the rule is written in.
+_REMOVED_RESOURCE_CLASS = "bonus"
+
+
+def district_keeps_resource(resource):
+    """Whether a district (or wonder) placed on a tile carrying `resource`
+    keeps it (strategic, luxury) rather than removing it (bonus). None keeps
+    nothing. Read by GameEnvironment.place_district."""
+    return resource is not None and resource_class(resource) != _REMOVED_RESOURCE_CLASS
 
 
 @dataclass(eq=False)
@@ -248,8 +258,6 @@ def can_place_district(city, district_type, coords):
                      resource=tile.resource):
         return False
     if tile.feature is not None and tile.feature not in REMOVABLE_FEATURES | ALLOWED_FEATURES:
-        return False
-    if tile.resource is not None and resource_class(tile.resource) != _PLACEABLE_RESOURCE_CLASS:
         return False
 
     # Limits: placed districts, complete or not (v3 fixes).

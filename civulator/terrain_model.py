@@ -55,7 +55,7 @@ from dataclasses import dataclass
 
 from .config import CFG
 from .research_model import validate_tech_name
-from .unit_model import to_tenths
+from .unit_model import UNIT_REQUIRES_RESOURCE, to_tenths
 
 _TERRAIN_CFG = CFG.get("terrain", {})
 
@@ -176,6 +176,11 @@ ON_KEYS_WITH_RESOURCES = ON_KEYS | {"resources"}
 # `resources = ["any"]` matches any resource (but not "no resource").
 ANY_RESOURCE = "any"
 
+# The resource classes (v0.9.0 Q1, districts_religion_design "v2 fixes" B1).
+# A class name in an `on` mapping's `resources` list matches every resource of
+# that class; a resource may therefore never be named like a class.
+RESOURCE_CLASSES = ("bonus", "luxury", "strategic")
+
 
 def _match(on, base, relief, feature, resource=_NOT_GIVEN):
     """True if one `on` mapping (bases/relief/features/resources, each an OR-list) is satisfied."""
@@ -195,7 +200,9 @@ def _match(on, base, relief, feature, resource=_NOT_GIVEN):
             )
         if resource is None:
             return False
-        if ANY_RESOURCE not in on["resources"] and resource not in on["resources"]:
+        listed = on["resources"]
+        if (ANY_RESOURCE not in listed and resource not in listed
+                and resource_class(resource) not in listed):
             return False
     return True
 
@@ -227,7 +234,8 @@ def validate_on_table(on, where, allow_resources=False, check_names=False):
 
     Unknown keys raise; `resources` raises unless `allow_resources`. With
     `check_names`, every listed name must exist in its table ("none" is a
-    valid feature, "any" a valid resource). Returns `on` unchanged.
+    valid feature, "any" and a class name -- RESOURCE_CLASSES -- valid
+    resources). Returns `on` unchanged.
     """
     allowed = ON_KEYS_WITH_RESOURCES if allow_resources else ON_KEYS
     groups = [on] if isinstance(on, dict) else on
@@ -237,7 +245,7 @@ def validate_on_table(on, where, allow_resources=False, check_names=False):
         "bases": set(BASE_TABLE),
         "relief": set(RELIEF_TABLE),
         "features": set(FEATURE_TABLE) | {_UNSET_FEATURE},
-        "resources": set(RESOURCE_TABLE) | {ANY_RESOURCE},
+        "resources": set(RESOURCE_TABLE) | {ANY_RESOURCE} | set(RESOURCE_CLASSES),
     }
     for group in groups:
         if not isinstance(group, dict):
@@ -256,9 +264,91 @@ def validate_on_table(on, where, allow_resources=False, check_names=False):
 
 
 def resource_class(name):
-    """The `class` of a resource ("bonus", later luxury/strategic). Unknown
-    names raise KeyError. The one accessor for resource class (issue #86)."""
+    """The `class` of a resource (one of RESOURCE_CLASSES). Unknown names
+    raise KeyError. The one accessor for resource class (issue #86)."""
     return RESOURCE_TABLE[name]["class"]
+
+
+# --- Resource columns (v0.9.0 Q1, districts_religion_design §2.1, "v2 fixes" B2) ---
+
+# Every key a [terrain.resource.*] table may carry; a typo raises at load.
+RESOURCE_KEYS = frozenset({"class", "on", "yields", "chance",
+                           "improved_by", "reveals", "frequency"})
+# The columns only a strategic or luxury resource declares (a bonus resource
+# grants nothing, so it names no improvement, tech or tiered-stage weight).
+_TIERED_ONLY_KEYS = ("improved_by", "reveals", "frequency")
+
+
+def parse_resources(tables):
+    """`[terrain.resource.*]` -> (improved_by, reveals, frequency), each keyed
+    by name. Raises at load on: an unknown key, an unknown class, a resource
+    named like a class (or "any"), a tiered-only column on a bonus resource,
+    a strategic/luxury resource without `improved_by` / `frequency`, an
+    unknown improvement in `improved_by`, an unknown tech in `reveals`, a
+    non-positive or non-int `frequency`.
+
+    `improved_by`: name -> tuple of improvement names (every resource; empty
+    for bonus). `reveals`: name -> tech name or None. `frequency`: name ->
+    positive int for every strategic/luxury resource.
+    """
+    improved_by, reveals, frequency = {}, {}, {}
+    for name, table in tables.items():
+        where = f"[terrain.resource.{name}]"
+        unknown = set(table) - RESOURCE_KEYS
+        if unknown:
+            raise ValueError(f"{where}: unknown key(s) {sorted(unknown)}")
+        if name in RESOURCE_CLASSES or name == ANY_RESOURCE:
+            raise ValueError(f"{where}: a resource may not be named like a class or 'any'")
+        cls = table.get("class")
+        if cls not in RESOURCE_CLASSES:
+            raise ValueError(f"{where}: class must be one of {RESOURCE_CLASSES}, got {cls!r}")
+        if cls == "bonus":
+            declared = [k for k in _TIERED_ONLY_KEYS if k in table]
+            if declared:
+                raise ValueError(f"{where}: a bonus resource declares none of {declared}")
+            improved_by[name] = ()
+            reveals[name] = None
+            continue
+        names = table.get("improved_by")
+        if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+            raise ValueError(f"{where}: improved_by must be a list of improvement names, got {names!r}")
+        missing = [n for n in names if n not in IMPROVEMENT_NAMES]
+        if missing:
+            raise ValueError(f"{where}: improved_by names unknown improvement(s) {missing}")
+        improved_by[name] = tuple(names)
+        reveals[name] = (validate_tech_name(table["reveals"], f"{where} reveals")
+                         if "reveals" in table else None)
+        weight = table.get("frequency")
+        if isinstance(weight, bool) or not isinstance(weight, int) or weight < 1:
+            raise ValueError(f"{where}: frequency must be a positive int, got {weight!r}")
+        frequency[name] = weight
+    return improved_by, reveals, frequency
+
+
+RESOURCE_IMPROVED_BY, RESOURCE_REVEALS, RESOURCE_FREQUENCY = parse_resources(RESOURCE_TABLE)
+
+
+def resources_of_class(cls):
+    """Every resource of class `cls`, in config order (a tuple: config order is
+    the only tie-break order -- never iterate a set of names)."""
+    if cls not in RESOURCE_CLASSES:
+        raise ValueError(f"unknown resource class {cls!r}, expected one of {RESOURCE_CLASSES}")
+    return tuple(name for name in RESOURCE_TABLE if RESOURCE_TABLE[name]["class"] == cls)
+
+
+def _validate_unit_resource_gates(gates=None):
+    """Load-time: every `[units.*] requires_resource` (`gates`, default
+    unit_model's parse) names a strategic resource (v0.9.0 Q1). Lives here,
+    not in unit_model, because unit_model loads first and this module owns
+    [terrain.resource.*]."""
+    for unit, name in (UNIT_REQUIRES_RESOURCE if gates is None else gates).items():
+        if name not in RESOURCE_TABLE or RESOURCE_TABLE[name]["class"] != "strategic":
+            raise ValueError(
+                f"[units.{unit}] requires_resource must name a strategic resource, got {name!r}"
+            )
+
+
+_validate_unit_resource_gates()
 
 
 def check_on(layer_kind, layer_name, base, relief, feature):

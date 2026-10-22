@@ -211,4 +211,13 @@ def test_engine_world_is_frozen_across_versions():
     ]
     assert sorted(m.starts) == [(5, 6), (7, 19)]
     assert len(m.rivers) == 84
-    assert sum(1 for i in range(12) for j in range(24) if m.tiles[i, j].resource) == 5
+    # Q1 (#128, resource tiers): 5 -> 15. The tiered stage added Horses,
+    # Iron, Niter, Silver and Pearls tiles; terrain, starts and rivers above
+    # did not move (CHANGELOG v0.9.0, Q1). Re-frozen.
+    assert sorted((i, j, m.tiles[i, j].resource) for i in range(12) for j in range(24)
+                  if m.tiles[i, j].resource) == [
+        (2, 10, "Rice"), (2, 14, "Rice"), (3, 14, "Horses"), (3, 15, "Wheat"),
+        (3, 21, "Iron"), (6, 19, "Rice"), (7, 5, "Iron"), (7, 7, "Silver"),
+        (7, 12, "Niter"), (7, 17, "Horses"), (8, 5, "Silver"), (8, 14, "Pearls"),
+        (8, 16, "Rice"), (9, 6, "Horses"), (10, 18, "Pearls"),
+    ]

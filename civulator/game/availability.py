@@ -19,14 +19,29 @@ Two predicates, and every build path reads them:
   the city owns its `requires_building`. `produce_building`, the build
   mask and `GameEnvironment.purchase` (#116 P5) call it.
 
+A unit's `requires_resource` (v0.9.0 Q1, docs/districts_religion_design.md
+§2.2) is the third clause of `player_can_build`: the owner has access to the
+strategic resource (`game/resources.player_has_access`). It is honoured only
+on a world that carries strategic resources at all
+(`resources.world_has_class`): the basic generator's boards and the matchup
+board keep the pre-0.9 roster ("v2 fixes", non-blocking list). An item
+already in production when access is lost completes -- the order was legal
+when given; only new orders are refused (City.process_turn never re-asks).
+Each refusal by this clause counts in the owner's
+`episode_stats["units_refused_resource"]` -- a pressure indicator (every
+predicate evaluation counts: the build mask, produce, purchase, upgrade),
+not a count of distinct decisions, and the one write this module makes.
+
 Captured units and buildings are kept whatever the new owner knows (Civ 6):
 nothing here is consulted for what a city already has.
 
-Pure: reads the parsed specs (unit_model, terrain_model, the district
-registry through `district_spec`) and live state; mutates nothing.
+Pure but for that counter: reads the parsed specs (unit_model,
+terrain_model, the district registry through `district_spec`) and live
+state; mutates no game state.
 """
 
 from .. import research_model, terrain_model, unit_model
+from . import resources as _resources
 # A module reference, not a name: districts.py imports this module for
 # can_place_district's gate, and module references resolve in either
 # import order.
@@ -104,10 +119,34 @@ def required_civic(kind, name):
     return _required_civic(kind, name)
 
 
+def required_resource(kind, name):
+    """The strategic resource the `kind` item `name` requires, or None. Only
+    units carry the column (v0.9.0 Q1)."""
+    if kind == "unit":
+        return unit_model.UNIT_REQUIRES_RESOURCE.get(name)
+    return None
+
+
+def resource_gate_holds(player, kind, name):
+    """The resource clause alone: True when `name` requires no resource, the
+    owner's world carries no strategic resource (the gate is not in force),
+    or the owner has access to it."""
+    resource = required_resource(kind, name)
+    if resource is None:
+        return True
+    env = getattr(player, "game_env", None)
+    game_map = getattr(env, "map", None)
+    if not _resources.world_has_class(game_map, terrain_model.resource_class(resource)):
+        return True
+    return _resources.player_has_access(player, resource, env)
+
+
 def player_can_build(player, kind, name):
     """True iff `player` may build the `kind` item `name` now: it exists, its
-    `requires_tech` (if any) is among `player.techs` and its
-    `requires_civic` (if any) among `player.civics`. `kind` is one of KINDS."""
+    `requires_tech` (if any) is among `player.techs`, its `requires_civic`
+    (if any) among `player.civics`, and -- for a unit with a
+    `requires_resource`, on a world that has resources of that class -- the
+    player has access to that resource. `kind` is one of KINDS."""
     if not _exists(kind, name):
         return False
     tech = required_tech(kind, name)
@@ -116,7 +155,19 @@ def player_can_build(player, kind, name):
     civic = _required_civic(kind, name)
     if civic is not None and civic not in player.civics:
         return False
+    if not resource_gate_holds(player, kind, name):
+        _count_resource_refusal(player)
+        return False
     return True
+
+
+def _count_resource_refusal(player):
+    """Count one refusal by the resource clause in the owner's episode stats
+    (stats only; nothing reads it back)."""
+    env = getattr(player, "game_env", None)
+    stats = getattr(env, "episode_stats", None)
+    if stats is not None and player.player_index in stats:
+        stats[player.player_index]["units_refused_resource"] += 1
 
 
 def city_can_build_building(city, name):

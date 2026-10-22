@@ -25,10 +25,11 @@ from ..research_model import (
     scaled_civic_cost,
     scaled_tech_cost,
 )
-from ..terrain_model import can_enter, improvement_on, matches
+from ..terrain_model import can_enter, check_on, improvement_on, matches
 from .player import Player
 from .city import City
 from .availability import player_can_build
+from .resources import accessible_resources
 from .city import _create_unit
 from .defaults import (
     default_civic, default_government, default_loadout, default_research, default_trade,
@@ -36,7 +37,7 @@ from .defaults import (
 )
 from .districts import (
     YIELD_NAMES as DISTRICT_YIELD_NAMES, District, can_place_district, district_cost,
-    is_wonder,
+    district_keeps_resource, is_wonder,
 )
 from ..district_model import (
     CONSOLATION_PERCENT as WONDER_CONSOLATION_PERCENT,
@@ -290,6 +291,13 @@ class GameEnvironment:
                 # placed copies removed because another city completed one.
                 "wonders_completed": 0,
                 "wonder_races_lost": 0,
+                # Resources (v0.9.0 Q1): the most distinct luxuries this
+                # player had access to at any round end (a max, not a sum;
+                # `_resource_stats`), and the refusals of a unit by the
+                # resource clause of availability.player_can_build (every
+                # predicate evaluation counts).
+                "luxuries_accessible": 0,
+                "units_refused_resource": 0,
                 # Summed adjacency score per yield, per city-round (#86 s5)
                 **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
             }
@@ -869,6 +877,7 @@ class GameEnvironment:
         if self.current_player_index == 0:
             self._border_phase()
             self._loyalty_phase()
+            self._resource_stats()
             self._update_done()  # the round-end verdict: a flip can end the game
             self.turn_counter += 1
 
@@ -891,6 +900,18 @@ class GameEnvironment:
         for city_id, _ in claims:
             player_index = self.city_by_id[city_id].player.player_index
             self.episode_stats[player_index]["tiles_claimed_by_culture"] += 1
+
+    def _resource_stats(self):
+        """Round-end bookkeeping, no rule (v0.9.0 Q1): each living player's
+        `luxuries_accessible` stat becomes the max of itself and the count of
+        distinct luxuries it has access to now (`resources.player_has_access`).
+        Luxuries have no consumer yet (amenities are Q2)."""
+        for player in self.players:
+            if player.is_dead:
+                continue
+            stats = self.episode_stats[player.player_index]
+            count = len(accessible_resources(player, self, "luxury"))
+            stats["luxuries_accessible"] = max(stats["luxuries_accessible"], count)
 
     def _loyalty_phase(self):
         """The round-end loyalty phase (#116 P7, progression design §8.3 and
@@ -1209,9 +1230,16 @@ class GameEnvironment:
         Checks `can_place_district`, then creates the District with its cost
         locked, links it from the tile and the city, clears the tile's
         improvements and (in one `set_layers` call, only when there is
-        something to clear) a removable feature and its bonus resource, bumps
+        something to clear) a removable feature and a bonus resource, bumps
         `Map.district_epoch`, re-runs `assign_tiles` and points the city's
         production at it. Returns True if placed.
+
+        A strategic or luxury resource stays on the tile and the district
+        counts as its improvement (v0.9.0 Q1, districts_religion_design §2.3,
+        R2: `resources.player_has_access` reads `tile.district`); a wonder
+        is placed here too and behaves the same. When removing the feature
+        would leave that resource on terrain its `on` refuses (a Dyes or Furs
+        on Woods hills), the feature stays with it.
         """
         if self.city_by_id.get(city.city_id) is not city:
             return False
@@ -1230,9 +1258,13 @@ class GameEnvironment:
 
         tile.clear_improvements(map_ref=self.map)
         feature = None if tile.feature in DISTRICT_REMOVABLE_FEATURES else tile.feature
-        if feature != tile.feature or tile.resource is not None:
+        resource = tile.resource if district_keeps_resource(tile.resource) else None
+        if resource is not None and not check_on("resource", resource, tile.base_terrain,
+                                                 tile.relief, feature):
+            feature = tile.feature
+        if feature != tile.feature or resource != tile.resource:
             tile.set_layers(tile.base_terrain, relief=tile.relief, feature=feature,
-                            resource=None, map_ref=self.map)
+                            resource=resource, map_ref=self.map)
         self.map.district_epoch += 1
         city.assign_tiles(self)
         city.current_production = {"type": "district", "district_type": district_type}

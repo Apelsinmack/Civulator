@@ -52,6 +52,89 @@ Design: `docs/rng_philox_migration.md`.
 - **Effect NOT yet measured:** no agent was trained or evaluated, and no claim
   is made about play.
 
+### Resource tiers: strategic and luxury (#128, patch Q1)
+
+**Rule change, effect NOT yet measured.** Source:
+`docs/districts_religion_design.md` §2, rulings R2 and R10 (C1, C2), and its
+"v2 fixes" B1-B3 and non-blocking list. No version bump: Q0 opened 0.9.0.
+
+- **Twelve new resources** under `[terrain.resource.*]`: strategic Horses,
+  Iron, Niter; luxury Wine, Silk, Dyes, Cotton, Salt, Silver, Furs, Pearls,
+  Whales, placed exactly as design §2.1. New columns, read only by
+  `terrain_model` and refused at load when unknown or dangling: `improved_by`
+  (the improvements that grant access; Niter is Mine only, so a Farm on Niter
+  never grants it), `reveals` (a tech, informational -- the engine never
+  hides state), `frequency` (the tiered stage's weight). A resource may not be
+  named like a class. **Yields: 0** for all twelve -- the source rule is "Civ 6
+  GS where the digest has them", and `docs/civ6_progression_reference.md`
+  lists no resource tile yields; the Civ 6 values are recorded in the
+  config comment, not modelled.
+- **`matches` accepts a class** (`resources = ["strategic"]` matches every
+  strategic resource, B1) -- what the Industrial Zone's strategic row (Q4)
+  needs. The Harbor's existing `resources = ["any"]` row now also counts
+  Pearls and Whales.
+- **Access** (`civulator/game/resources.py player_has_access`): the player
+  owns a tile with the resource that holds one of its `improved_by`
+  improvements, a district or wonder, or is a city centre. Boolean, never a
+  stockpile (C1).
+- **Units gated** (`[units.*] requires_resource`): Horseman and Knight need
+  Horses, Swordsman and Man-At-Arms Iron, Musketman Niter. **Declared rule
+  change for two pre-0.8 units, the Swordsman and the Horseman.** The gate is
+  the third clause of `availability.player_can_build`, so the build mask,
+  `produce_unit`, `purchase` and `upgrade_unit` refuse alike. It is honoured
+  only on a world that carries strategic resources
+  (`resources.world_has_class`): **the basic generator's worlds and the
+  matchup board keep the pre-0.9 roster** (declared). A unit already in
+  production when access is lost completes. Combat strengths are untouched
+  (the oracle does not move).
+- **Districts on resources (R2 generalised, §2.3):** a district or wonder may
+  stand on any resource (was: bonus only). A bonus resource is removed as
+  before; a strategic or luxury one stays and the district is its access --
+  "discovered" never enters the engine. When clearing the tile's feature would
+  leave the kept resource on terrain its `on` refuses (Dyes or Furs on Woods
+  hills), the feature stays.
+- **World generation:** a third sequential mapgen stage,
+  `mapgen/tiered_resources.py place_tiered_resources`, runs after
+  `generate_starts` (which now also returns its regions, additively) over the
+  start regions in start order, ranked by `tile_roll01` under
+  `STAGE_TIERED_RESOURCES` (id 12) and its purpose ids, total sort keys,
+  never overwriting a resource. Luxuries: two tiles of one type per region,
+  types differing between regions where possible, never in a founding ring.
+  **Fairness rule** (Claude's call, design §2.4): every region reaches at
+  least one Horses and one Iron within distance 3 of a settleable tile of the
+  region; a world where that cannot hold raises `StartPlacementError` (the
+  existing reset policy: seeded raises, unseeded resamples). Measured while
+  building it: 0 fairness failures on 200 Duel, 40 4-player and 40
+  Standard 6-player seeds. Niter has no guarantee: it comes from the extra
+  pool (2 strategic tiles per 100 land tiles, split 1:1:2 by `frequency`).
+  The stage's six knobs are `[map.earthlike] tiered_*`, mirrored in
+  `earthlike.DEFAULT_PARAMS` and recorded in `MapData.params`. **The `basic`
+  generator does not run the stage** (declared).
+- **Golden re-baseline, field-by-field proof.** The ceremony world (Standard
+  48x24, seed 42, 6 players) was generated before and after: `base_terrain`,
+  `relief`, `feature`, `rivers` (edges, flux, junctions), `fresh_water` and
+  `starts` are byte-identical; no pre-existing resource tile changed; only
+  `resource` (new tiles only) and `params` (the six `tiered_*` keys added,
+  every old key equal) differ. The same held on Duel seeds 1-20. New
+  resources on the ceremony world: Horses 9, Iron 8, Niter 5, and two each
+  of Cotton, Dyes, Pearls, Salt, Whales, Wine (six regions, six luxury
+  types). SHA `c1789b41...01d5f5` -> `b674a660...6b07c3`. The engine-level
+  Duel world (`test_rng.py::test_engine_world_is_frozen_across_versions`)
+  moved the same way: 5 -> 15 resources, terrain, starts and rivers
+  unchanged; re-frozen. The seeded-Duel reset digest in
+  `tests/test_territory.py` moved too and was re-baselined: with the tiered
+  names stripped it equals the Q0 value exactly. Three content-coupled tests
+  were updated: the district-config "unknown resource" probe used "Iron"
+  (now real), the P4 resource-count band now counts the bonus tier it was
+  tuned for, and a test pinning the exact set of eight bonus resources was
+  rewritten as a property. **Inspection by Erik: pending.**
+- **Stats:** `episode_stats` gains `luxuries_accessible` (distinct luxuries a
+  player has access to, the max over round ends) and `units_refused_resource`
+  (refusals by the resource clause -- every predicate evaluation counts, so
+  it is a pressure indicator, not a decision count); the smoke script's end
+  line prints both. **Luxuries have no consumer yet** -- amenities are Q2.
+- **Effect NOT yet measured:** nothing was trained or evaluated.
+
 ---
 
 ## v0.8.1 — Erik's rulings on the block's open calls; build charges (2026-10-22)

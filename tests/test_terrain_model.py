@@ -262,12 +262,21 @@ class TestSchemaContent:
             "Woods", "Rainforest", "Marsh", "Floodplains", "Oasis", "Reef", "Ice",
         }
 
-    def test_eight_resources_all_bonus_class(self):
-        assert set(tm.RESOURCE_TABLE.keys()) == {
-            "Wheat", "Rice", "Cattle", "Sheep", "Stone", "Deer", "Bananas", "Fish",
-        }
+    def test_every_resource_has_a_known_class_and_its_tiers_columns(self):
+        """Rewritten in v0.9.0 Q1 (was `test_eight_resources_all_bonus_class`,
+        which pinned the exact set of eight bonus names and broke on the
+        declared strategic/luxury tables -- a set designed to grow). Property:
+        every resource declares a class of RESOURCE_CLASSES; the bonus tier
+        is placed by `chance` and names no improvement, the other tiers by
+        `frequency` with an `improved_by`. Breaks if a resource ships without
+        a class or a tier's placement column."""
+        assert tm.resources_of_class("bonus")
         for name, entry in tm.RESOURCE_TABLE.items():
-            assert entry.get("class") == "bonus", name
+            assert entry.get("class") in tm.RESOURCE_CLASSES, name
+            if entry["class"] == "bonus":
+                assert entry.get("chance", 0) > 0 and not tm.RESOURCE_IMPROVED_BY[name], name
+            else:
+                assert tm.RESOURCE_FREQUENCY[name] >= 1 and tm.RESOURCE_IMPROVED_BY[name], name
 
     def test_river_crossing_cost(self):
         from civulator.config import CFG

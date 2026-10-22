@@ -12,7 +12,7 @@ import pytest
 
 from civulator import hexmath, mapgen
 from civulator.mapgen import earthlike, rivers
-from civulator.terrain_model import check_on
+from civulator.terrain_model import check_on, resource_class
 
 STANDARD = (24, 48)
 DUEL = (12, 24)
@@ -307,7 +307,12 @@ class TestResourceValidity:
                     assert check_on(
                         "resource", res, md.base_terrain[r, c], md.relief[r, c], md.feature[r, c]
                     ), f"seed {seed}: invalid {res} at ({r},{c})"
-            totals.append(count)
+            # The band is the BONUS stage's (P4 tuning target); since v0.9.0
+            # Q1 the tiered stage adds strategic/luxury tiles on top, counted
+            # by tests/test_resource_tiers.py instead. Validity above still
+            # covers every resource.
+            totals.append(sum(1 for v in md.resource.ravel()
+                              if v is not None and resource_class(v) == "bonus"))
 
         mean = sum(totals) / len(totals)
         assert 10 <= mean <= 40, (

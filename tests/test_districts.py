@@ -360,18 +360,19 @@ def test_features_are_allowed_exactly_when_removable_or_allowed():
         assert can_place_district(city, dtype, site) == expected, feature
 
 
-def test_only_bonus_resources_allow_placement(monkeypatch):
-    """A bonus resource allows placement; any other class refuses. Breaks if
-    the resource-class rule is dropped."""
+def test_every_resource_class_allows_placement(monkeypatch):
+    """A resource of any class allows placement (v0.9.0 Q1, DECLARED rule
+    change: was bonus-only; districts_religion_design §2.3, R2). Breaks if a
+    resource-class refusal returns to `can_place_district`. What placement
+    does to each class: tests/test_resource_tiers.py."""
     t = placeable_type()
     env = board()
     city = make_city(env, (3, 4))
     site = far_site(env, city)
     env.map.get_tile(site).set_layers("Grassland", resource="Stone", map_ref=env.map)
-    assert terrain_model.resource_class("Stone") == "bonus"
-    assert can_place_district(city, t, site)
-    monkeypatch.setitem(terrain_model.RESOURCE_TABLE["Stone"], "class", "luxury")
-    assert not can_place_district(city, t, site)
+    for cls in terrain_model.RESOURCE_CLASSES:
+        monkeypatch.setitem(terrain_model.RESOURCE_TABLE["Stone"], "class", cls)
+        assert can_place_district(city, t, site), cls
 
 
 def test_population_slots_limit_placed_districts():
