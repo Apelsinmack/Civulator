@@ -35,7 +35,15 @@ from test_city_combat import enemy_city, home_city, make_env, order
 from test_combat_range import make_flat_env, place
 from test_loyalty import city as loyal_city
 from test_loyalty import flat
-from civulator.game.unit import WarriorUnit
+from civulator.game.unit import SettlerUnit, WarriorUnit
+
+
+@pytest.fixture(autouse=True)
+def domination_on(monkeypatch):
+    """The domination tests describe the rule while it is switched on;
+    `[game] domination_victory` is off by default (#126), and the tests of the
+    switch itself turn it off again explicitly."""
+    monkeypatch.setattr(victory, "DOMINATION_ENABLED", True)
 
 
 def strip_palaces(env):
@@ -281,3 +289,57 @@ def test_the_cap_ends_the_game_the_round_after_the_last_allowed_one():
     env.turn_counter = env.max_turns + 1
     env._update_done()
     assert env.done and determine_outcome(env) == (1, "score")
+
+
+# --- the domination switch and Settler survival (#126) -----------------------------------
+
+
+def test_with_domination_off_taking_the_last_foreign_palace_does_not_end_the_game(monkeypatch):
+    """With `[game] domination_victory` false, seat 0 capturing seat 1's
+    capital while seat 1 keeps another city ends nothing: no verdict, the
+    game goes on. Breaks if the switch is not read by the verdict, or if
+    domination is tested somewhere else."""
+    monkeypatch.setattr(victory, "DOMINATION_ENABLED", False)
+    env = make_env()
+    home_city(env, (0, 0))
+    capital = enemy_city(env, (4, 8))
+    second = env.found_city(env.players[1], (4, 14), "Second")
+    capital.health = 0
+    raider = place(env, WarriorUnit, 0, (4, 7))
+
+    _, _, done = order(env, raider, (4, 8))
+
+    assert capital.player is env.players[0] and second.player is env.players[1]
+    assert domination_winner(env) is None
+    assert not done and not env.done and determine_outcome(env) == (None, None)
+
+
+def test_the_domination_switch_is_a_required_boolean():
+    """`[game] domination_victory` must be present and a real boolean. Breaks
+    if a missing or mistyped switch silently falls back to a default."""
+    assert victory.parse_domination_enabled({"domination_victory": False}) is False
+    assert victory.parse_domination_enabled({"domination_victory": True}) is True
+    for bad in ({}, {"domination_victory": 0}, {"domination_victory": "false"}):
+        with pytest.raises(ValueError):
+            victory.parse_domination_enabled(bad)
+
+
+def test_a_player_without_cities_lives_while_it_has_a_settler():
+    """A player with no city but a Settler survives the end of its turn; once
+    the Settler is gone it dies there, and the other player wins by
+    elimination. Breaks if death is decided by cities alone, or if a Settler
+    no longer keeps its player in the game."""
+    env = make_flat_env()
+    env.found_city(env.players[0], (1, 1), "A")
+    loser = env.players[1]
+    assert not loser.cities
+    for unit in list(loser.units):
+        env.delete_unit(unit)
+    settler = place(env, SettlerUnit, 1, (5, 9))
+
+    loser.end_turn()
+    assert not loser.is_dead and determine_outcome(env) == (None, None)
+
+    env.delete_unit(settler)
+    loser.end_turn()
+    assert loser.is_dead and determine_outcome(env) == (0, "elimination")

@@ -1493,6 +1493,11 @@ Claude's calls that Erik may overturn.
 - One improvement per tile is the Worker default's rule and the Worker build
   offer's, not the engine's: `can_build_improvement_at` still lets improvements
   stack. Whether the engine should refuse a second one is Erik's open call.
+  **Settled 2026-10-22 (#126, v0.8.1):** the engine keeps one per tile and a
+  build replaces what stands there, any replacement allowed; the default
+  revisits a tile when a better improvement is available. Same patch:
+  domination off by default (`[game] domination_victory`), and elimination
+  needs no city and no Settler.
 - A tile an earlier Worker of the same pass chose is a preference with a
   fallback, not an exclusion (an outright exclusion deadlocked six Workers on
   36 tiles).

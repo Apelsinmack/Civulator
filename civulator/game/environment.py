@@ -1385,10 +1385,16 @@ class GameEnvironment:
         """Build an improvement on the specified tile (the tile predicate
         only; a player's build goes through `can_player_build_improvement_at`
         first, as `WorkerUnit.build_improvement` does). Bumps the terrain
-        epoch: the tile's yields changed (#116 P2)."""
+        epoch: the tile's yields changed (#116 P2).
+
+        One improvement per tile (#126, Erik 2026-10-22): a build REPLACES
+        whatever stands on the tile, so a Farm laid on iron before Mining can
+        become a Mine later. Any replacement is allowed; the tile predicate
+        refuses only the improvement already there."""
         if not self.can_build_improvement_at(coordinates, improvement_type):
             return False
         tile = self.map.get_tile(coordinates)
+        tile.clear_improvements(map_ref=self.map)
         tile.add_improvement(improvement_type, map_ref=self.map)
         return True
 

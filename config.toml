@@ -507,6 +507,10 @@ min_city_distance = 4    # Minimum hex distance (steps) between city CENTRES.
                          # (#74). Read only via environment.MIN_CITY_DISTANCE.
 city_score_weight = 10   # One term of the turn-cap score (#55): cities * this. The other terms
                          # are [game.score]; civulator/game/victory.py is their only reader.
+domination_victory = false  # #126 (Erik 2026-10-22): off on every map size -- losing the capital
+                         # does not lose the game; a player is out only with no city and no
+                         # Settler left (elimination). true: holding every Palace wins
+                         # (victory.py, #116 P9). Read only through victory.DOMINATION_ENABLED.
 
 # The turn-cap score (#55, #116 P9; progression design §11): the sum of one
 # term per kind of thing a player holds, a count times its weight. With

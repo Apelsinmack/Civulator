@@ -5,6 +5,35 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
+## v0.8.1 — Erik's rulings on the block's open calls (2026-10-22)
+
+**Rule changes, effects NOT yet measured** (#126; the open calls of #116).
+Nothing has been trained or evaluated under 0.8 rules, so no comparison is
+broken; the major.minor version gate is unchanged.
+
+- **Domination is off by default, on every map size.** New switch `[game]
+  domination_victory = false` (required boolean; `victory.DOMINATION_ENABLED`).
+  Losing the capital no longer loses the game; with the switch off, games end
+  by elimination or at the turn cap. Domination itself (#116 P9) is unchanged
+  and returns with `true`. Why (Erik): a player should lose when nothing is
+  left, and a Duel ended at the first capital capture cuts training games
+  short.
+- **A player is eliminated only with no city and no Settler left**
+  (`Player.has_lost`, read at the end of the player's turn). Before: a player
+  with no city died at the end of its turn even with a Settler alive.
+- **One improvement per tile; a build replaces what stands there**
+  (`GameEnvironment.build_improvement`). Before, the engine let different
+  improvements stack and only the Worker default kept one per tile. Any
+  replacement is allowed -- a Farm laid on iron before Mining can become a
+  Mine. The Worker default (`improvements.best_improvement`) now revisits an
+  improved tile when a better improvement than the one there becomes
+  available (rank: `improvement_gain`, then config order, a total order, so
+  two equal improvements never replace each other back and forth). Housing's
+  "a tile adds only its largest improvement housing" (#88) is moot for game
+  builds now; it still holds for painted tiles.
+
+---
+
 ## v0.8.0 — Progression: science, civics, gold, faith, wonders, loyalty, winning (2026-10-21)
 
 **New rules epoch (#116).** The progression block gives cities science,

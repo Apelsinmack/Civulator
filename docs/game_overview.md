@@ -31,10 +31,11 @@ disbanded); gold and faith buy items; Traders' routes yield more.
 ranged attacks, fortification, terrain and class bonuses; ranged units need
 line of sight. A city is besieged to 0 health, then occupied by a melee unit.
 
-**A game ends** by elimination; by **domination** (one player holds every
-Palace — in a Duel, takes the enemy capital); or at the 250-turn cap, where
+**A game ends** by elimination (a player is out with no city and no Settler
+left); or at the 250-turn cap, where
 the highest score wins (cities ×10, units, population, techs ×2, civics ×2,
-wonders ×10) — equal scores are a draw.
+wonders ×10) — equal scores are a draw. **Domination** (one player holds
+every Palace) exists but is off by default (`[game] domination_victory`).
 
 **The agents**: each player is two networks — a combat DQN that picks a unit
 and gives it an order (move/attack/fortify/end turn) from an encoded map
