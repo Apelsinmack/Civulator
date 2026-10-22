@@ -48,7 +48,7 @@ Engine defaults, Round-end phases, Victory, Win/score). This skill is the
 | a **government** | `[governments.<Name>]` requires_civic, tier, effects incl. `policy_slots` | nothing | same |
 | a **building** | `[buildings.<Name>]` production_cost, maintenance, purchasable, requires_tech/civic/district/building/government_tier, yield, loyalty and `amenity` columns (whole points, v0.9.0 Q2; a district or wonder takes the same `amenity` column), effects | **append** to `BUILD_OPTIONS` (`agents/build_agent.py`) — never reorder | `tests/test_build_options.py` partition; availability tests run over the registry |
 | a **unit** | `[units.<Name>]` every column (combat_class, era, stats, maintenance, purchasable, requires_tech, upgrades_to; `build_charges` for a unit that builds improvements, #127; `requires_resource` = a strategic resource, honoured on worlds that have strategic resources, v0.9.0 Q1) | `UNIT_SLOT`, `MOVEMENT_DOMAIN` (`game/unit.py`), a subclass registered in `UNIT_CLASSES` (`game/city.py`), **append** to `BUILD_OPTIONS` or name it in `DEFERRED_BUILD_UNITS` with a reason; `CLASS_INDEX` is derived — never edit it | `test_build_options.py`, `test_combat_classes.py` (registry properties); run the oracle (§3) if any `[combat]` row changes |
-| a **district** | `[districts.<Name>]` (see `docs/districts_design.md`), requires_tech/civic, maintenance, loyalty | nothing | `tests/test_districts.py` placement properties |
+| a **district** | `[districts.<Name>]` (see `docs/districts_design.md`), requires_tech/civic, maintenance, loyalty; optional `health` + `captured_health_percent` (both or neither) make it a fortified district (v0.9.0 Q3: attacked like a city, refuses enemy entry while health > 0, strikes when its city may) | nothing | `tests/test_districts.py` placement properties; `tests/test_fortified_districts.py` for a fortified one |
 | a **wonder** | `[districts.<Name>]` with `kind = "wonder"`, era, fixed cost, `max_per_player = 1`, placement, columns, scoped effects | nothing | `tests/test_wonders.py` runs the placeability property over every wonder |
 | an **improvement** | `[improvements.<Name>]` on, housing, food/production/gold, requires_tech | nothing (the Worker default ranks by the columns, config order breaks ties) | `tests/test_improvement_yields.py`, `tests/test_worker_default.py` |
 | a **resource** | `[terrain.resource.<Name>]` class, on, (yields); bonus: `chance`; strategic/luxury: `improved_by`, `frequency`, optional `reveals` (v0.9.0 Q1) | a bonus one: append to `mapgen/resources.RESOURCE_ORDER` with a purpose id in `seeding.py`; a strategic/luxury one: a purpose id in `seeding.py` + its `tiered_resources.TIERED_PURPOSE` entry (append-only). Access, gating and district placement need nothing | `tests/test_resource_tiers.py` runs over the registry; a golden re-baseline (`tests/test_mapgen_golden.py`, `test_rng.py`'s frozen world) with the field-by-field diff in the CHANGELOG |
@@ -98,6 +98,7 @@ the Slinger–Horseman pair).
 | `[wonders] consolation_percent` (0: the pool is not sunk, so a loser keeps its production) | the cost of losing a race | `wonders_completed`, `wonder_races_lost` |
 | `[improvements.*] food/production/gold/housing` | what Workers build and what tiles are worth | `improvements_built` |
 | `[districts] cost_progress_factor` | district price over the game (`game_progress` = the larger tree fraction) | district placements in the smoke log |
+| `[districts.Encampment] health`, `captured_health_percent` (v0.9.0 Q3) | how hard a forward wall is to breach, and how much of it a conqueror inherits | `encampment_breaches`, `encampment_strikes`; the smoke script's end line prints both |
 
 Method (CLAUDE.md "Research method"): one dial at a time; a seeded run
 before and after (`scripts/smoke_random_selfplay.py --seed 4242` for a sanity
@@ -132,7 +133,9 @@ repair → food → growth → yields → production) → `GameEnvironment.
 economy_phase` (maintenance → bankruptcy → research → civics → government
 and loadout defaults → route expiry → Trader default → spent Workers removed
 → Worker default) →
-city ranged strike → queued units. Round end in `next_turn`: `_border_phase`
+city ranged strikes (per city: the centre, then each fortified district,
+v0.9.0 Q3; a fortified district's repair sits in `process_turn`'s repair
+step, after the city's) → queued units. Round end in `next_turn`: `_border_phase`
 → `_loyalty_phase` → `_update_done` (the one end-of-game check, through
 `victory.game_over`) → `turn_counter += 1`. A rule that must not depend on
 turn order is a round-end phase computed from phase-start state in city-id
