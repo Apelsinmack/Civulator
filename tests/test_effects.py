@@ -364,6 +364,33 @@ def test_amenity_moves_exactly_the_amenity_supply(monkeypatch, entry, garrisoned
             if e.source == ("policy", CARD)] == [entry["kind"]], "the card is in force"
 
 
+@pytest.mark.parametrize("yields, expected", [
+    ({"production": 1}, {"yield production": 1, "production": None}),
+    ({"production": 1, "gold": 2, "faith": 0.5}, {"yield production": 1, "production": None,
+                                                    "yield gold": 20, "yield faith": 5}),
+])
+def test_regional_yield_moves_exactly_the_regional_term(monkeypatch, yields, expected):
+    """v0.9.0 Q4: a `regional_yield` building carried by ANOTHER city of the
+    owner, within its range, moves only the yields it names in
+    `city_yield` (tenths for the pools, whole points for production, which
+    reaches `calculate_production` through it) and nothing any other
+    consumer computes. Breaks if the kind gains a second consumer, pays a
+    yield it does not name, or is read by a non-yield consumer."""
+    stage = Stage(monkeypatch)
+    carrier = make_city(stage.env, (3, 8), population=3)
+    reach = stage.env.map.distance_function(carrier.coordinates, stage.city.coordinates)
+    entry = {"kind": "regional_yield", **yields, "range": reach, "scope": "player"}
+    monkeypatch.setitem(unit_model.BUILDING_EFFECTS, "Monument", (entry,))
+    before = stage.fingerprint()
+    carrier.buildings.append("Monument")
+    after = stage.fingerprint()
+    assert _moved(before, after) == set(expected), yields
+    for key, delta in expected.items():
+        if delta is not None:
+            assert after[key] - before[key] == delta, key
+    assert after["production"] - before["production"] == 1
+
+
 def test_growth_percent_moves_exactly_the_growth_bucket(monkeypatch):
     """#116 P6 (restated from the deferred-kinds test): a +15 % and a +10 %
     `growth_percent` card move only the growth gain, to `food_net *
@@ -586,6 +613,15 @@ def _district_without_adjacency():
     ({"kind": "city_ranged_strength", "amount": 5, "scope": "city"}, "government"),
     ({"kind": "city_ranged_strength", "amount": 5, "scope": "city"}, "tech"),
     ({"kind": "city_ranged_strength", "amount": 5, "scope": "galaxy"}, "building"),
+    # regional_yield (v0.9.0 Q4): a building of scope player with a range and a yield
+    ({"kind": "regional_yield", "production": 1, "range": 6, "scope": "player"}, "policy"),
+    ({"kind": "regional_yield", "production": 1, "range": 6, "scope": "player"}, "district"),
+    ({"kind": "regional_yield", "production": 1, "range": 6}, "building"),             # city scope
+    ({"kind": "regional_yield", "production": 1, "scope": "player"}, "building"),     # no range
+    ({"kind": "regional_yield", "production": 1, "range": 0, "scope": "player"}, "building"),
+    ({"kind": "regional_yield", "range": 6, "scope": "player"}, "building"),          # no yield
+    ({"kind": "regional_yield", "production": 1.05, "range": 6, "scope": "player"}, "building"),
+    ({"kind": "regional_yield", "luck": 1, "range": 6, "scope": "player"}, "building"),
 ])
 def test_a_malformed_effect_raises_at_load(entry, source):
     """The loader refuses an unknown kind or attribute, a malformed value, a

@@ -128,8 +128,9 @@ def _carrier_tile(effect):
 
 def _regional_tenths(city, name, in_force):
     """Tenths of `name` this city is paid by the `regional_yield` effects
-    among `in_force` (v0.9.0 Q4, design section 5, Civ 6's Factory rule): an
-    entry pays when its carrier's city is another city of this city's owner
+    among `in_force` (v0.9.0 Q4, design section 5, Civ 6's Factory rule):
+    `in_force` is the owner's, so a carrier is always the owner's own; an
+    entry pays when its carrier's city is another city than this one
     and the carrier's district tile lies within its `range` of this city's
     centre (canonical wrap distance, inclusive). A city takes the MAX per
     yield over all carriers in reach, never a sum. The one consumer of
@@ -141,7 +142,7 @@ def _regional_tenths(city, name, in_force):
             continue
         amount = effect["yields"].get(name, 0)
         holder = effect.source_city
-        if amount <= best or holder is None or holder is city or holder.player is not city.player:
+        if amount <= best or holder is None or holder is city:
             continue
         origin = _carrier_tile(effect)
         if origin is not None and distance(origin, city.coordinates) <= effect["range"]:
