@@ -1804,8 +1804,14 @@ purchasable = []    # Civ 6: walls cannot be bought
 production_cost = 195
 requires_tech = "Apprenticeship"
 requires_district = "Industrial Zone"
-production = 3
+production = 2        # Civ 6 GS (v0.9.0 Q4; it was 3 since 0.8.0)
 maintenance = 1
+# v0.9.0 Q4 (C3, Erik yes): Civ 6's Factory rule -- every OTHER city of the owner
+# whose centre is within `range` of the Industrial Zone's tile gains the yield;
+# a city takes the max per yield over the carriers in reach, never a sum.
+# Consumer: game/yields.py city_yield. scope "player" is what lets other
+# cities read it (the amenity/loyalty `range` pattern).
+effects = [{ kind = "regional_yield", production = 1, range = 6, scope = "player" }]
 
 [buildings.Library]
 production_cost = 90
@@ -2065,6 +2071,11 @@ adjacency = [
     { amount = 1, per = 2, improvement = ["Mine"] },
     { amount = 1, per = 2, district = "any" },
     { amount = 1, district = ["Government Plaza"] },
+    # v0.9.0 Q4 (design section 5): Civ 6 GS, +1 per adjacent strategic resource
+    # (the class form of `resources`, Q1); each member counts once, a luxury never.
+    { amount = 1, terrain = { resources = ["strategic"] } },
+    # v0.9.0 Q4 (C4): the Dam, +2 -- the river minigame's third piece.
+    { amount = 2, district = ["Dam"] },
 ]
 
 # Harbor: on Coast or Lake, adjacent to land (a mountain's base is land).
@@ -2136,6 +2147,24 @@ requires_adjacent = [
 ]
 water_housing_min = 6
 water_housing_boost = 2
+
+# The Dam (v0.9.0 Q4, C4 -- Erik yes; design section 5): Civ 6 GS, a district on a
+# Floodplains tile with a river along an edge. The digest has no Dam row, so the
+# cost is the Aqueduct's (36, progress model, Engineering). Civ 6's flood
+# prevention has no counterpart (no floods). Not a wonder; no adjacency of its
+# own; it feeds the Industrial Zone's +2 row. Floodplains is an allowed feature
+# (kept on placement), which is what `on` requires here.
+[districts.Dam]
+production_cost = 36
+requires_tech = "Engineering"
+cost_model = "progress"
+counts_toward_limit = false
+max_per_city = 1
+on = { features = ["Floodplains"] }
+requires_adjacent = [{ river_on_tile = true }]
+housing = 1
+amenity = 1
+maintenance = 0
 
 # --- Wonders (#116 P6, docs/progression_design.md §9) -------------------------
 # District-registry tables with kind = "wonder" (see the district columns

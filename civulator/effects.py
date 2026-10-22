@@ -96,6 +96,7 @@ KIND_FREE_POPULATION = "free_population"
 KIND_BUILD_CHARGES = "build_charges"
 KIND_BUILD_CHARGES_TRAINED = "build_charges_trained"
 KIND_AMENITY = "amenity"  # v0.9.0 Q2
+KIND_REGIONAL_YIELD = "regional_yield"  # v0.9.0 Q4
 
 # The one consumer of each kind (design §3, "consumed by"). Since #116 P7
 # every kind is wired: each names its reader.
@@ -134,6 +135,8 @@ CONSUMERS = {
     KIND_BUILD_CHARGES_TRAINED: "game/unit.py WorkerUnit.__init__ (fixed when the Worker is "
                                 "made: trained, bought or granted while in force; #127)",
     KIND_AMENITY: "game/amenities.py supply (effect_supply; v0.9.0 Q2)",
+    KIND_REGIONAL_YIELD: "game/yields.py city_yield (the regional term, "
+                         "_regional_tenths; v0.9.0 Q4)",
 }
 KINDS = tuple(CONSUMERS)
 # Kinds validated before their consumer exists, each naming in CONSUMERS the
@@ -395,6 +398,12 @@ def _parse_amenity(raw, where, ctx):
                                        f"{where} requires_garrison")}
 
 
+def _parse_regional_yield(raw, where, ctx):
+    _keys(raw, (*unit_model.YIELD_COLUMNS, "range"), ("range",), where)
+    return {"yields": MappingProxyType(_yield_map(raw, where)),
+            "range": _positive_int(raw["range"], f"{where} range")}
+
+
 def _parse_policy_slots(raw, where, ctx):
     _keys(raw, research_model.POLICY_TYPES, (), where)
     if not raw:
@@ -476,6 +485,7 @@ _PARSERS = {
     KIND_BUILD_CHARGES: _amount_only(_positive_int),
     KIND_BUILD_CHARGES_TRAINED: _amount_only(_positive_int),
     KIND_AMENITY: _parse_amenity,
+    KIND_REGIONAL_YIELD: _parse_regional_yield,
 }
 assert set(_PARSERS) == set(KINDS), "every kind has one parser and one consumer"
 
@@ -531,6 +541,8 @@ def parse_effect(entry, source_kind, source_name, districts=None):
         _check_loyalty_reach(attrs, scope, source_kind, where)
     if kind == KIND_AMENITY:
         _check_amenity_reach(attrs, scope, source_kind, where)
+    if kind == KIND_REGIONAL_YIELD:
+        _check_regional_reach(scope, source_kind, where)
     return Effect(kind=kind, scope=scope, source=(source_kind, source_name),
                   attrs=MappingProxyType(attrs))
 
@@ -563,6 +575,18 @@ def _check_amenity_reach(attrs, scope, source_kind, where):
             and not attrs["min_districts"] and not attrs["requires_garrison"]):
         raise ValueError(f"{where}: a flat amenity of its own city is the `amenity` "
                          f"column, not an effect")
+
+
+def _check_regional_reach(scope, source_kind, where):
+    """A `regional_yield` entry (v0.9.0 Q4, design section 5) pays OTHER cities
+    of the owner, measured from the tile of the district its building stands
+    in, so it lives on a building (a tech or policy has no city) and has scope
+    "player" (a city-scoped entry would never be read by another city)."""
+    if source_kind != SOURCE_BUILDING:
+        raise ValueError(f"{where}: regional_yield measures from the district of the "
+                         f"building carrying it; it belongs on a building")
+    if scope != SCOPE_PLAYER:
+        raise ValueError(f"{where}: regional_yield pays other cities; scope must be \"player\"")
 
 
 def parse_effects(entries, source_kind, source_name, districts=None):

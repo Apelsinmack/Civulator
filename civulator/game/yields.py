@@ -30,7 +30,12 @@ never scaled). The terms:
 - the trade routes of the city's owner that start here (#116 P5,
   `trade.yields_to_origin`): per route, the `[trade]` table entries of its
   destination and the `route_yield` effects in force, in tenths of every
-  yield (food and production too, floored with the rest).
+  yield (food and production too, floored with the rest);
+- the regional term (v0.9.0 Q4, `_regional_tenths`): the `regional_yield`
+  effects in force whose carrier stands in ANOTHER city of the owner and
+  whose district tile lies within the effect's `range` of this city's centre
+  (canonical wrap distance, inclusive), the MAX per yield over the carriers in
+  reach -- never a sum, never the carrier's own city, never a foreign one.
 
 Every term is summed in tenths; food and production are then floored once
 to whole points. Pure engine code: reads config-derived tables and the live
@@ -39,8 +44,14 @@ module (a test greps for every configured one): a new source is a column
 on its own config table or an effect, never a term here.
 """
 
-from ..effects import KIND_ADJACENCY_PERCENT, KIND_CITY_YIELD, active_effects
+from ..effects import (
+    KIND_ADJACENCY_PERCENT,
+    KIND_CITY_YIELD,
+    KIND_REGIONAL_YIELD,
+    active_effects,
+)
 from ..unit_model import (
+    BUILDING_REQUIRES_DISTRICT,
     BUILDING_YIELDS,
     CAPITAL_BUILDING,
     YIELD_BASE,
@@ -99,6 +110,52 @@ def _route_yield(city, name):
     return yields_to_origin(city, name)
 
 
+def _carrier_tile(effect):
+    """The tile a `regional_yield` effect measures from: the tile of the
+    complete district its building requires, in the city holding the building
+    (a building with no `requires_district` measures from its city's centre).
+    None when that district is gone or unfinished -- the carrier then pays
+    nothing."""
+    holder = effect.source_city
+    needed = BUILDING_REQUIRES_DISTRICT.get(effect.source[1])
+    if needed is None:
+        return tuple(holder.coordinates)
+    for district in holder.districts:
+        if district.type == needed and district.complete:
+            return tuple(district.coordinates)
+    return None
+
+
+def _regional_tenths(city, name, in_force):
+    """Tenths of `name` this city is paid by the `regional_yield` effects
+    among `in_force` (v0.9.0 Q4, design section 5, Civ 6's Factory rule): an
+    entry pays when its carrier's city is another city of this city's owner
+    and the carrier's district tile lies within its `range` of this city's
+    centre (canonical wrap distance, inclusive). A city takes the MAX per
+    yield over all carriers in reach, never a sum. The one consumer of
+    `regional_yield`."""
+    distance = city.player.game_env.map.distance_function
+    best = 0
+    for effect in in_force:
+        if effect.kind != KIND_REGIONAL_YIELD:
+            continue
+        amount = effect["yields"].get(name, 0)
+        holder = effect.source_city
+        if amount <= best or holder is None or holder is city or holder.player is not city.player:
+            continue
+        origin = _carrier_tile(effect)
+        if origin is not None and distance(origin, city.coordinates) <= effect["range"]:
+            best = amount
+    return best
+
+
+def regional_tenths(city, name):
+    """`_regional_tenths` for a caller outside `city_yield` that only reports
+    it (the round-end `regional_production` stat): same function, the city's
+    own active effects."""
+    return _regional_tenths(city, name, active_effects(city.player, city))
+
+
 def _tile_yield(city, name):
     """Whole points of food or production from the centre plus the worked
     tiles, summed as `calculate_food` / `calculate_production` did in v0.7."""
@@ -126,7 +183,8 @@ def _tile_gold_tenths(city):
 
 def _source_tenths(city, name):
     """Every term the six yields share, in tenths: building and complete-
-    district columns, district adjacency, effects and routes."""
+    district columns, district adjacency, effects, routes and the regional
+    term."""
     in_force = active_effects(city.player, city)
     columns = sum(BUILDING_YIELDS[name].get(b, 0) for b in city.buildings)
     columns += sum(
@@ -134,7 +192,7 @@ def _source_tenths(city, name):
     )
     adjacency = 10 * district_yields(city, _effect_adjacency_percents(in_force)).get(name, 0)
     return (columns + adjacency + _effect_yield(city, name, in_force)
-            + _route_yield(city, name))
+            + _route_yield(city, name) + _regional_tenths(city, name, in_force))
 
 
 def city_yield(city, name):

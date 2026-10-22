@@ -45,6 +45,7 @@ from ..district_model import (
 )
 from . import amenities, loyalty, territory
 from .victory import game_over
+from .yields import regional_tenths
 from .territory import (
     FOUNDING_RING, NEUTRAL, border_cost_function, choose_claim_tile,
     run_border_phase,
@@ -314,6 +315,11 @@ class GameEnvironment:
                 # fortified districts fired (`fortification_ranged_attack`).
                 "encampment_breaches": 0,
                 "encampment_strikes": 0,
+                # Regional production (v0.9.0 Q4; `_regional_stats`, round-end
+                # bookkeeping, no rule): int TENTHS of production the
+                # player's cities were paid by `regional_yield` effects,
+                # summed over the cities at each round end and over the rounds.
+                "regional_production": 0,
                 # Summed adjacency score per yield, per city-round (#86 s5)
                 **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
             }
@@ -977,6 +983,7 @@ class GameEnvironment:
             self._loyalty_phase()
             self._resource_stats()
             self._amenity_stats()
+            self._regional_stats()
             self._update_done()  # the round-end verdict: a flip can end the game
             self.turn_counter += 1
 
@@ -1028,6 +1035,17 @@ class GameEnvironment:
             acc[0] += 10 * sum(surplus.values()) // len(surplus)
             acc[1] += 1
             stats["amenity_surplus_mean"] = acc[0] // acc[1]
+
+    def _regional_stats(self):
+        """Round-end bookkeeping, no rule (v0.9.0 Q4): each living player's
+        `regional_production` stat grows by the production, in int tenths,
+        its cities are paid this round by `regional_yield` effects
+        (`yields.regional_tenths`; the rule itself lives in `city_yield`)."""
+        for player in self.players:
+            if player.is_dead:
+                continue
+            self.episode_stats[player.player_index]["regional_production"] += sum(
+                regional_tenths(city, "production") for city in player.cities)
 
     def _loyalty_phase(self):
         """The round-end loyalty phase (#116 P7, progression design §8.3 and

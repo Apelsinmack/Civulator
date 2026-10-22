@@ -103,7 +103,7 @@ def test_aqueduct_declares_its_water_housing_fields_in_tenths():
     # Was "Iron", which v0.9.0 Q1 made a real (strategic) resource.
     _probe(adjacency=[{"amount": 1, "terrain": {"resources": ["Unobtainium"]}}]),
     _probe(adjacency=[{"amount": 1, "improvement": ["Lumber Mill"]}]),
-    _probe(adjacency=[{"amount": 1, "district": ["Dam"]}]),
+    _probe(adjacency=[{"amount": 1, "district": ["Dungeon"]}]),
     # unknown `on` key inside a terrain source / the tile's own `on`
     _probe(adjacency=[{"amount": 1, "terrain": {"appeal": ["high"]}}]),
     _probe(on={"bases": ["Plains"], "elevation": ["high"]}),
