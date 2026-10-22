@@ -35,6 +35,7 @@ from ..district_model import (
     POPULATION_PER_DISTRICT,
     REMOVABLE_FEATURES,
 )
+from ..effects import KIND_ADJACENCY_ROW, active_effects
 from ..research_model import CIVICS, TECHS
 from ..terrain_model import matches, resource_class
 # A module reference (availability reads district_spec back from here).
@@ -211,18 +212,35 @@ def _source_count(source, coords, game_map, centre=None):
 # --- Adjacency (design §1.1) --------------------------------------------------
 
 
-def adjacency_score(district_type, coords, game_map):
-    """Integer adjacency score of `district_type` at `coords` on the live map.
+def owner_adjacency_rows(district_type, player):
+    """The extra adjacency rows `player`'s districts of `district_type` get
+    from the `adjacency_row` effects in force for it (v0.9.0 Q7, the Holy
+    Site pantheons), in `active_effects` order; () for no player. The one
+    reader of `adjacency_row`."""
+    if player is None:
+        return ()
+    return tuple(effect["row"]
+                 for effect in active_effects(player, kind=KIND_ADJACENCY_ROW)
+                 if effect["district"] == district_type)
+
+
+def adjacency_score(district_type, coords, game_map, player=None):
+    """Integer adjacency score of `district_type` at `coords` on the live map,
+    for a district owned by `player` (None: the config rows only).
 
     Each row is floored on its own, then summed: floor(count / per) * amount.
-    Neighbouring districts count whether placed or complete, and city centres
-    count as districts (Civ 6); wonders count only for `wonder = "any"`, and
-    only once complete (#116 P6). Never cached.
+    The rows are the registry's, then the owner's `adjacency_row` effects for
+    that type (`owner_adjacency_rows`, v0.9.0 Q7) -- each floored on its own
+    like a config row. Neighbouring districts count whether placed or
+    complete, and city centres count as districts (Civ 6); wonders count only
+    for `wonder = "any"`, and only once complete (#116 P6). Never cached.
+    Every caller passes the district's owner.
     """
     spec = DISTRICTS[district_type]
+    rows = spec.adjacency + owner_adjacency_rows(district_type, player)
     return sum(
         (_source_count(row.source, coords, game_map) // row.per) * row.amount
-        for row in spec.adjacency
+        for row in rows
     )
 
 
@@ -247,7 +265,8 @@ def district_yields(city, percent_by_district=None):
     for district in city.districts:
         spec = DISTRICTS[district.type]
         if district.complete and spec.adjacency_yield in result:
-            score = adjacency_score(district.type, district.coordinates, game_map)
+            score = adjacency_score(district.type, district.coordinates, game_map,
+                                    city.player)
             result[spec.adjacency_yield] += score * (100 + percents.get(district.type, 0)) // 100
     return result
 

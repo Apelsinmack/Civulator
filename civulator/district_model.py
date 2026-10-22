@@ -271,6 +271,16 @@ def _parse_row(row, where, district_names):
     return AdjacencyRow(amount, per, source)
 
 
+def parse_adjacency_row(row, where, districts):
+    """One adjacency row (`amount`, optional `per`, exactly one source) ->
+    AdjacencyRow, validated against the district registry `districts` (its
+    `kind = "district"` entries are the names a `district = [...]` source may
+    use). The one row grammar: the config's own rows and an `adjacency_row`
+    effect (v0.9.0 Q7, civulator/effects.py) both parse here."""
+    names = frozenset(n for n, s in districts.items() if s.kind != KIND_WONDER)
+    return _parse_row(row, where, names)
+
+
 def _optional_tenths(table, key, where):
     if key not in table:
         return None

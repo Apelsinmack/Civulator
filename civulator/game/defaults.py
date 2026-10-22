@@ -7,7 +7,9 @@ action replaces exactly one call. P2 ships the research default; P4 the
 civic, government and policy-loadout defaults; P5 the Trader's
 (`default_trade`, which acts through the same public paths an agent would:
 `GameEnvironment.establish_trade_route` and `Unit.move`); P8 the Worker's
-(`default_workers`: `WorkerUnit.build_improvement` and `Unit.move`). The two
+(`default_workers`: `WorkerUnit.build_improvement` and `Unit.move`); v0.9.0
+Q7 the pantheon's (`default_pantheon`, through
+`GameEnvironment.choose_pantheon`). The two
 unit defaults that walk share one step rule, `step_toward`.
 
 "Newest" (v2 fixes, N2): a card unlocked by a civic later in
@@ -37,6 +39,23 @@ from .trade import (
     route_capacity,
 )
 from .unit import WorkerUnit
+from .religion import can_choose_pantheon
+from ..religion_model import PANTHEON_ORDER
+
+
+def default_pantheon(player, env):
+    """The pantheon the engine chooses for `player`, or None (v0.9.0 Q7,
+    districts_religion_design §9): when no pantheon is chosen yet and the
+    faith pool covers `[religion] pantheon_cost`, the first pantheon in
+    config order that `religion.can_choose_pantheon` allows. Braindead by
+    design -- it exists so agentless games and the smoke script exercise the
+    pantheon path; it weighs nothing about the player's land or plans. #99
+    replaces it with the agent's `choose_pantheon` action. Deterministic: a
+    config-order walk, no RNG, no set."""
+    for name in PANTHEON_ORDER:
+        if can_choose_pantheon(player, name, env):
+            return name
+    return None
 
 
 def default_research(player):

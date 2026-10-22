@@ -1,7 +1,8 @@
 """The one interpreter of `effects` lists (issue #116 P4, docs/progression_design.md
 §3, §5 and "v2 fixes").
 
-Any tech, civic, government, policy, building or district table may declare
+Any tech, civic, government, policy, building, district or pantheon (v0.9.0
+Q7, `religion_model`) table may declare
 
     effects = [
         { kind = "production_percent", target = { unit = "Settler" }, percent = 50 },
@@ -15,7 +16,8 @@ reads its entries through `active_effects` and nothing else; a new kind is a
 new schema here and one consumer, never a second reader of an old one.
 
 Load order (v2 fixes, "Load order and config ownership"): research_model,
-then unit_model / terrain_model / district_model, then THIS module, then
+then unit_model / terrain_model / district_model / religion_model, then THIS
+module, then
 `civulator/game`. Validation reads the parsed specs of those registries --
 never `CFG` -- and resolves every name an effect uses against them: a unit,
 building, district, combat class, era, rule or resource that does not exist
@@ -27,12 +29,15 @@ first use.
 Scope. Every entry has `scope = "player" | "city"`: buildings and districts
 default to "city" (the effect holds in that city only), every other source
 to "player" (it holds in every city of the player, and for its units). A
-policy, government, civic or tech may not declare "city" -- it has no city.
+policy, government, civic, tech or pantheon may not declare "city" -- it has
+no city.
 
 What is in force (`active_effects`, deterministic order, recomputed on every
 call, never cached): the government's entries; the slotted policies that are
 legal now (`policies_in_force`), in loadout order; the effects of every
-known civic, then every known tech, in completion order; the player-scoped
+known civic, then every known tech, in completion order; the player's
+pantheon (v0.9.0 Q7; scope player only -- a pantheon stands in no city); the
+player-scoped
 entries of every building and every complete district (wonders are
 districts, #116 P6) in the player's cities (`player.cities` order, then
 `city.buildings` / `city.districts` order); and, when a city is given, that
@@ -51,7 +56,7 @@ below caches validated entries per raw list, never game state).
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 
-from . import district_model, research_model, terrain_model, unit_model
+from . import district_model, religion_model, research_model, terrain_model, unit_model
 
 # --- Vocabulary -----------------------------------------------------------------
 
@@ -62,8 +67,9 @@ SOURCE_GOVERNMENT = "government"
 SOURCE_POLICY = "policy"
 SOURCE_BUILDING = "building"
 SOURCE_DISTRICT = "district"
+SOURCE_PANTHEON = "pantheon"  # v0.9.0 Q7: the player's chosen pantheon
 SOURCES = (SOURCE_TECH, SOURCE_CIVIC, SOURCE_GOVERNMENT, SOURCE_POLICY,
-           SOURCE_BUILDING, SOURCE_DISTRICT)
+           SOURCE_BUILDING, SOURCE_DISTRICT, SOURCE_PANTHEON)
 # Sources that stand in a city and may therefore hold a city-scoped effect.
 _CITY_SOURCES = (SOURCE_BUILDING, SOURCE_DISTRICT)
 
@@ -98,6 +104,9 @@ KIND_BUILD_CHARGES_TRAINED = "build_charges_trained"
 KIND_AMENITY = "amenity"  # v0.9.0 Q2
 KIND_REGIONAL_YIELD = "regional_yield"  # v0.9.0 Q4
 KIND_MOVEMENT_DELTA = "movement_delta"  # v0.9.0 Q5
+KIND_BORDER_COST_PERCENT = "border_cost_percent"  # v0.9.0 Q7
+KIND_IMPROVEMENT_YIELD = "improvement_yield"  # v0.9.0 Q7
+KIND_ADJACENCY_ROW = "adjacency_row"  # v0.9.0 Q7
 
 # The one consumer of each kind (design §3, "consumed by"). Since #116 P7
 # every kind is wired: each names its reader.
@@ -140,6 +149,13 @@ CONSUMERS = {
                          "_regional_tenths; v0.9.0 Q4)",
     KIND_MOVEMENT_DELTA: "game/unit.py Unit.get_max_movement (the owner's units of "
                          "that domain; v0.9.0 Q5)",
+    KIND_BORDER_COST_PERCENT: "game/territory.py run_border_phase (the claiming city's "
+                              "owner's percent scales cost(n) at each claim; v0.9.0 Q7)",
+    KIND_IMPROVEMENT_YIELD: "game/yields.py city_yield (_improvement_tenths over the centre "
+                            "and worked tiles; food and production reach calculate_food / "
+                            "calculate_production through it; v0.9.0 Q7)",
+    KIND_ADJACENCY_ROW: "game/districts.py adjacency_score (the owner's rows beside the "
+                        "config rows; v0.9.0 Q7)",
 }
 KINDS = tuple(CONSUMERS)
 # Kinds validated before their consumer exists, each naming in CONSUMERS the
@@ -151,7 +167,12 @@ ONE_SHOT_KINDS = frozenset({KIND_FREE_UNITS, KIND_FREE_TECH, KIND_FREE_CIVIC,
                             KIND_FREE_POPULATION})
 # Kinds whose consumer takes no city: a city-scoped entry would never be read.
 _PLAYER_ONLY_KINDS = frozenset({KIND_POLICY_SLOTS, KIND_ENABLES, KIND_BUILD_CHARGES,
-                                KIND_BUILD_CHARGES_TRAINED, KIND_MOVEMENT_DELTA})
+                                KIND_BUILD_CHARGES_TRAINED, KIND_MOVEMENT_DELTA,
+                                # v0.9.0 Q7: each consumer reads the player's
+                                # entries (the claiming city's owner, the
+                                # district's owner, the city's owner).
+                                KIND_BORDER_COST_PERCENT, KIND_IMPROVEMENT_YIELD,
+                                KIND_ADJACENCY_ROW})
 
 # The rules an `enables` effect may switch on, each gated where it is applied.
 RULE_FLANKING = "flanking"  # #59, Unit.get_combat_strength
@@ -184,7 +205,7 @@ ITEM_UNIT = "unit"
 ITEM_BUILDING = "building"
 ITEM_KINDS = (ITEM_UNIT, ITEM_BUILDING, *district_model.KINDS)
 _TARGET_KEYS = ("unit", "unit_class", "unit_era", "building", "in_district",
-                "district", "kind", "wonder_era")
+                "district", "kind", "wonder_era", "no_specialty_district")
 
 
 @dataclass(frozen=True)
@@ -334,6 +355,12 @@ def _parse_target(target, where, ctx):
         out["wonder_era"] = _names(target["wonder_era"], research_model.ERAS, "era",
                                    f"{where} wonder_era")
         kinds &= {district_model.KIND_WONDER}
+    if "no_specialty_district" in target:
+        # v0.9.0 Q7 (City Patron Goddess): a condition on the producing city,
+        # not on the item -- true only, since false would be no condition.
+        if target["no_specialty_district"] is not True:
+            raise ValueError(f"{where} no_specialty_district must be true")
+        out["no_specialty_district"] = True
     if not kinds:
         raise ValueError(f"{where}: the conditions {sorted(target)} exclude every item")
     return MappingProxyType(out)
@@ -424,6 +451,52 @@ def _parse_movement_delta(raw, where, ctx):
             "amount": _int(raw["amount"], f"{where} amount")}
 
 
+def _parse_border_cost_percent(raw, where, ctx):
+    """`border_cost_percent { percent }` (v0.9.0 Q7, Religious Settlements):
+    the owner's culture border claims cost `percent` more (negative: less).
+    Above -100, so a claim always costs something."""
+    attrs = _percent_only(raw, where, ctx)
+    if attrs["percent"] <= -100:
+        raise ValueError(f"{where} percent must be > -100, got {attrs['percent']}")
+    return attrs
+
+
+def _parse_improvement_yield(raw, where, ctx):
+    """`improvement_yield { improvement, <yields>, resource_class? }` (v0.9.0
+    Q7, the yield pantheons): a tile worked by (or the centre of) one of the
+    owner's cities that carries `improvement` -- and, when `resource_class` is
+    given, a resource of that class -- yields that much more, in tenths."""
+    _keys(raw, ("improvement", "resource_class", *unit_model.YIELD_COLUMNS),
+          ("improvement",), where)
+    out = {"improvement": _name(raw["improvement"], terrain_model.IMPROVEMENT_NAMES,
+                                "improvement", f"{where} improvement"),
+           "yields": MappingProxyType(_yield_map(raw, where)),
+           "resource_class": None}
+    if "resource_class" in raw:
+        out["resource_class"] = _name(raw["resource_class"], terrain_model.RESOURCE_CLASSES,
+                                      "resource class", f"{where} resource_class")
+    return out
+
+
+def _parse_adjacency_row(raw, where, ctx):
+    """`adjacency_row { district, amount, per?, <one source> }` (v0.9.0 Q7,
+    the Holy Site pantheons): one more adjacency row for the owner's
+    districts of type `district`. Everything but `district` is an adjacency
+    row in the config's own grammar, parsed by `district_model.
+    parse_adjacency_row` -- one row grammar. `district` names the target, so
+    a neighbour-district source (`district = [...]`) cannot be written in an
+    effect row; every other source can."""
+    if "district" not in raw:
+        raise ValueError(f"{where}: missing attribute(s) ['district']")
+    registry = ctx["districts"]
+    district = _name(raw["district"], registry, "district", f"{where} district")
+    if registry[district].adjacency_yield == "none":
+        raise ValueError(f"{where}: district {district!r} has no adjacency yield")
+    row = {k: v for k, v in raw.items() if k != "district"}
+    return {"district": district,
+            "row": district_model.parse_adjacency_row(row, where, registry)}
+
+
 def _parse_policy_slots(raw, where, ctx):
     _keys(raw, research_model.POLICY_TYPES, (), where)
     if not raw:
@@ -507,6 +580,9 @@ _PARSERS = {
     KIND_AMENITY: _parse_amenity,
     KIND_REGIONAL_YIELD: _parse_regional_yield,
     KIND_MOVEMENT_DELTA: _parse_movement_delta,
+    KIND_BORDER_COST_PERCENT: _parse_border_cost_percent,
+    KIND_IMPROVEMENT_YIELD: _parse_improvement_yield,
+    KIND_ADJACENCY_ROW: _parse_adjacency_row,
 }
 assert set(_PARSERS) == set(KINDS), "every kind has one parser and one consumer"
 
@@ -651,6 +727,8 @@ def _raw(source_kind, name):
         return unit_model.BUILDING_EFFECTS.get(name, ())
     if source_kind == SOURCE_DISTRICT:
         return _districts().district_spec(name).effects
+    if source_kind == SOURCE_PANTHEON:
+        return religion_model.PANTHEONS[name].effects
     raise ValueError(f"unknown effect source {source_kind!r}")
 
 
@@ -679,6 +757,7 @@ def _validate_registries():
         (SOURCE_GOVERNMENT, research_model.GOVERNMENTS),
         (SOURCE_POLICY, research_model.POLICIES),
         (SOURCE_BUILDING, unit_model.BUILDING_EFFECTS),
+        (SOURCE_PANTHEON, religion_model.PANTHEONS),
     ):
         for name in names:
             raw = _raw(source_kind, name)
@@ -786,6 +865,9 @@ def _gather(player, city, kind, policies):
         take(SOURCE_CIVIC, name, SCOPE_PLAYER)
     for name in player.techs:
         take(SOURCE_TECH, name, SCOPE_PLAYER)
+    pantheon = getattr(player, "pantheon", None)
+    if pantheon is not None:
+        take(SOURCE_PANTHEON, pantheon, SCOPE_PLAYER)
     for owned in player.cities:
         for building in owned.buildings:
             take(SOURCE_BUILDING, building, SCOPE_PLAYER, owned)
@@ -862,13 +944,19 @@ def combat_strength_amounts(player, applies, city=None):
             if any(a in effect["applies_to"] for a in wanted)]
 
 
-def target_matches(target, item_kind, name):
+def target_matches(target, item_kind, name, city=None):
     """Whether a `production_percent` target holds for the item being
     produced: `item_kind` one of ITEM_KINDS (a district-registry entry's
     `kind` for a district or wonder), `name` its type. Every condition the
     target names must hold; a wonder's era is read through
-    `game/districts.district_spec` (#116 P6)."""
+    `game/districts.district_spec` (#116 P6). `no_specialty_district` (v0.9.0
+    Q7) is a condition on the producing `city`: it holds only when the city
+    has no complete specialty district (`districts.specialty_districts`), and
+    never without a city."""
     if "kind" in target and target["kind"] != item_kind:
+        return False
+    if "no_specialty_district" in target and (
+            city is None or _districts().specialty_districts(city)):
         return False
     if item_kind == ITEM_UNIT:
         if "unit" in target and name not in target["unit"]:

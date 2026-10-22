@@ -32,9 +32,10 @@ from .availability import player_can_build
 from .resources import accessible_resources
 from .city import _create_unit
 from .defaults import (
-    default_civic, default_government, default_loadout, default_research, default_trade,
-    default_workers,
+    default_civic, default_government, default_loadout, default_pantheon, default_research,
+    default_trade, default_workers,
 )
+from .religion import can_choose_pantheon, pantheon_cost_tenths
 from .districts import (
     YIELD_NAMES as DISTRICT_YIELD_NAMES, District, can_place_district, district_cost,
     district_keeps_resource, is_wonder,
@@ -331,6 +332,11 @@ class GameEnvironment:
                 # put on the board -- trained, bought or granted -- counted by
                 # City.complete_unit_production, the one spawn routine.
                 "naval_units_built": 0,
+                # Religion (v0.9.0 Q7): pantheons chosen (0 or 1), and the
+                # faith spent on religion -- int TENTHS -- (the pantheon now;
+                # founding, beliefs, spread, upkeep and inquisition in Q8/Q9).
+                "pantheons_chosen": 0,
+                "faith_spent_religion": 0,
                 # Summed adjacency score per yield, per city-round (#86 s5)
                 **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
             }
@@ -1584,6 +1590,35 @@ class GameEnvironment:
         tile.add_improvement(improvement_type, map_ref=self.map)
         return True
 
+    # --- Religion (v0.9.0 Q7, docs/districts_religion_design.md §7.2, §9) ---
+
+    def choose_pantheon(self, player, name):
+        """`player` chooses pantheon `name`: refused (False, nothing changed)
+        unless `religion.can_choose_pantheon` holds (no pantheon yet, the
+        name exists, faith >= `[religion] pantheon_cost`). Debits exactly the
+        cost from the faith pool and sets `Player.pantheon` -- permanently:
+        nothing ever clears it (Civ 6). Counts `pantheons_chosen` and
+        `faith_spent_religion` (int tenths). The agent action of #99; the
+        engine default calls it through `_religion_step`."""
+        if not can_choose_pantheon(player, name, self):
+            return False
+        cost = pantheon_cost_tenths()
+        player.faith -= cost
+        player.pantheon = name
+        stats = self.episode_stats[player.player_index]
+        stats["pantheons_chosen"] += 1
+        stats["faith_spent_religion"] += cost
+        return True
+
+    def _religion_step(self, player):
+        """The economy phase's religion step (v0.9.0 Q7; after maintenance and
+        bankruptcy, before research -- design §15(a)): the pantheon default
+        (`defaults.default_pantheon`). Q8/Q9 add founding, beliefs, upkeep
+        and founder pay to this step."""
+        name = default_pantheon(player, self)
+        if name is not None:
+            self.choose_pantheon(player, name)
+
     # --- Research (#116 P2, docs/progression_design.md §4.3) ---
 
     def set_research(self, player, tech):
@@ -1867,21 +1902,24 @@ class GameEnvironment:
         1. maintenance -- `_pay_maintenance` (#116 P5)
         2. bankruptcy -- `_resolve_bankruptcy` (#116 P5); what the two steps
            took from the treasury counts in `episode_stats["gold_maintenance"]`
-        3. research -- `resolve_research` (#116 P2)
-        4. civics -- `resolve_civic` (#116 P4)
-        5. government and loadout defaults -- `_government_and_loadout_defaults`
+        3. religion -- `_religion_step` (v0.9.0 Q7: the pantheon default;
+           Q8/Q9 add founding, beliefs, upkeep and founder pay here)
+        4. research -- `resolve_research` (#116 P2)
+        5. civics -- `resolve_civic` (#116 P4)
+        6. government and loadout defaults -- `_government_and_loadout_defaults`
            (#116 P4)
-        6. route expiry and Trader return -- `trade.expire_routes` (#116 P5)
-        7. Trader auto-send -- `defaults.default_trade` (#116 P5)
-        8. Worker default -- `defaults.default_workers` (#116 P8), after
+        7. route expiry and Trader return -- `trade.expire_routes` (#116 P5)
+        8. Trader auto-send -- `defaults.default_trade` (#116 P5)
+        9. Worker default -- `defaults.default_workers` (#116 P8), after
            `_remove_spent_workers` (#127)
 
-        Steps 1-8 exist; a later patch inserts its steps at their place here.
+        Steps 1-9 exist; a later patch inserts its steps at their place here.
         """
         treasury = player.gold
         self._pay_maintenance(player)
         self._resolve_bankruptcy(player)
         self.episode_stats[player.player_index]["gold_maintenance"] += max(0, treasury - player.gold)
+        self._religion_step(player)
         self.resolve_research(player)
         civic = self.resolve_civic(player)
         self._government_and_loadout_defaults(player, refit=civic is not None)
