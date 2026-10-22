@@ -709,6 +709,158 @@ beliefs"). No version bump: Q0 opened 0.9.0.
   tests only.
 - **Effect NOT yet measured:** nothing was trained or evaluated.
 
+### Religion II: founding, beliefs, the follower source, founder pay, four kinds (#128, patch Q8)
+
+**Rule changes, effects NOT yet measured.** Source:
+`docs/districts_religion_design.md` §7.1, §7.3 (every belief and its kind),
+§7.5 (what is yours), §7.6, §9 (the founding and belief rows), §11, §15,
+"v2 fixes" (the religious combat conditions on both strengths with
+`applies_to = ["all"]`; follower beliefs as a new `effects.SOURCES` entry
+whose kinds take a city; `FAITH_CATEGORIES` building categories and a
+building branch in `can_purchase`; religion state in `reset_state` and the
+fingerprint) and "v3 fixes" L1 (founding converts the seat), L2 (a dead
+founder's religion keeps its beliefs and pays nobody; upkeep before pay),
+L4 (`exclusive` caps religions at the founder beliefs), L9 (which tile, which
+city, for the two combat beliefs); rulings R7, R13 (Erik, 2026-10-22).
+Values: Civ 6 (`docs/civ6_progression_reference.md`, "Religion"); Scholars'
+Patron is ours (#93). Pressure, conversion, upkeep, inquisition, the loyalty
+term and the victory flag are Q9's, on the same branch.
+
+- **Seventeen beliefs**, each a `[beliefs.<Name>]` table (`tier`, `effects`,
+  `counts` on a founder belief, `requires_building` on a follower belief).
+  Founder (one per religion, pays the founder per follower city): Tithe (+1
+  gold, all), Pilgrimage (+2 faith, foreign), World Church (+1 culture, all),
+  Cross-Cultural Dialogue (+1 science, foreign). Follower (one at founding,
+  a second at tier 2; in force in every city that follows, whoever owns it):
+  Work Ethic (Holy Site adjacency also paid as production), Choral Music
+  (… as culture), Scholars' Patron (half the Campus adjacency as culture),
+  Feed the World (+2 food, needs a Shrine), Religious Community (+1 housing
+  per Shrine and Temple), Zen Meditation (+1 amenity with two specialty
+  districts), Jesuit Education (Campus and Theater Square buildings for
+  faith), Divine Inspiration (+4 faith per complete wonder). Enhancer (tier
+  3, the founder only): Itinerant Preachers (`range` +3), Missionary Zeal
+  (`spread_amount_percent` +50), Holy Order (`cost_percent` −30), Crusade (+10
+  attacking a city or fortified district of another or no religion),
+  Defender of the Faith (+5 on tiles owned by a follower city, both roles).
+  The "foreign" founder beliefs and the shared follower beliefs are the
+  trade-off Erik asked for: spreading pays the founder only when a
+  neighbour adopts the religion, and the neighbour gets the follower
+  beliefs too.
+- **Founding and beliefs.** `GameEnvironment.found_religion(player, founder,
+  follower)` refuses unless `religion.can_found_religion` holds, whose
+  `founding_refusals` lists every clause as a `REFUSE_*` reason: a pantheon,
+  no religion yet, a **seat** -- an own city holding `[religion]
+  founding_building` ("Temple") with its `requires_district` (the Holy Site)
+  complete -- faith ≥ `found_cost` (200), fewer than `max_religions` (0 =
+  unlimited), **at least one founder belief free** (L4: with `exclusive =
+  true` the four founder beliefs cap religions at four; "every player may
+  found" holds on Duel/Tiny), and both named beliefs of the right tier and,
+  under `exclusive`, not held by another religion. Founding debits exactly
+  `found_cost`, creates `Player.religion` (a `Religion`: founder index, the
+  beliefs by tier, `lapsed = False` -- Q9's flag) and **converts the seat**:
+  the qualifying own city with the lowest id gets `City.religion` = the
+  founder's index (L1; a religion is never born dead). `add_belief(player,
+  name)` climbs `BELIEF_LADDER`: a second follower belief at `belief_costs[0]`
+  (300) before the enhancer at `belief_costs[1]` (500); refused for a wrong
+  tier, a held or taken belief, short faith, or a climbed ladder. "Taken" is
+  derived from every player's religion (dead included), never stored.
+- **The follower source.** `active_effects(player, city)` reads a city's
+  `religion` (the founder's index), finds the religion through the founder's
+  `Player.religion` -- dead or alive -- and puts its follower beliefs in
+  force in that city with scope city, **whoever owns it** (after the city's
+  own buildings and districts); a belief with `requires_building` only where
+  the city holds the building. The enhancer is in force for the founder
+  (player scope, after the pantheon). Founder beliefs are never in force:
+  founder pay reads them. At load a belief's entries must hold with its
+  tier's scope -- a follower belief may carry only kinds whose consumer
+  passes a city (never a player-read kind), an enhancer only player-scoped
+  ones, a founder belief only `per_follower_city`.
+- **Four kinds / attributes, one consumer each.** `per_follower_city {
+  <pool yields> }` (founder beliefs only; pool yields -- food and production
+  have no pool): read by `religion.founder_pay_tenths` alone, applied by
+  `_founder_pay` in the religion step. `cross_yield { from_district, to,
+  percent }` (follower beliefs only; `to` may not be the district's own
+  adjacency yield -- that is `adjacency_percent`): read by `yields.
+  _cross_yield_tenths` alone -- each COMPLETE district of that type pays
+  `10 * score * percent // 100` tenths of `to`, the RAW adjacency score
+  (owner's rows included, before any `adjacency_percent`), beside its own
+  yield. `religion_param { range | spread_amount_percent | cost_percent }`
+  (enhancer beliefs only; `range` ≥ 0 and re-checked against
+  `citizen_weight` on the raised pair, L3; `cost_percent` > −100): **parsed
+  and validated now, read by nothing yet** -- `CONSUMERS` names the pressure
+  rules of `game/religion.py`, which Q9 builds on this branch before the
+  merge, so `DEFERRED_KINDS` stays empty. `city_yield` gains `per_wonder`
+  (× the city's complete wonders, `districts.complete_wonders`; one
+  multiplier per entry). `combat_strength` gains `vs_city_of_other_religion`
+  and `in_follower_territory` (one per entry; never with `applies_to =
+  "city"`): `effects.combat_strength_amounts` takes the target and the
+  receiving unit's tile, passed by `Unit.get_combat_strength` AND
+  `get_ranged_strength` through `_effect_strength_amounts(target)` -- Crusade
+  applies when the target is a City, or a fortified district (its `city`),
+  whose `religion` is not the striker's founded religion (a secular city
+  counts as other), in both strengths; Defender applies to the unit that
+  RECEIVES the bonus when the tile it stands on is owned by a city following
+  its player's religion, attacking or defending (L9). Neither reaches
+  `City.get_combat_strength`. Neither is gated on lapse (Q9's; L9: both hold
+  while lapsed).
+- **Faith buys buildings.** `[faith] purchase_building_categories = {
+  campus_buildings = "Campus", theater_buildings = "Theater Square" }`: a
+  building is in a category when its `requires_district` is that district
+  (`unit_model.building_faith_category`; the district names are checked
+  against the registry when `effects.py` loads). `purchasing.
+  purchasable_with` gains the building branch, so Jesuit Education lets a
+  follower city's owner buy a Library or an Amphitheater with faith through
+  the one `purchase` path; a Barracks stays gold-only.
+- **Founder pay and the step.** `_religion_step` runs, in order: the pantheon
+  default (Q7), the founding default, the belief default, **Q9's upkeep slot
+  (`_religion_upkeep`, named in the method; L2: upkeep is debited before pay
+  and a short treasury pays nothing)**, founder pay. `_founder_pay` adds
+  `founder_pay_tenths` -- the founder belief's tenths per follower city it
+  `counts` (`all`: every follower city; `foreign`: those another player owns)
+  -- to the pools; a dead founder is paid nothing while its follower cities
+  keep their beliefs (L2). Choices before pay: a religion founded this turn is
+  paid for its seat this turn.
+- **What is yours (§7.5).** `City.religion` is the city's, not the owner's:
+  `set_owner` keeps it through capture and flip. `Player.religion` is never
+  cleared: a religion outlives its founder and is read through the dead
+  Player. `Player.religion` is in `reset_state`; `City.religion` on every
+  City; both are in the episode fingerprint.
+- **Defaults** (`defaults.default_found_religion` / `default_add_belief`,
+  braindead by design, #99 replaces them): the first FREE founder and
+  follower belief of config order when the predicate holds; the first free
+  belief of the due tier. Deterministic (config-order walks, no RNG, no set);
+  same seed → same religions.
+- **Stats.** `religions_founded`, `beliefs_added`, `founder_pay_tenths` (int
+  tenths, all yields summed); `faith_spent_religion` now accrues founding
+  and beliefs. The smoke end line prints them, each player's beliefs, the
+  follower-city counts and the faith pools.
+- **Config also gains** `[religion] founding_building` (a required column: the
+  seat qualifier, validated to be a building with a `requires_district`).
+- **Nothing outside this patch changed behaviour.** With no religion founded
+  every consumer computes what it did; the **matchup oracle** over the seven
+  pre-0.8 units (`scripts/matchup_matrix.py --seed 652026 --terrain
+  flat,hills,woods --fortified --damaged`) is byte-identical before and
+  after (`stats/matchup_matrix_652026_1792707752.json` / `_1792708350.json`;
+  only the footer's timestamp line differs). Declared test edits: `tests/
+  test_religion.py`'s `_religion_table` carries `founding_building`;
+  `tests/test_effects.py`'s stage fingerprint gains the two strengths aimed
+  at the other player's city and the founder pay, so the existing
+  `combat_strength` property also asserts the bonus reaches a unit's attack
+  on a city; its scope-default test covers the tier-scoped belief source;
+  the synthetic district registry gains a wonder.
+- **Smoke (not a measurement; `python scripts/smoke_random_selfplay.py`,
+  Duel, random policy, 250 rounds).** Seed 4242 and seeds 1-8 run clean.
+  **One religion in nine games:** seed 2's player 0 founded (Tithe, Work
+  Ethic, then Choral Music at tier 2; `religions_founded=[1, 0]`,
+  `beliefs_added=[1, 0]`, `founder_pay_tenths=[250, 0]`, one follower city
+  -- its seat). In the other eight games both players held 263-940 faith
+  (tenths 2630-9399) at the end -- above `found_cost` -- and founded
+  nothing, so the seat, not the faith, is the gate: a Temple needs Theology,
+  a Holy Site and a Shrine, and the random policy rarely builds all three in
+  one city within 250 rounds. Nothing here says what `found_cost` should be;
+  the agent's build choices (#99) decide whether religions appear.
+- **Effect NOT yet measured:** nothing was trained or evaluated.
+
 ---
 
 ## v0.8.1 — Erik's rulings on the block's open calls; build charges (2026-10-22)

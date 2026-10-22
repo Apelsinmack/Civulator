@@ -33,6 +33,7 @@ from civulator.game.housing import housing
 from civulator.game.loyalty import loyalty_delta
 from civulator.game.maintenance import maintenance_due
 from civulator.game.purchasing import faith_purchase_categories, purchase_cost
+from civulator.game.religion import Religion, founder_pay_tenths
 from civulator.game.trade import DURATION_TURNS, TradeRoute, route_capacity, route_yields
 from civulator.game.unit import MOVEMENT_DOMAIN, is_land_military
 from civulator.game.upgrades import upgrade_cost
@@ -41,7 +42,7 @@ from civulator.research_model import CIVIC_ORDER, CIVICS
 from civulator.unit_model import CAPITAL_BUILDING, YIELD_COLUMNS
 
 from conftest import stand, synthetic_civic, synthetic_government, synthetic_policy
-from test_districts import board, make_city, neighbours, ring
+from test_districts import board, make_city, neighbours, own, ring
 
 
 # v0.9.0 Q2: this module pins other rules' exact arithmetic, not the amenity band.
@@ -57,7 +58,8 @@ GOVERNMENT = "Synthetic Government"
 def _registry(monkeypatch):
     """A synthetic district registry: Probe (+3 gold per adjacent Marker),
     Marker (no yield), Aside (takes no population slot: not a specialty
-    district). Patched where every reader looks (`districts.district_spec`)."""
+    district), Relic (a wonder, for `per_wonder`; v0.9.0 Q8). Patched where
+    every reader looks (`districts.district_spec`)."""
     reg = district_model.parse_districts({
         "population_per_district": 3, "cost_progress_factor": 9,
         "removable_features": ["Woods"], "allowed_features": [],
@@ -65,6 +67,9 @@ def _registry(monkeypatch):
                   "adjacency": [{"amount": 3, "district": ["Marker"]}]},
         "Marker": {"production_cost": 10},
         "Aside": {"production_cost": 10, "counts_toward_limit": False},
+        "Relic": {"kind": "wonder", "era": "Ancient", "production_cost": 100,
+                  "cost_model": "fixed", "counts_toward_limit": False, "max_per_city": 1,
+                  "max_per_player": 1},
     })
     monkeypatch.setattr(districts_mod, "DISTRICTS", reg.districts)
     return reg
@@ -144,6 +149,10 @@ class Stage:
         out["fighter defence"] = self.fighter.get_combat_strength(False, self.enemy)
         out["shooter ranged"] = self.shooter.get_ranged_strength(self.enemy)
         out["shooter defence"] = self.shooter.get_combat_strength(False, self.enemy)
+        # v0.9.0 Q8: the same two strengths aimed at the other player's city
+        # (what `vs_city_of_other_religion` reads).
+        out["fighter attack on city"] = self.fighter.get_combat_strength(True, self.partner)
+        out["shooter ranged on city"] = self.shooter.get_ranged_strength(self.partner, True)
         out["city defence"] = city.get_combat_strength()
         out["city ranged"] = city.get_ranged_strength()
         out["slots"] = tuple(sorted(slot_counts(self.player).items()))
@@ -174,6 +183,9 @@ class Stage:
         out["border claim cost"] = territory.claim_cost(
             env.border_cost, city.border_claims + 1,
             territory.border_cost_percent(self.player))
+        # The v0.9.0 Q8 consumer of per_follower_city: what the player's
+        # founder belief pays this turn (yield -> tenths; empty without one).
+        out["founder pay"] = tuple(sorted(founder_pay_tenths(self.player, env).items()))
         return out
 
 
@@ -247,18 +259,19 @@ def test_production_percent_moves_production_toward_a_matching_item_only(monkeyp
 @pytest.mark.parametrize("applies", ["fighter class", APPLIES_ALL])
 def test_combat_strength_reaches_its_classes_in_both_roles(monkeypatch, applies):
     """A +4 `combat_strength` for the fighter's class raises its attack and
-    its defence by 4 and leaves the shooter (another class) and the city
-    alone; for "all" it raises every unit, the shooter's ranged strength
-    included, and still not the city. Breaks if the bonus is applied in one
+    its defence by 4 -- against a unit and against a city alike -- and
+    leaves the shooter (another class) and the city alone; for "all" it
+    raises every unit, the shooter's ranged strength included (at a unit and
+    at a city), and still not the city. Breaks if the bonus is applied in one
     role only or reaches the wrong units."""
     stage = Stage(monkeypatch)
     before = stage.fingerprint()
     target = unit_model.COMBAT_CLASS[stage.fighter_type] if applies != APPLIES_ALL else APPLIES_ALL
     stage.slot(monkeypatch, [{"kind": "combat_strength", "applies_to": [target], "amount": 4}])
     after = stage.fingerprint()
-    expected = {"fighter attack", "fighter defence"}
+    expected = {"fighter attack", "fighter defence", "fighter attack on city"}
     if applies == APPLIES_ALL:
-        expected |= {"shooter ranged", "shooter defence"}
+        expected |= {"shooter ranged", "shooter defence", "shooter ranged on city"}
     assert _moved(before, after) == expected
     for key in expected:
         assert after[key] - before[key] == 4, key
@@ -510,6 +523,143 @@ def test_adjacency_row_moves_exactly_the_districts_adjacency_yield(monkeypatch):
     after = stage.fingerprint()
     assert _moved(before, after) == {"yield gold"}
     assert after["yield gold"] - before["yield gold"] == 10
+
+
+def _with_religion(monkeypatch, stage, follower=(), enhancer=None, founder=None):
+    """v0.9.0 Q8: hand the stage's player a religion of synthetic beliefs --
+    `founder` (per_follower_city entries; default: a `foreign`-counting one,
+    which pays nothing while only the capital follows), `follower` (entries of
+    one follower belief) and `enhancer` (entries of one enhancer belief) --
+    with the capital following it. The actions are tests/test_religion_
+    beliefs.py's; this is the `belief` source."""
+    def belief(name, tier, entries, counts=None):
+        monkeypatch.setitem(religion_model.BELIEFS, name, religion_model.BeliefSpec(
+            name=name, tier=tier, effects=tuple(entries), counts=counts))
+        return name
+
+    founder_name = belief("Synthetic Founder", religion_model.TIER_FOUNDER,
+                          founder or [{"kind": "per_follower_city", "faith": 1}],
+                          religion_model.COUNTS_ALL if founder else religion_model.COUNTS_FOREIGN)
+    followers = [belief("Synthetic Follower", religion_model.TIER_FOLLOWER, follower)] \
+        if follower else []
+    enhancer_name = belief("Synthetic Enhancer", religion_model.TIER_ENHANCER, enhancer) \
+        if enhancer else None
+    stage.player.religion = Religion(founder=stage.player.player_index,
+                                     founder_belief=founder_name, follower_beliefs=followers,
+                                     enhancer_belief=enhancer_name)
+    stage.city.religion = stage.player.player_index
+
+
+def test_cross_yield_moves_exactly_the_named_yield_by_the_floored_share(monkeypatch):
+    """v0.9.0 Q8: a `cross_yield` follower belief paying 33 % of Probe's
+    adjacency (3) as science moves only the capital's science, by
+    floor(10 * 3 * 33 / 100) = 9 tenths -- the gold Probe yields is untouched.
+    Breaks if the kind gains a second reader, skips the floor, or pays the
+    district's own yield."""
+    stage = Stage(monkeypatch)
+    before = stage.fingerprint()
+    _with_religion(monkeypatch, stage, follower=[{"kind": "cross_yield", "from_district": "Probe",
+                                                  "to": "science", "percent": 33}])
+    after = stage.fingerprint()
+    assert _moved(before, after) == {"yield science"}
+    assert after["yield science"] - before["yield science"] == 9
+
+
+def test_per_follower_city_moves_exactly_the_founder_pay(monkeypatch):
+    """v0.9.0 Q8: a founder belief paying 1 gold and 0.5 culture per follower
+    city (the capital follows) moves only the founder pay, to exactly those
+    tenths; no yield, strength or price moves. Breaks if the kind gains a
+    second reader or the pay is read into a yield."""
+    stage = Stage(monkeypatch)
+    before = stage.fingerprint()
+    _with_religion(monkeypatch, stage, founder=[{"kind": "per_follower_city", "gold": 1,
+                                                 "culture": 0.5}])
+    after = stage.fingerprint()
+    assert _moved(before, after) == {"founder pay"}
+    assert after["founder pay"] == (("culture", 5), ("gold", 10))
+
+
+def test_per_wonder_moves_exactly_the_yield_per_complete_wonder(monkeypatch):
+    """v0.9.0 Q8: a `city_yield` with `per_wonder` (+4 faith) moves nothing
+    while the capital's wonder is unfinished and only its faith, by 40
+    tenths, once the wonder is complete. Breaks if the multiplier counts
+    placed wonders or anything but wonders."""
+    stage = Stage(monkeypatch)
+    site = next(p for p in ring(stage.env, stage.city.coordinates, 2)
+                if stage.env.map.get_tile(p).district is None)
+    relic = _put(stage.env, stage.city, "Relic", site, complete=False)
+    before = stage.fingerprint()
+    _with_religion(monkeypatch, stage, follower=[{"kind": "city_yield", "faith": 4,
+                                                  "per_wonder": True}])
+    assert _moved(before, stage.fingerprint()) == set()
+    relic.complete = True
+    without = stage.fingerprint()
+    stage.city.religion = None
+    base = stage.fingerprint()
+    assert _moved(base, without) == {"yield faith"}
+    assert without["yield faith"] - base["yield faith"] == 40
+
+
+def test_vs_city_of_other_religion_moves_only_the_strengths_aimed_at_such_a_city(monkeypatch):
+    """v0.9.0 Q8 (Crusade): a +10 `combat_strength` for all with
+    `vs_city_of_other_religion` moves only the fighter's attack on the other
+    player's (secular) city and the shooter's ranged strength on it, by 10;
+    nothing against the enemy unit, nothing when defending, nothing once that
+    city follows the player's religion. Breaks if the condition is read for a
+    unit target, in one strength only, or from the owner."""
+    stage = Stage(monkeypatch)
+    before = stage.fingerprint()
+    _with_religion(monkeypatch, stage, enhancer=[{"kind": "combat_strength", "applies_to": ["all"],
+                                                  "amount": 10,
+                                                  "vs_city_of_other_religion": True}])
+    after = stage.fingerprint()
+    assert _moved(before, after) == {"fighter attack on city", "shooter ranged on city"}
+    assert after["fighter attack on city"] - before["fighter attack on city"] == 10
+    assert after["shooter ranged on city"] - before["shooter ranged on city"] == 10
+    # The city adopts the player's religion: both strengths fall back to the
+    # baseline (the founder belief now counts a foreign follower, which is
+    # founder pay's business, not this kind's).
+    stage.partner.religion = stage.player.player_index
+    adopted = stage.fingerprint()
+    assert adopted["fighter attack on city"] == before["fighter attack on city"]
+    assert adopted["shooter ranged on city"] == before["shooter ranged on city"]
+    assert _moved(before, adopted) <= {"founder pay"}
+
+
+def test_in_follower_territory_moves_only_the_strengths_of_a_unit_on_a_follower_tile(monkeypatch):
+    """v0.9.0 Q8 (Defender of the Faith): a +5 `combat_strength` for all with
+    `in_follower_territory` moves only the strengths of the fighter standing
+    on a tile the (following) capital owns -- attack, defence and attack on
+    the city, all by 5 -- and not the shooter's, standing on unowned land.
+    Breaks if the condition reads the target's tile, the owner, or one role
+    only."""
+    stage = Stage(monkeypatch)
+    own(stage.env, stage.city, tuple(stage.fighter.coordinates))
+    assert stage.env.map.owner_id_at(stage.shooter.coordinates) == -1
+    before = stage.fingerprint()
+    _with_religion(monkeypatch, stage, enhancer=[{"kind": "combat_strength", "applies_to": ["all"],
+                                                  "amount": 5, "in_follower_territory": True}])
+    after = stage.fingerprint()
+    assert _moved(before, after) == {"fighter attack", "fighter defence", "fighter attack on city"}
+    for key in _moved(before, after):
+        assert after[key] - before[key] == 5, key
+    stage.city.religion = None
+    assert _moved(before, stage.fingerprint()) == set()
+
+
+def test_religion_param_moves_nothing_a_wired_consumer_computes_yet(monkeypatch):
+    """v0.9.0 Q8: a `religion_param` enhancer is in force for the founder but
+    its consumer -- the pressure rules of game/religion.py -- is Q9's, so
+    nothing any wired consumer computes today moves. Breaks if a consumer
+    reads it before Q9 names itself (Q9 adds its pressure to the stage
+    fingerprint and updates this test)."""
+    stage = Stage(monkeypatch)
+    before = stage.fingerprint()
+    _with_religion(monkeypatch, stage, enhancer=[{"kind": "religion_param", "range": 3,
+                                                  "spread_amount_percent": 50,
+                                                  "cost_percent": -30}])
+    assert _moved(before, stage.fingerprint()) == set()
+    assert [e.kind for e in active_effects(stage.player, kind="religion_param")] == ["religion_param"]
 
 
 def test_every_kind_names_its_one_consumer():

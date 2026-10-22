@@ -176,6 +176,36 @@ def test_same_seed_same_fortified_district_siege():
     assert stats[1]["damage_dealt"] > 0 and stats[0]["encampment_strikes"] > 0,         "fixture: the fortification was attacked and fired back"
 
 
+def test_the_episode_fingerprint_sees_the_religion():
+    """v0.9.0 Q8: `Player.religion` (the founded religion, a `Religion`
+    record) and `City.religion` (the founder index a city follows) are
+    per-episode state -- reset to None by `reset_state` / a fresh City and
+    part of the episode fingerprint, so two games that differ only in a
+    religion, in one belief of it, or in one city's religion do not compare
+    equal. Breaks if either field leaves the fingerprint's reach or
+    `Player.religion` leaves `reset_state`."""
+    from civulator.game.religion import Religion
+    from civulator.religion_model import TIER_FOLLOWER, TIER_FOUNDER, beliefs_of_tier
+
+    a = GameEnvironment(8, 16, num_players=2, map_type="basic").reset(seed=5)
+    b = GameEnvironment(8, 16, num_players=2, map_type="basic").reset(seed=5)
+    assert episode_fingerprint(a) == episode_fingerprint(b)
+    assert a.players[0].religion is None and a.players[0].cities[0].religion is None
+    founder, follower = beliefs_of_tier(TIER_FOUNDER)[0], beliefs_of_tier(TIER_FOLLOWER)[0]
+    a.players[0].religion = Religion(founder=0, founder_belief=founder, follower_beliefs=[follower])
+    with_religion = episode_fingerprint(a)
+    assert with_religion != episode_fingerprint(b)
+    a.players[0].religion.follower_beliefs.append(beliefs_of_tier(TIER_FOLLOWER)[1])
+    assert episode_fingerprint(a) != with_religion
+    a.players[0].religion = None
+    assert episode_fingerprint(a) == episode_fingerprint(b)
+    a.players[1].cities[0].religion = 0
+    assert episode_fingerprint(a) != episode_fingerprint(b)
+    a.reset(seed=5)
+    assert episode_fingerprint(a) == episode_fingerprint(b)
+    assert a.players[0].religion is None
+
+
 def test_the_episode_fingerprint_sees_the_pantheon():
     """v0.9.0 Q7: `Player.pantheon` is per-episode state -- reset to None by
     `reset_state` and part of the episode fingerprint, so two games that
