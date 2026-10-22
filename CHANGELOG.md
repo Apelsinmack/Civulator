@@ -342,11 +342,10 @@ Factory and Dam. No version bump: Q0 opened 0.9.0.
   Engineering, `counts_toward_limit = false` (no population slot), one per
   city, `housing = 1`, `amenity = 1`, no maintenance, no adjacency of its own,
   not a wonder. The Industrial Zone gains `{ amount = 2, district = ["Dam"] }`.
-  **Cost 36, progress model: the Aqueduct's** (the design's instruction,
-  written when the Dam's cost was thought to be missing from the digest).
-  Civ 6 GS's Dam costs 81 (`docs/civ6_progression_reference.md`, district base
-  costs): 36 is a starting value, a dial, and the open question is whether the
-  Dam should cost 81. Civ 6's flood prevention has no counterpart (no floods). With an Aqueduct and a Dam beside
+  **Cost 81, progress model** (Civ 6 GS, `docs/civ6_progression_reference.md`
+  district base costs; the Q4 draft had the Aqueduct's 36 because the design
+  thought the digest had no Dam row -- corrected at merge, Claude's call: Civ 6
+  values are the starting numbers). Civ 6's flood prevention has no counterpart (no floods). With an Aqueduct and a Dam beside
   one Industrial Zone between two cities the zone scores +4 before Mines.
 - **R5 verified, not assumed.** A test shows a neighbour city's Aqueduct, a
   second city of the same player's and another player's alike, counts for an

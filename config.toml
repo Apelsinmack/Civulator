@@ -2156,7 +2156,7 @@ water_housing_boost = 2
 # own; it feeds the Industrial Zone's +2 row. Floodplains is an allowed feature
 # (kept on placement), which is what `on` requires here.
 [districts.Dam]
-production_cost = 36
+production_cost = 81   # Civ 6 GS Dam (digest §14: "Dam and Canal 81"); was 36 (the Aqueduct's) in the Q4 draft
 requires_tech = "Engineering"
 cost_model = "progress"
 counts_toward_limit = false
