@@ -1013,9 +1013,12 @@ def test_the_religion_step_runs_founding_belief_and_pay_in_order(monkeypatch):
     """One economy phase for a player with a seat and plenty of faith: it
     founds (the seat follows), buys the second follower belief, and is paid
     for its seat in the SAME step -- founder pay after the choices. Breaks
-    if the step order changes or pay skips a religion founded this turn."""
+    if the step order changes or pay skips a religion founded this turn.
+    (v0.9.0 Q9: the pool also covers the seat's upkeep, debited before the
+    pay -- a pool short of it lapses the religion and pays nothing, L2.)"""
     env = _env()
-    player = _ready(env, 0, extra_faith=belief_cost_tenths(0))
+    player = _ready(env, 0, extra_faith=belief_cost_tenths(0)
+                    + 10 * RULES.upkeep_per_follower_city)
     pays = _belief(monkeypatch, "Pays First", TIER_FOUNDER,
                    [{"kind": "per_follower_city", "gold": 1}])
     monkeypatch.setattr(religion_model, "BELIEFS",

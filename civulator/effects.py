@@ -178,14 +178,14 @@ CONSUMERS = {
                       "adjacency score paid again as another yield; v0.9.0 Q8)",
     KIND_PER_FOLLOWER_CITY: "game/religion.py founder_pay_tenths (the religion step of "
                             "GameEnvironment.economy_phase, _founder_pay; v0.9.0 Q8)",
-    KIND_RELIGION_PARAM: "game/religion.py pressure parameters (religion_params: range, "
-                         "spread amount and cost of the founder's religion; v0.9.0 Q9, "
-                         "built on the Q8 branch before the merge)",
+    KIND_RELIGION_PARAM: "game/religion.py religion_params (the founder's pressure range and "
+                         "citizen weight, directed-spread amount, spread and inquisition "
+                         "costs; v0.9.0 Q9)",
 }
 KINDS = tuple(CONSUMERS)
 # Kinds validated before their consumer exists, each naming in CONSUMERS the
 # patch that will read it. Empty since #116 P7 (loyalty was the last); Q8's
-# `religion_param` is read by Q9 on the same branch, so it is not listed.
+# `religion_param` is read by Q9 (`religion.religion_params`), merged together.
 DEFERRED_KINDS = frozenset()
 # One-shot kinds fire once when a wonder completes (design §3, §9.3), so they
 # belong on `kind = "wonder"` tables only, and are never in force.

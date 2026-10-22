@@ -649,6 +649,10 @@ domination_victory = false  # #126 (Erik 2026-10-22): off on every map size -- l
                          # does not lose the game; a player is out only with no city and no
                          # Settler left (elimination). true: holding every Palace wins
                          # (victory.py, #116 P9). Read only through victory.DOMINATION_ENABLED.
+religious_victory = false   # v0.9.0 Q9 (design §7.5, open call C7, off like domination): true --
+                         # a religion followed by more than half of the cities of EVERY living
+                         # player wins for its (living) founder. Read only through
+                         # victory.RELIGIOUS_ENABLED.
 
 # The turn-cap score (#55, #116 P9; progression design §11): the sum of one
 # term per kind of thing a player holds, a count times its weight. With
@@ -2063,7 +2067,9 @@ effects = [{ kind = "production_percent", target = { kind = "wonder", wonder_era
 # `food` and `production` per turn into the city's own — all read by
 # civulator/game/yields.py city_yield, never by name. `loyalty` (optional,
 # default 0, whole points, #116 P7): per round into the city's loyalty, read by
-# civulator/game/loyalty.py.
+# civulator/game/loyalty.py. `religious_weight` (optional, default 0, whole
+# points, v0.9.0 Q9): added to the weight the city's citizens press with for the
+# religion it follows, read by civulator/game/religion.py.
 # Availability columns (#116 P2, all optional; checked by
 # civulator/game/availability.py city_can_build_building, the one predicate
 # production, the build mask and purchasing call):
@@ -2141,6 +2147,7 @@ requires_district = "Holy Site"
 faith = 2
 maintenance = 1
 purchasable = ["gold", "faith"]
+religious_weight = 1     # v0.9.0 Q9: + this to the religious weight of its city's followers' pressure
 
 [buildings.Temple]
 production_cost = 120
@@ -2150,6 +2157,7 @@ requires_building = "Shrine"
 faith = 4
 maintenance = 2
 purchasable = ["gold", "faith"]
+religious_weight = 1     # v0.9.0 Q9 (a seat with Holy Site, Shrine and Temple weighs 4)
 
 [buildings.Amphitheater]
 production_cost = 150
@@ -2287,6 +2295,10 @@ effects = [{ kind = "loyalty", amount = 1, per_population = true }]
 #                        none declared today
 #   loyalty              optional whole points per round into its city's loyalty
 #                        once complete (default 0; #116 P7, read by game/loyalty.py)
+#   religious_weight     optional whole points added, once complete, to the weight
+#                        its city's citizens press with for the religion the city
+#                        follows (default 0; v0.9.0 Q9, read by game/religion.py;
+#                        the [buildings.*] column of the same name is the same rule)
 #   requires_tech        a [techs.*] name the owner must know to place it
 #                        (#116 P2; checked through can_place_district)
 #   requires_civic       a [civics.*] name the owner must know to place it (#116 P4)
@@ -2355,6 +2367,7 @@ requires_tech = "Astrology"
 maintenance = 1
 cost_model = "discounted"
 discount_percent = 40
+religious_weight = 1     # v0.9.0 Q9: + this to its city's religious weight once complete
 adjacency_yield = "faith"
 adjacency = [
     { amount = 1, terrain = { relief = ["mountain"] } },

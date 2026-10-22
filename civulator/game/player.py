@@ -72,9 +72,12 @@ class Player:
         # `lapsed` flag Q9 writes), None until `GameEnvironment.found_religion`;
         # its beliefs grow only through `GameEnvironment.add_belief`. Never
         # cleared: a religion outlives its founder (§7.5), and the follower
-        # source reads it through the dead Player. Q9 adds the spread-use
-        # counter beside it.
+        # source reads it through the dead Player.
         self.religion = None
+        # Directed spreads this player has bought (v0.9.0 Q9, design §7.4):
+        # each raises the next one's price by `[religion] spread_cost_step`.
+        # Written only by GameEnvironment.spread_religion.
+        self.spread_uses = 0
 
     def start_turn(self):
         """Process the start of a player's turn: exploration -> unit reset and

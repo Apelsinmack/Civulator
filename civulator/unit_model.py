@@ -311,6 +311,21 @@ BUILDING_AMENITY = {
 }
 
 
+# Religious weight (v0.9.0 Q9, docs/districts_religion_design.md §7.4): the
+# optional `religious_weight` column, WHOLE points added to the weight a city's
+# citizens press with for the religion the city follows (1 + the columns of
+# its buildings and complete districts). Read by civulator/game/religion.py
+# only; nonzero entries only.
+BUILDING_RELIGIOUS_WEIGHT = {
+    name: points
+    for name, points in (
+        (name, whole_points(table["religious_weight"], f"[buildings.{name}] religious_weight"))
+        for name, table in _BUILDINGS_CFG.items() if "religious_weight" in table
+    )
+    if points
+}
+
+
 # --- Availability columns (#116 P2, docs/progression_design.md §4.1, §6.2) ---
 #
 # Every key a table may carry: a typo in a gating column (`requires_techs`)
@@ -330,6 +345,7 @@ BUILDING_KEYS = frozenset({
     "purchasable", "effects",  # #116 P4
     "loyalty",  # #116 P7
     "amenity",  # v0.9.0 Q2
+    "religious_weight",  # v0.9.0 Q9
 })
 
 

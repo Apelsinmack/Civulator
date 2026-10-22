@@ -108,10 +108,25 @@ class City:
         # Religion (v0.9.0 Q8, districts_religion_design §7.1, §7.5): the
         # founder index of the religion this city follows, None while
         # secular. Written by GameEnvironment.found_religion (the seat, v3
-        # fixes L1) and, in Q9, by conversion and inquisition. The city's,
-        # not the owner's: it travels through set_owner (capture and flip)
-        # and outlives its founder.
+        # fixes L1), GameEnvironment._religion_phase (conversion) and
+        # GameEnvironment.inquisition (v0.9.0 Q9). The city's, not the
+        # owner's: it travels through set_owner (capture and flip) and
+        # outlives its founder.
         self.religion = None
+        # The religion engine's per-city state (v0.9.0 Q9, design §7.4, v3
+        # fixes L6), all kept through set_owner like `religion`:
+        # - directed-spread entries `(religion index, amount, rounds_left)`,
+        #   in the order spread, appended by GameEnvironment.spread_religion,
+        #   counted then decremented (removed at 0) by _religion_phase;
+        self.spread_ledger = []
+        # - the conversion streak `(candidate religion index, rounds)`,
+        #   `(None, 0)` when none runs; written only by _religion_phase,
+        #   found_religion (the seat) and inquisition;
+        self.conversion_streak = (None, 0)
+        # - inquisition immunity: phases left in which the city cannot
+        #   convert; set by GameEnvironment.inquisition, decremented by
+        #   _religion_phase.
+        self.inquisition_rounds_left = 0
 
     def get_combat_strength(self, is_attacking=False, target=None):
         """Return the defensive combat strength of the city.
@@ -638,7 +653,9 @@ class City:
         hold, the new owner's fills the new slot.
         v0.9.0 Q8 (districts_religion_design §7.5): `religion` is the city's,
         not the owner's -- it is kept through either door, so the follower
-        beliefs keep holding here and the founder keeps being paid for it.
+        beliefs keep holding here and the founder keeps being paid for it;
+        v0.9.0 Q9: so are its `spread_ledger`, `conversion_streak` and
+        `inquisition_rounds_left` (nothing here touches them).
         """
         old_player = self.player
         if old_player:

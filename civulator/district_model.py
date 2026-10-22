@@ -18,7 +18,8 @@ Validation (design §1.2 and "v3 fixes", config loading):
   (unit_model.YIELD_COLUMNS, issue #116) go through unit_model.to_tenths;
 - `requires_tech` names a tech (research_model, #116 P2), `requires_civic`
   a civic (#116 P4), `maintenance` is a non-negative multiple of 0.1
-  (tenths); `loyalty` is a whole number (#116 P7), so is `amenity` (v0.9.0 Q2);
+  (tenths); `loyalty` is a whole number (#116 P7), so is `amenity` (v0.9.0 Q2)
+  and `religious_weight` (v0.9.0 Q9);
 - `health` (v0.9.0 Q3) makes the entry a *fortified district*: a positive
   int, the maximum health of the complete district; it requires
   `captured_health_percent` (an int 0..100, the share of the maximum it holds
@@ -81,6 +82,7 @@ _DISTRICT_KEYS = frozenset({
     "kind", "era", "requires_adjacent_all",  # #116 P6
     "loyalty",  # #116 P7
     "amenity",  # v0.9.0 Q2
+    "religious_weight",  # v0.9.0 Q9
     "health", "captured_health_percent",  # v0.9.0 Q3 (fortified districts)
     "ship_spawn",  # v0.9.0 Q5 (the Harbor)
 })
@@ -169,6 +171,9 @@ class DistrictSpec:
     # Whole points added to its city's amenity supply once complete (v0.9.0
     # Q2, design §3.1; read by game/amenities.py); 0 when absent.
     amenity: int = 0
+    # Whole points added, once complete, to the religious weight of its city
+    # (v0.9.0 Q9, design §7.4; read by game/religion.py); 0 when absent.
+    religious_weight: int = 0
     # Fortified district (v0.9.0 Q3, districts_religion_design §4.2): the
     # maximum health of the complete district, or None (not fortified), and
     # the percent of it held after a change of hands (`City.set_owner`).
@@ -354,6 +359,8 @@ def _parse_district(name, table, district_names):
                                             district_names),
         loyalty=whole_points(table.get("loyalty", 0), f"{where} loyalty"),
         amenity=whole_points(table.get("amenity", 0), f"{where} amenity"),
+        religious_weight=whole_points(table.get("religious_weight", 0),
+                                      f"{where} religious_weight"),
         ship_spawn=_bool(table.get("ship_spawn", False), f"{where} ship_spawn"),
         **_fortification(table, where),
     )

@@ -20,7 +20,14 @@ The ways a game ends, in the order the verdict tests them:
    what stops a vacuous win: a board with no Palace at all (a painted
    scenario), and a lone player holding the only Palace ever granted (the
    first player to found a city, before the others have), never dominate;
-3. **score at the turn cap** -- once the game is done at or past
+3. **religious**, only while `[game] religious_victory` is true (off by
+   default; v0.9.0 Q9, districts_religion_design §7.5, open call C7) -- a
+   religion followed by MORE than half of the cities of EVERY living player
+   (each player's own cities; dead players are not counted) wins for its
+   founder, if that founder is alive. A living player with no city (alive by
+   a Settler) is never "more than half followed": 0 > 0 fails, so no
+   religious win while any living player holds no city;
+4. **score at the turn cap** -- once the game is done at or past
    `env.max_turns`, the unique highest `player_score` wins (a dead player
    scores -1) and a tie is `(None, "draw")`.
 
@@ -37,12 +44,15 @@ displayed score cannot disagree with the verdict beside it.
 from ..config import CFG
 from ..unit_model import CAPITAL_BUILDING
 from .districts import is_wonder
+from .religion import religions
 
 VICTORY_ELIMINATION = "elimination"
 VICTORY_DOMINATION = "domination"
+VICTORY_RELIGIOUS = "religious"  # v0.9.0 Q9
 VICTORY_SCORE = "score"
 VICTORY_DRAW = "draw"
-VICTORIES = (VICTORY_ELIMINATION, VICTORY_DOMINATION, VICTORY_SCORE, VICTORY_DRAW)
+VICTORIES = (VICTORY_ELIMINATION, VICTORY_DOMINATION, VICTORY_RELIGIOUS, VICTORY_SCORE,
+             VICTORY_DRAW)
 
 # `[game.score]`: one weight per term beside `[game] city_score_weight`.
 _SCORE_KEYS = ("unit_weight", "population_weight", "tech_weight",
@@ -92,6 +102,18 @@ def parse_domination_enabled(game_cfg):
 
 
 DOMINATION_ENABLED = parse_domination_enabled(CFG["game"])
+
+
+def parse_religious_enabled(game_cfg):
+    """`[game] religious_victory` -> bool (v0.9.0 Q9). Required, and a real
+    boolean, like `domination_victory`."""
+    value = game_cfg.get("religious_victory")
+    if type(value) is not bool:
+        raise ValueError(f"[game] religious_victory must be true or false, got {value!r}")
+    return value
+
+
+RELIGIOUS_ENABLED = parse_religious_enabled(CFG["game"])
 CITY_SCORE_WEIGHT = SCORE_WEIGHTS["cities"]
 
 
@@ -165,22 +187,48 @@ def domination_winner(env):
     return holder
 
 
+def religious_winner(env):
+    """The founder index of a religion followed by more than half of the
+    cities of every living player, or None -- always None while
+    `RELIGIOUS_ENABLED` is false (read at call time). Religions are walked
+    in founder index order (`religion.religions`); a dead founder never wins.
+    "More than half" is `2 * followers > cities` per living player, so a
+    living player with no city is never satisfied. At most one religion can
+    hold a majority of the same cities, so the walk order decides nothing."""
+    if not RELIGIOUS_ENABLED:
+        return None
+    alive = [env.players[i] for i in living_players(env)]
+    if not alive:
+        return None
+    for religion in religions(env):
+        if env.players[religion.founder].is_dead:
+            continue
+        if all(2 * sum(1 for city in player.cities if city.religion == religion.founder)
+               > len(player.cities) for player in alive):
+            return religion.founder
+    return None
+
+
 def decisive_outcome(env):
-    """`(winner, victory)` for the two rules that end a game the moment they
-    hold, whatever the turn: elimination, then domination. `(None, None)`
-    when neither does."""
+    """`(winner, victory)` for the rules that end a game the moment they
+    hold, whatever the turn: elimination, then domination, then the
+    religious victory (v0.9.0 Q9; design "v2 fixes": it lives here so
+    `game_over` ends the game). `(None, None)` when none does."""
     alive = living_players(env)
     if len(alive) == 1:
         return alive[0], VICTORY_ELIMINATION
     dominator = domination_winner(env)
     if dominator is not None:
         return dominator, VICTORY_DOMINATION
+    believer = religious_winner(env)
+    if believer is not None:
+        return believer, VICTORY_RELIGIOUS
     return None, None
 
 
 def game_over(env):
-    """Whether the game has ended by its own rules: elimination or domination,
-    no one left alive, or the turn cap passed. The one test behind
+    """Whether the game has ended by its own rules: elimination, domination
+    or the religious victory, no one left alive, or the turn cap passed. The one test behind
     `GameEnvironment._update_done`, so `done` can never disagree with the
     verdict."""
     _, victory = decisive_outcome(env)
@@ -192,7 +240,7 @@ def determine_outcome(env):
     """The one verdict: `(winner, victory)`.
 
     `winner` is a player index or None; `victory` is `"elimination"`,
-    `"domination"`, `"score"`, `"draw"` (a tied top score at the cap) or None
+    `"domination"`, `"religious"`, `"score"`, `"draw"` (a tied top score at the cap) or None
     (nobody has won: the game is running, or was cut off before it ended --
     a truncated game is `(None, None)`, never `"draw"`, #51)."""
     winner, victory = decisive_outcome(env)

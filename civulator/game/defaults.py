@@ -14,6 +14,12 @@ Q7 the pantheon's (`default_pantheon`, through
 `GameEnvironment.found_religion` / `add_belief`). The two
 unit defaults that walk share one step rule, `step_toward`.
 
+v0.9.0 Q9 adds NO default (districts_religion_design §9): no engine default
+spends faith on spreading a religion (`GameEnvironment.spread_religion`) or
+on an inquisition (`GameEnvironment.inquisition`) -- without an agent,
+religions spread by passive pressure only, and the faith they cost is the
+upkeep the religion step debits. Both are agent actions of #99.
+
 "Newest" (v2 fixes, N2): a card unlocked by a civic later in
 `player.civics` (completion order) is newer; among the cards of one civic,
 the one earlier in config order is taken first.
