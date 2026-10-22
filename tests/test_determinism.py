@@ -79,7 +79,9 @@ def test_seeded_reset_sequence_is_reproducible():
 # The fields a Player keeps across `reset` when the env keeps its players;
 # every other attribute is per-episode (Player.reset_state).
 PLAYER_IDENTITY_FIELDS = {"name", "player_index", "game_env"}
-_BACK_REFERENCES = {"player", "game_env"}
+# `city`: a District's link to its city (v0.9.0 Q3) -- the city is compared
+# through the player that owns it.
+_BACK_REFERENCES = {"player", "game_env", "city"}
 
 
 def _data(value):
@@ -142,3 +144,33 @@ def test_same_seed_same_combat_outcome():
         return damage_dealt
 
     assert run_attack() == run_attack()
+
+
+def test_same_seed_same_fortified_district_siege():
+    """v0.9.0 Q3: attacks on a fortified district and its strikes draw the
+    engine RNG through `calculate_damage`, so the same seed and the same
+    orders give the same state -- unit health, district health, episode
+    counters -- across turn rollovers (strikes, repair). Breaks if any
+    fortification rule draws from another source or iterates a set."""
+    from test_fortified_districts import FORT, fortified_board, order
+
+    def run():
+        env, city, district = fortified_board(walls=True)
+        env.create_city(env.players[1], (6, 13), "Home")  # player 1 stays alive
+        env.rng.seed(1234)
+        attackers = [place(env, cls, 1, pos) for cls, pos in (
+            (WarriorUnit, (3, 8)), (WarriorUnit, (2, 8)), (ArcherUnit, (3, 9)))]
+        for _ in range(4):
+            for unit in attackers:
+                if unit in env.players[1].units and unit.movement_points > 0:
+                    order(env, unit, FORT)
+            env.next_turn()  # player 0: repair, centre strike, fortification strike
+            env.next_turn()  # back to player 1
+        return (_data(env.episode_stats),
+                [(u.unit_type, u.coordinates, u.health) for p in env.players for u in p.units],
+                district.health, city.health)
+
+    first, second = run(), run()
+    assert first == second
+    stats = first[0]
+    assert stats[1]["damage_dealt"] > 0 and stats[0]["encampment_strikes"] > 0,         "fixture: the fortification was attacked and fired back"
