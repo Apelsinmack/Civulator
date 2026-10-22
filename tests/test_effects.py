@@ -33,7 +33,7 @@ from civulator.game.loyalty import loyalty_delta
 from civulator.game.maintenance import maintenance_due
 from civulator.game.purchasing import faith_purchase_categories, purchase_cost
 from civulator.game.trade import DURATION_TURNS, TradeRoute, route_capacity, route_yields
-from civulator.game.unit import is_land_military
+from civulator.game.unit import MOVEMENT_DOMAIN, is_land_military
 from civulator.game.upgrades import upgrade_cost
 from civulator.game.yields import city_yield
 from civulator.research_model import CIVIC_ORDER, CIVICS
@@ -164,6 +164,10 @@ class Stage:
         # The v0.9.0 Q2 consumer: the capital's amenity supply (its band is
         # neutralised by this module, so supply moves nothing downstream).
         out["amenity supply"] = amenities.supply(city, env)
+        # The v0.9.0 Q5 consumer: the units' movement points per turn.
+        out["fighter max movement"] = self.fighter.get_max_movement()
+        out["shooter max movement"] = self.shooter.get_max_movement()
+        out["enemy max movement"] = self.enemy.get_max_movement()
         return out
 
 
@@ -392,6 +396,35 @@ def test_regional_yield_moves_exactly_the_regional_term(monkeypatch, yields, exp
         if delta is not None:
             assert after[key] - before[key] == delta, key
     assert after["production"] - before["production"] == 1
+
+
+@pytest.mark.parametrize("domain", ["water", "land"])
+def test_movement_delta_moves_exactly_the_max_movement_of_its_domain(monkeypatch, domain):
+    """v0.9.0 Q5: a `movement_delta` card (the Great Lighthouse's kind)
+    adds its amount to `Unit.get_max_movement` for its owner's units of the
+    domain it names -- a ship for "water", the land fighter and shooter for
+    "land" -- and moves nothing else: not the enemy's units, not another
+    consumer. Breaks if the kind gains a second reader, ignores the domain or
+    reaches another player."""
+    stage = Stage(monkeypatch)
+    ship_type = next(u for u in unit_model.UNIT_NAMES if MOVEMENT_DOMAIN[u] == "water")
+    ship = stand(stage.env, ship_type, 0, (0, 0))
+    enemy_ship = stand(stage.env, ship_type, 1, (0, 2))
+
+    def fingerprint():
+        out = stage.fingerprint()
+        out["ship max movement"] = ship.get_max_movement()
+        out["enemy ship max movement"] = enemy_ship.get_max_movement()
+        return out
+
+    before = fingerprint()
+    stage.slot(monkeypatch, [{"kind": "movement_delta", "domain": domain, "amount": 1}])
+    after = fingerprint()
+    expected = ({"ship max movement"} if domain == "water"
+                else {"fighter max movement", "shooter max movement"})
+    assert _moved(before, after) == expected
+    for key in expected:
+        assert after[key] == before[key] + 1, key
 
 
 def test_growth_percent_moves_exactly_the_growth_bucket(monkeypatch):
