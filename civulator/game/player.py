@@ -68,7 +68,8 @@ class Player:
         heal -> cities -> economy phase (#116: maintenance, bankruptcy,
         research, civics, government and loadout defaults, route expiry, the
         Trader default; GameEnvironment.economy_phase lists the order) ->
-        city ranged strike -> queued units."""
+        city ranged strikes (per city: the centre, then each fortified
+        district, v0.9.0 Q3) -> queued units."""
         self.game_env.update_exploration(self.player_index)
 
         for unit in self.units:
@@ -84,8 +85,12 @@ class Player:
         # A city with Walls shoots once at the start of its owner's turn
         # (issue #84). Automatic rather than an order, because the action
         # space selects units -- see GameEnvironment.city_ranged_attack.
+        # A walled city's Encampment fires too, after the centre (v0.9.0
+        # Q3, GameEnvironment.fortification_ranged_attack).
         for city in list(self.cities):
             self.game_env.city_ranged_attack(city)
+            for district in city.fortified_districts():
+                self.game_env.fortification_ranged_attack(district)
 
         self.place_queued_units()
 

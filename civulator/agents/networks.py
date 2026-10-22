@@ -483,6 +483,10 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
         city (`Unit.can_capture_city`) and can pay the step, because
         `Unit.move` refuses every other case; a mask that kept offering the
         old walk-in would recreate #51 exactly.
+      * **enemy fortified districts** (v0.9.0 Q3) — a standing enemy
+        Encampment (`GameEnvironment.enemy_fortification_at`) is an attack,
+        melee adjacent or ranged in range and sight, never a move; breached
+        (health 0) it is an ordinary tile.
 
     Shared with `get_valid_select_mask`, which uses it to keep a Settler that
     has no valid order at all out of the selection mask — that caller passes
@@ -534,6 +538,15 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
         # At 0 health it is the capture move, and then only for a unit that
         # can hold the city and can pay for the step: `Unit.move` refuses
         # every other case, which would make the order a no-op (#51).
+        # A standing enemy fortified district (an Encampment, v0.9.0 Q3) is
+        # an attack, exactly like a standing city -- never a move:
+        # `Unit.move` refuses the tile until it is breached.
+        if game_env.enemy_fortification_at(dest, current_player) is not None:
+            valid_move_mask[new_row, new_col] = 1
+            if stop_at_first:
+                return valid_move_mask
+            continue
+
         enemy_city = dest_tile.city if dest_tile is not None else None
         if enemy_city is not None and enemy_city.player != current_player:
             if enemy_city.health > 0:
@@ -579,16 +592,20 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
                 ):
                     valid_move_mask[er, ec] = 1
             for city in player.cities:
-                if city.health <= 0:
-                    continue
-                cr, cc = city.coordinates
-                if (
-                    game_env.map.distance_function((row, col), (cr, cc)) <= attack_range
-                    and game_env.check_line_of_sight((row, col), (cr, cc))
-                ):
-                    valid_move_mask[cr, cc] = 1
-                    if stop_at_first:
-                        return valid_move_mask
+                # The city, then its standing fortified districts (v0.9.0
+                # Q3): targets on the same terms; a breached one is not.
+                targets = [] if city.health <= 0 else [city.coordinates]
+                targets += [d.coordinates for d in city.fortified_districts()
+                            if game_env.enemy_fortification_at(d.coordinates, current_player)
+                            is not None]
+                for cr, cc in targets:
+                    if (
+                        game_env.map.distance_function((row, col), (cr, cc)) <= attack_range
+                        and game_env.check_line_of_sight((row, col), (cr, cc))
+                    ):
+                        valid_move_mask[cr, cc] = 1
+                        if stop_at_first:
+                            return valid_move_mask
 
     return valid_move_mask
 

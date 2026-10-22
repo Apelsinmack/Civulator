@@ -288,6 +288,17 @@ class Unit:
             return False
         return city.health > 0 or not self.can_capture_city()
 
+    def enemy_fortification_blocks(self, coordinates, game_env):
+        """Whether an enemy fortified district on `coordinates` refuses this
+        unit entry (v0.9.0 Q3, "v2 fixes" B4): while its health is above 0,
+        every unit of another player is barred; at 0 it is breached and
+        anyone may enter. Own units always pass. The one question behind
+        `Unit.move` (both branches), the melee move-in and
+        `defaults.step_toward`; the action mask offers an attack there
+        instead, through the same `GameEnvironment.enemy_fortification_at`.
+        """
+        return game_env.enemy_fortification_at(coordinates, self.player) is not None
+
     def projects_zone_of_control(self):
         """Whether this unit exerts zone of control (issue #84).
 
@@ -526,6 +537,9 @@ class Unit:
         # never enters one at all (issue #84).
         if self.enemy_city_blocks(dest, game_env):
             return False, self.coordinates
+        # A standing enemy fortified district bars it too (v0.9.0 Q3).
+        if self.enemy_fortification_blocks(dest, game_env):
+            return False, self.coordinates
 
         # Check if destination is adjacent (distance 1) — bypass pathfinder
         adj_coords = game_env.map.get_adjacent_coords(self.coordinates)
@@ -574,6 +588,8 @@ class Unit:
             # Same enemy-city gate as the adjacent fast path (#84) — a walk
             # must not slip a unit into a city an order could not.
             if self.enemy_city_blocks(next_pos_tuple, game_env):
+                break
+            if self.enemy_fortification_blocks(next_pos_tuple, game_env):
                 break
             movement_cost = self.step_cost(current_pos_tuple, next_pos_tuple, game_env)
 
@@ -641,9 +657,13 @@ class Unit:
             return 0, 0, False, False
 
         # Calculate strengths
+        # `is_fortification` (v0.9.0 Q3): a City or a fortified District
+        # (`game/districts.District`) -- the two defenders that take the
+        # ranged penalty (Civ 6: -17 vs city and district defences, the siege
+        # class exempt) and are never killed. The one flag both rules read.
+        fortification = getattr(target, "is_fortification", False)
         if is_ranged:
-            is_city = hasattr(target, "is_city") and target.is_city
-            attacker_strength = self.get_ranged_strength(target, is_city)
+            attacker_strength = self.get_ranged_strength(target, fortification)
             damage_received = 0
         else:
             attacker_strength = self.get_combat_strength(True, target)
@@ -661,7 +681,9 @@ class Unit:
         # from the board" to every caller — is always False for a city. The
         # signal that a city has fallen is `city.health == 0`, which is what
         # the capture gate and the action mask both read.
-        if getattr(target, "is_city", False):
+        # A fortified district floors the same way (v0.9.0 Q3): it is
+        # breached at 0, never removed.
+        if fortification:
             target.health = max(0, target.health)
             target_killed = False
         else:

@@ -20,7 +20,7 @@ No terrain, improvement or district name appears here: every source is
 matched through terrain_model.matches or the names the config declares.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..district_model import (
     ALLOWED_FEATURES,
@@ -61,13 +61,52 @@ def district_keeps_resource(resource):
 
 @dataclass(eq=False)
 class District:
-    """A placed district (design §7). `cost` is locked at placement (§4.3)."""
+    """A placed district (design §7). `cost` is locked at placement (§4.3).
+
+    Fortified districts (v0.9.0 Q3, districts_religion_design §4.2, "v2
+    fixes" B4): a COMPLETE district whose registry entry has `health` (the
+    Encampment is the first) is a combat defender like a city. It carries
+    the defender protocol `GameEnvironment._execute_attack` and `Unit.attack`
+    read -- `health`, `player`, `coordinates`, `get_combat_strength` and the
+    flag `is_fortification` -- and is never killed (floors at 0) and never
+    captured: it belongs to its city, and `player` is read through the city
+    at call time, so a capture or a loyalty flip carries it. An incomplete
+    one is not fortified. `health` is 0 until the district completes
+    (`GameEnvironment.complete_district` sets the maximum).
+    """
 
     type: str
     city_id: int
     coordinates: tuple
     complete: bool = False
     cost: int = 0
+    health: int = 0
+    # The City this district belongs to (set by GameEnvironment.place_district;
+    # None for a bare record built outside a game). Not compared, not printed.
+    city: object = field(default=None, repr=False, compare=False)
+
+    @property
+    def max_health(self):
+        """The registry's `health` column, or None for an unfortified type."""
+        return district_spec(self.type).health
+
+    @property
+    def is_fortification(self):
+        """Whether this is a fortified district now: complete, and its type
+        has `health`. The flag `Unit.attack` reads (with `City`'s own) for
+        the ranged-vs-fortification penalty and the floor at 0."""
+        return self.complete and self.max_health is not None
+
+    @property
+    def player(self):
+        """The owner -- its city's player, read at call time."""
+        return self.city.player if self.city is not None else None
+
+    def get_combat_strength(self, is_attacking=False, target=None):
+        """A fortified district defends (and counterattacks) with its city's
+        strength (§4.2): every building bonus and `combat_strength` effect
+        the city has applies here too, through `City.get_combat_strength`."""
+        return self.city.get_combat_strength(is_attacking, target)
 
 
 def district_spec(district_type):

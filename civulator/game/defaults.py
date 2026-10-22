@@ -157,7 +157,8 @@ def best_destination(trader, env):
 def step_toward(unit, target, env):
     """The one step the engine takes `unit` toward `target` (a tile): the
     adjacent tile `Unit.move` would accept -- enterable, no unit of another
-    player, no own unit in the unit's slot, no enemy city barring it,
+    player, no own unit in the unit's slot, no enemy city or standing enemy
+    fortified district barring it (v0.9.0 Q3),
     `Unit.step_cost` payable -- that is strictly nearer the target by
     `distance_function`, the nearest first, ties by (row, col). Never
     `path_finder`. None when no such tile exists (the unit waits). The step
@@ -177,6 +178,8 @@ def step_toward(unit, target, env):
         if any(u.slot == unit.slot for u in units):
             continue
         if unit.enemy_city_blocks(pos, env):
+            continue
+        if unit.enemy_fortification_blocks(pos, env):
             continue
         if unit.step_cost(here, pos, env) > unit.movement_points:
             continue

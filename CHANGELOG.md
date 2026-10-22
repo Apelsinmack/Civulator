@@ -227,6 +227,84 @@ luxury assignment). No version bump: Q0 opened 0.9.0.
 - **Effect NOT yet measured:** nothing was trained or evaluated; the bands'
   loyalty column and the order of the two percents are starting values.
 
+### The Encampment as a fortified district (#128, patch Q3)
+
+**Rule change, effect NOT yet measured.** Source:
+`docs/districts_religion_design.md` §4 and its "v2 fixes" (B4 and the
+non-blocking Encampment items) and "v3 fixes" (L8); Civ 6's Encampment and
+district defences (design §4, §0.4). No version bump: Q0 opened 0.9.0.
+
+- **Fortified districts** (one system; the Encampment is its first instance).
+  A district table with `health` is a fortified district; it also declares
+  `captured_health_percent` (both or neither, `civulator/district_model.py`).
+  `[districts.Encampment]` gains `health = 100` (Civ 6: districts 100, the city
+  200) and `captured_health_percent = 50` (Claude's call, like loyalty 50 on
+  capture). Health is set to the maximum when the district **completes**; an
+  incomplete one is not fortified.
+- **Why it exists** (the district's one feature): placed away from the centre
+  (the existing rule) and impassable to enemies while it stands, it is a
+  **forward wall** -- a chokepoint on the approach that a besieger must breach
+  first and that shoots back.
+- **Defence.** It is attacked through `_execute_attack` like a city -- an order
+  onto a standing enemy Encampment is an attack (melee adjacent, ranged within
+  range and sight), never a move -- and defends and counterattacks with its
+  **city's** combat strength (buildings, `combat_strength` city effects).
+  `ranged_city_penalty` (-17, Civ 6's penalty vs district defences) applies to
+  every non-siege shooter, the siege class is exempt, as against a city. It is
+  **never killed** (health floors at 0) and **never captured** -- it belongs to
+  its city.
+- **Entry.** While its health is above 0 no unit of another player enters its
+  tile: `Unit.move` (both branches), the post-kill melee move-in and the engine
+  defaults' `step_toward` refuse it through one lookup,
+  `GameEnvironment.enemy_fortification_at`, which the action mask reads too
+  (it offers the attack, never the move). At 0 it is **breached**: anyone may
+  pass and stand on it. Own units always pass.
+- **Repair.** `[city] heal_per_turn` (20) at its owner's turn start, in the
+  city's repair phase, unless its tile is besieged -- the full ring test of
+  `is_city_under_siege`, now taking a tile (the city keeps calling it with its
+  centre) -- or an enemy unit stands on it (L8).
+- **Strike.** At its owner's turn start, **after** its city's own strike, it
+  fires iff its health is above 0, its city holds `[city] ranged_building`
+  (Walls) and no enemy stands on its tile: the city's ranged strength and
+  range, **from its own tile**, at the target the city's rule would choose
+  from there (`_bombard_target` takes an origin; the tile itself is never a
+  target). A walled city with an Encampment fires twice a turn (Civ 6, #94).
+  Every strike and every attack on it draws `env.rng` through
+  `calculate_damage`: deterministic, but the stream shifts once one exists.
+- **Spawn.** `City.complete_unit_production` tries centre -> the city's
+  complete Encampment -> adjacent tiles. The Encampment takes **land military**
+  units only -- the fighting classes (`unit_model.FIGHTING_CLASSES`, the one
+  "land military" definition, so not civilians and not siege support) of the
+  land domain -- and only when no unit stands on it.
+- **Change of hands.** `City.set_owner` sets every fortified district's health
+  to `captured_health_percent` of its maximum -- on capture **and on a loyalty
+  flip** (the same function; this patch's contract, which overrides design
+  §10's "flip: health unchanged"). `remove_city` deletes it as before.
+- **Combat oracle unchanged**: `scripts/matchup_matrix.py --seed 652026
+  --terrain flat,hills,woods --fortified --damaged --units Warrior Slinger
+  Archer Swordsman Spearman Horseman Catapult` prints the same 461 result
+  lines before and after (only the artifact path differs); no unit pairing
+  changed. The seed-4242 smoke game is identical to the pre-Q3 tree's (no
+  Encampment completes in it).
+- **Stats.** `episode_stats` gains `encampment_breaches` (times this player's
+  attacks took an enemy fortified district from above 0 to 0) and
+  `encampment_strikes` (strikes this player's fortified districts fired); the
+  smoke end line prints both.
+- **Declared gaps.** **Ships and blockades**: the ring test treats water as
+  held (no land unit can stand there), so ships never count toward a blockade
+  and a coastal Encampment is besiegeable from land alone -- true while there
+  are no ships, a declared gap once Q5 adds them. **No pillage** (Civ 6's
+  "blocks movement unless pillaged" is "unless breached"). **No XP**: no
+  Great Generals, no Barracks/Stable/Armory promotions (#61). The strike is
+  automatic, like the city's (#84).
+- **Smoke observations (not a measurement; `python scripts/smoke_random_selfplay.py
+  --seed S`, Duel, random policy).** Seeds 1-8: an Encampment completed in 3
+  games (seeds 4, 5, 7); `encampment_breaches` and `encampment_strikes` were
+  0 for both players in all 8 games. 8 games.
+- **Effect NOT yet measured:** nothing was trained or evaluated; `health` and
+  `captured_health_percent` are starting values (dials in the progression
+  skill's §4 table).
+
 ---
 
 ## v0.8.1 — Erik's rulings on the block's open calls; build charges (2026-10-22)

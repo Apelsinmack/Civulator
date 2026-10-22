@@ -19,6 +19,10 @@ Validation (design §1.2 and "v3 fixes", config loading):
 - `requires_tech` names a tech (research_model, #116 P2), `requires_civic`
   a civic (#116 P4), `maintenance` is a non-negative multiple of 0.1
   (tenths); `loyalty` is a whole number (#116 P7), so is `amenity` (v0.9.0 Q2);
+- `health` (v0.9.0 Q3) makes the entry a *fortified district*: a positive
+  int, the maximum health of the complete district; it requires
+  `captured_health_percent` (an int 0..100, the share of the maximum it holds
+  after a change of hands), which is refused without `health`;
 - `effects` is kept raw (a list; #116 P4) and validated by
   civulator/effects.py, which loads after this registry;
 - every `[buildings.*] requires_district` (parsed by unit_model, which loads
@@ -77,6 +81,7 @@ _DISTRICT_KEYS = frozenset({
     "kind", "era", "requires_adjacent_all",  # #116 P6
     "loyalty",  # #116 P7
     "amenity",  # v0.9.0 Q2
+    "health", "captured_health_percent",  # v0.9.0 Q3 (fortified districts)
 })
 
 # What a registry entry is (progression design §9.1): the `kind` column,
@@ -163,6 +168,12 @@ class DistrictSpec:
     # Whole points added to its city's amenity supply once complete (v0.9.0
     # Q2, design §3.1; read by game/amenities.py); 0 when absent.
     amenity: int = 0
+    # Fortified district (v0.9.0 Q3, districts_religion_design §4.2): the
+    # maximum health of the complete district, or None (not fortified), and
+    # the percent of it held after a change of hands (`City.set_owner`).
+    # Read through `game/districts.District` only.
+    health: object = None
+    captured_health_percent: object = None
 
 
 @dataclass(frozen=True)
@@ -328,7 +339,26 @@ def _parse_district(name, table, district_names):
                                             district_names),
         loyalty=whole_points(table.get("loyalty", 0), f"{where} loyalty"),
         amenity=whole_points(table.get("amenity", 0), f"{where} amenity"),
+        **_fortification(table, where),
     )
+
+
+def _fortification(table, where):
+    """`health` / `captured_health_percent` (v0.9.0 Q3): both or neither."""
+    if "health" not in table:
+        if "captured_health_percent" in table:
+            raise ValueError(f"{where}: captured_health_percent needs health")
+        return {}
+    if "captured_health_percent" not in table:
+        raise ValueError(f"{where}: health needs captured_health_percent")
+    percent = _non_negative_int(table["captured_health_percent"],
+                                f"{where} captured_health_percent")
+    if percent > 100:
+        raise ValueError(f"{where}: captured_health_percent > 100")
+    return {
+        "health": _positive_int(table["health"], f"{where} health"),
+        "captured_health_percent": percent,
+    }
 
 
 def _requirements(table, key, where, district_names):

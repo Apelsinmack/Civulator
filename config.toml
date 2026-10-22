@@ -2094,6 +2094,14 @@ maintenance = 1
 cost_model = "discounted"
 discount_percent = 40
 adjacent_to_city_center = false
+# A fortified district (v0.9.0 Q3, districts_religion_design §4.2): a complete
+# Encampment has health (Civ 6: districts 100, the city 200), defends with its
+# city's strength, refuses enemy entry while health > 0, repairs [city]
+# heal_per_turn unless besieged, and strikes when its city may. On a change of
+# hands its health becomes captured_health_percent of the maximum (Claude's
+# call, like loyalty 50 on capture: a conqueror's fortress is half-built).
+health = 100
+captured_health_percent = 50
 
 [districts."Entertainment Complex"]
 production_cost = 54
