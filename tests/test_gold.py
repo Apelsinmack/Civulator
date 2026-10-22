@@ -29,7 +29,7 @@ from civulator.game.districts import District
 from civulator.game.maintenance import maintenance_due
 from civulator.game.purchasing import purchase_cost
 from civulator.game.trade import TRADER_UNIT
-from civulator.game.unit import WorkerUnit
+from civulator.game.unit import MOVEMENT_DOMAIN, WorkerUnit
 from civulator.game.yields import city_yield
 from civulator.game.housing import housing
 
@@ -410,7 +410,7 @@ def _land_military_unit(gated=False):
     """A land military unit buyable with gold but not listed for faith;
     with `gated`, one that needs a tech."""
     for name in sorted(unit_model.UNIT_NAMES):
-        if (unit_model.faith_category(name) is not None
+        if (unit_model.faith_category(name, MOVEMENT_DOMAIN[name]) is not None
                 and unit_model.UNIT_PURCHASABLE[name] == ("gold",)
                 and (name in unit_model.UNIT_REQUIRES_TECH) == gated):
             return name

@@ -38,9 +38,12 @@ Scope (agreed with Erik on #65 -- do not widen):
 - Conditions are opt-in flags, each adding ONE more matrix to the same JSON
   artifact, one variable away from the headline at a time (project
   CLAUDE.md's "one variable at a time" research-method rule, applied to the
-  flags themselves): --terrain flat,hills,woods (changes the DEFENDER's
-  tile only -- terrain defense bonus is a defending-side stat, see
-  `Unit.get_combat_strength`), --fortified (defender at max
+  flags themselves): --terrain flat,hills,woods,coast (changes the
+  DEFENDER's tile only -- terrain defense bonus is a defending-side stat, see
+  `Unit.get_combat_strength`; `coast` (v0.9.0 Q5) stands the defender on a
+  Coast tile, where a ship belongs: the attacker stays on Plains, so a land
+  unit attacking a ship and a ship attacking a coastal land unit are both the
+  real cross-domain exchange, and a ship's own tile never enters combat), --fortified (defender at max
   fortification), --damaged (both units start at half HP -- see "Judgment
   calls" below). The default run is flat / unfortified / full HP only, so
   the headline table stays readable.
@@ -183,6 +186,7 @@ TERRAIN_CONDITIONS = {
     "flat": {"base": "Plains", "relief": "flat", "feature": None},
     "hills": {"base": "Plains", "relief": "hills", "feature": None},
     "woods": {"base": "Plains", "relief": "flat", "feature": "Woods"},
+    "coast": {"base": "Coast", "relief": "flat", "feature": None},  # v0.9.0 Q5
 }
 
 DEFAULT_DUELS = 200
@@ -517,7 +521,7 @@ def main():
                              "machine -> bit-identical run (issue #44).")
     parser.add_argument("--terrain", type=str, default="flat",
                         help="Comma-separated defender terrain conditions to run, each as "
-                             "its own additional matrix (known: flat,hills,woods). The flat "
+                             "its own additional matrix (known: flat,hills,woods,coast). The flat "
                              "headline always runs regardless of this flag.")
     parser.add_argument("--fortified", action="store_true",
                         help="Add one matrix with the defender at max fortification.")

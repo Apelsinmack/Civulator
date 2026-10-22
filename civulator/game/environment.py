@@ -320,6 +320,10 @@ class GameEnvironment:
                 # player's cities were paid by `regional_yield` effects,
                 # summed over the cities at each round end and over the rounds.
                 "regional_production": 0,
+                # Ships (v0.9.0 Q5): water-domain units this player's cities
+                # put on the board -- trained, bought or granted -- counted by
+                # City.complete_unit_production, the one spawn routine.
+                "naval_units_built": 0,
                 # Summed adjacency score per yield, per city-round (#86 s5)
                 **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
             }
@@ -452,9 +456,9 @@ class GameEnvironment:
             )
         self.rng.shuffle(starts)
 
-        warrior_domain = movement_domain("Warrior")
         for i, player in enumerate(self.players):
             start = starts[i]
+            warrior_domain = movement_domain("Warrior", player)
 
             city = self.found_city(player, start, f"{player.name}'s Capital")
             if city is None:
@@ -754,10 +758,14 @@ class GameEnvironment:
             # a city that is still standing (issue #84), nor onto a standing
             # enemy fortified district (v0.9.0 Q3). Killing the garrison of
             # either leaves the attacker where it is; the fortification
-            # itself must be beaten down first.
+            # itself must be beaten down first. Nor across domains (v0.9.0
+            # Q5, "v2 fixes" B5): a Galley that sinks a coastal Warrior does
+            # not land, a Warrior that sinks a Galley does not swim -- the
+            # attacker moves in only where it `can_enter` the tile.
             if (
                 not is_ranged
                 and not attacker_killed
+                and attacker.can_enter(self.map.get_tile(defender.coordinates))
                 and not attacker.enemy_city_blocks(defender.coordinates, self)
                 and not attacker.enemy_fortification_blocks(defender.coordinates, self)
             ):

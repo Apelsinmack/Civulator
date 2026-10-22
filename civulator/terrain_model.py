@@ -26,6 +26,8 @@ tables — see docs/terrain_model_design.md §3.1 and §11 P1):
     defense = 0              # additive, no cap
     los = [0, 0]            # [obstacle, vantage], additive
     domain = "land"          # "land" | "water" — base terrain only
+    deep = false             # optional, water bases only (v0.9.0 Q5): Ocean.
+                             # The "coast" movement domain stays off it.
 
     [terrain.relief.mountain]
     impassable = true        # the only source of the impassable flag (D6)
@@ -129,6 +131,42 @@ def improvement_on(name):
     `GameEnvironment.can_build_improvement_at` reads."""
     return _IMPROVEMENT_ON.get(name)
 
+# --- Movement domains (design doc §3.3; v0.9.0 Q5, districts_religion_design §6.3) ---
+#
+# A tile's `domain` is "land" or "water" (its base). A unit moves in one of
+# three movement domains: "land", "water" (every water tile) and "coast"
+# (water that is not `deep` -- a ship whose owner lacks the `ocean_navigation`
+# rule; game/unit.py movement_domain decides which). Player dependence lives
+# in the domain STRING, so the per-domain cost grids on Map stay player-blind.
+DOMAIN_LAND = "land"
+DOMAIN_WATER = "water"
+DOMAIN_COAST = "coast"
+MOVEMENT_DOMAINS = (DOMAIN_LAND, DOMAIN_WATER, DOMAIN_COAST)
+
+# Every key a [terrain.base.*] table may carry; a typo raises at load.
+BASE_KEYS = frozenset({"yields", "movement", "defense", "los", "domain", "deep"})
+
+
+def _validate_base_tables():
+    """Load-time: base tables carry only BASE_KEYS; `domain` is land or water;
+    `deep` (v0.9.0 Q5) is a bool and only a water base may be deep."""
+    for name, entry in BASE_TABLE.items():
+        where = f"[terrain.base.{name}]"
+        unknown = set(entry) - BASE_KEYS
+        if unknown:
+            raise ValueError(f"{where}: unknown key(s) {sorted(unknown)}")
+        domain = entry.get("domain", DOMAIN_LAND)
+        if domain not in (DOMAIN_LAND, DOMAIN_WATER):
+            raise ValueError(f"{where}: domain must be land or water, got {domain!r}")
+        deep = entry.get("deep", False)
+        if not isinstance(deep, bool):
+            raise ValueError(f"{where}: deep must be true or false, got {deep!r}")
+        if deep and domain != DOMAIN_WATER:
+            raise ValueError(f"{where}: only a water base may be deep")
+
+
+_validate_base_tables()
+
 _LAYER_TABLES = {
     "base": BASE_TABLE,
     "relief": RELIEF_TABLE,
@@ -152,6 +190,8 @@ class ComposedProperties:
         domain: "land" | "water" — taken from the base terrain only.
         impassable: True iff the relief layer sets the impassable flag
             (mountain) — the only source of impassability (design doc D6).
+        deep: True iff the base declares `deep = true` (Ocean; v0.9.0 Q5) —
+            the "coast" movement domain may not enter it.
     """
 
     yields: tuple
@@ -160,6 +200,7 @@ class ComposedProperties:
     los: tuple
     domain: str
     impassable: bool
+    deep: bool = False
 
 
 # Sentinel for "the caller did not pass a resource" (districts design v3
@@ -377,9 +418,15 @@ def can_enter(domain, tile):
 
     `tile` is anything carrying composed `.domain` / `.impassable` — a Tile or
     a ComposedProperties. A missing tile (off-map) admits nobody.
+
+    `domain` is a movement domain (MOVEMENT_DOMAINS): "land" and "water"
+    match the tile's domain; "coast" (v0.9.0 Q5) is water that is not
+    `deep` — a ship before its owner knows the `ocean_navigation` rule.
     """
     if tile is None:
         return False
+    if domain == DOMAIN_COAST:
+        return tile.domain == DOMAIN_WATER and not tile.deep and not tile.impassable
     return tile.domain == domain and not tile.impassable
 
 
@@ -465,6 +512,7 @@ def compose(base, relief=None, feature=None, resource=None):
         los=(obstacle, vantage),
         domain=domain,
         impassable=impassable,
+        deep=bool(BASE_TABLE[base].get("deep", False)),
     )
 
 

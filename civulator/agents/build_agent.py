@@ -45,6 +45,7 @@ BUILD_OPTIONS = [
     "Temple", "Amphitheater", "Ancestral Hall", "Grand Master's Chapel",
     "Market", "Lighthouse", "Trader", "Worker",
     "Arena",
+    "Galley", "Quadrireme", "Caravel",
 ]
 NUM_BUILD_OPTIONS = len(BUILD_OPTIONS)
 

@@ -10,16 +10,19 @@ from ..effects import (
     KIND_BUILD_CHARGES,
     KIND_BUILD_CHARGES_TRAINED,
     RULE_FLANKING,
+    RULE_OCEAN_NAVIGATION,
     amount_sum,
     combat_strength_amounts,
+    movement_delta,
     rule_enabled,
 )
-from ..terrain_model import can_enter
+from ..terrain_model import DOMAIN_COAST, DOMAIN_LAND, DOMAIN_WATER, can_enter
 from ..unit_model import (
     BASE_COMBAT_STRENGTH as _BASE_COMBAT_STRENGTH,
     BASE_RANGED_STRENGTH as _BASE_RANGED_STRENGTH,
     BUILD_CHARGES as _BUILD_CHARGES,
     COMBAT_CLASS as _COMBAT_CLASS,
+    is_land_military as _is_land_military,
     DAMAGE_BASE,
     DAMAGE_EXPONENT_COEFFICIENT,
     DAMAGE_ROLL_MAX,
@@ -74,12 +77,17 @@ UNIT_SLOT = {
     "Trebuchet": 0,    # military, like the Catapult
     "Musketman": 0,
     "Trader": 1,       # civilian
+    "Galley": 0,       # military (ships, v0.9.0 Q5)
+    "Quadrireme": 0,
+    "Caravel": 0,
     # Great people (slot 3) — future
 }
 
-# Movement domain per unit type (design doc §3.3) — the sixth unit data table.
-# Everything is land in 0.6; naval units and embarkation are the seam this
-# leaves open (a new domain value + a capability check inside can_enter).
+# Movement domain per unit type (design doc §3.3) — the sixth unit data table:
+# the domain KIND, "land" or "water" (ships, v0.9.0 Q5). What a unit may enter
+# is `movement_domain(unit_type, player)`, which refines "water" into "coast"
+# (no Ocean) or "water" by its owner's `ocean_navigation` rule. Embarkation
+# (#76) is the seam still open.
 #
 # Stays here, NOT in config.toml (issue #64): it is about to stop being a
 # static table once tech/embarkation exists (issue #76), so freezing today's
@@ -103,6 +111,9 @@ MOVEMENT_DOMAIN = {
     "Trebuchet": "land",
     "Musketman": "land",
     "Trader": "land",
+    "Galley": "water",
+    "Quadrireme": "water",
+    "Caravel": "water",
 }
 
 
@@ -131,9 +142,34 @@ DEFERRED_BUILD_UNITS = {
 }
 
 
-def movement_domain(unit_type):
-    """Movement domain of a unit type — for callers placing a unit that doesn't exist yet."""
-    return MOVEMENT_DOMAIN.get(unit_type, "land")
+def movement_domain(unit_type, player):
+    """The movement domain a `unit_type` owned by `player` moves in — the one
+    source (v0.9.0 Q5, districts_religion_design "v2 fixes" B5): spawning
+    (`City.complete_unit_production`, `City.can_produce_unit`), the start
+    placement and every live unit (`Unit.get_movement_domain` delegates here,
+    so masks and pathing read it too).
+
+    "land" for a land unit. A water unit moves in "water" (every water tile,
+    Ocean included) once `player` knows the `ocean_navigation` rule
+    (Cartography's `enables` effect), else in "coast" (water that is not
+    deep). `player` is required; None (a unit outside a game) knows no rule.
+    The player-dependence is in the domain string, so the cost grids keyed by
+    it stay player-blind (`Map._build_cost_grid`).
+    """
+    kind = MOVEMENT_DOMAIN.get(unit_type, DOMAIN_LAND)
+    if kind != DOMAIN_WATER:
+        return kind
+    if player is not None and rule_enabled(player, RULE_OCEAN_NAVIGATION):
+        return DOMAIN_WATER
+    return DOMAIN_COAST
+
+
+def is_land_military(unit_type):
+    """Whether `unit_type` is land military: a fighting combat class of the
+    land domain (`unit_model.is_land_military` over MOVEMENT_DOMAIN). A ship
+    fights but is not land military (v0.9.0 Q5): it is not bought with faith
+    as one, garrisons no city, never spawns on an Encampment."""
+    return _is_land_military(unit_type, MOVEMENT_DOMAIN.get(unit_type, DOMAIN_LAND))
 
 
 def calculate_damage(attacker_strength, defender_strength, rng=None):
@@ -209,10 +245,19 @@ class Unit:
         return self.combat_class == "civilian"
 
     def get_max_movement(self):
-        return self.MAX_MOVEMENT.get(self.unit_type, 2)
+        """This unit's movement points per turn: its table's `max_movement`
+        plus every `movement_delta` effect in force for its owner that names
+        its domain kind (MOVEMENT_DOMAIN: "land" or "water"; v0.9.0 Q5, the
+        Great Lighthouse's +1 for ships). The one reader of `max_movement`
+        and the one consumer of `movement_delta`."""
+        base = self.MAX_MOVEMENT.get(self.unit_type, 2)
+        domain = MOVEMENT_DOMAIN.get(self.unit_type, DOMAIN_LAND)
+        return base + movement_delta(self.player, domain)
 
     def get_movement_domain(self):
-        return movement_domain(self.unit_type)
+        """The domain this unit moves in now: `movement_domain` for its type
+        and owner (the one source)."""
+        return movement_domain(self.unit_type, self.player)
 
     def can_enter(self, tile):
         """Whether this unit's domain may stand on `tile` (design doc §3.3).
@@ -871,6 +916,29 @@ class SiegeTowerUnit(SiegeSupportUnit):
 
     def __init__(self, player, coordinates):
         super().__init__(player, coordinates, "SiegeTower")
+
+
+class GalleyUnit(Unit):
+    """Ancient naval melee ship (v0.9.0 Q5): water domain, Coast and Lake
+    until its owner knows Cartography."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Galley")
+
+
+class QuadriremeUnit(RangedUnit):
+    """Classical naval ranged ship (v0.9.0 Q5): range 1, through the one
+    ranged-attack path (`RangedUnit.attack`)."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Quadrireme")
+
+
+class CaravelUnit(Unit):
+    """Renaissance naval melee ship (v0.9.0 Q5), the Galley's upgrade."""
+
+    def __init__(self, player, coordinates):
+        super().__init__(player, coordinates, "Caravel")
 
 
 class SettlerUnit(Unit):

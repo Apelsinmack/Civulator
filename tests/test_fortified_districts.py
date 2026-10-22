@@ -450,7 +450,7 @@ def test_a_land_military_unit_spawns_on_the_fortification_when_the_centre_is_tak
     place(env, WarriorUnit, 0, CENTRE)
     fighter = next(t for t in unit_types()
                    if unit_mod.Unit.COMBAT_CLASS[t] in unit_model.FIGHTING_CLASSES
-                   and unit_mod.movement_domain(t) == "land")
+                   and unit_mod.movement_domain(t, None) == "land")
     assert city.complete_unit_production(fighter, env)
     assert [u.unit_type for u in env.get_units_at(FORT)] == [fighter]
 

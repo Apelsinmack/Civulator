@@ -70,8 +70,8 @@ def test_every_unit_declares_a_known_class_and_era():
 
 def test_a_unit_class_agrees_with_the_unit_stats():
     """A class is a promise about a unit's attack: civilians and support units
-    do not fight, a ranged or siege unit has a ranged strength, every other
-    class fights in melee. `can_capture_city` and ZoC read the strengths, so a
+    do not fight, a ranged, siege or naval ranged (v0.9.0 Q5) unit has a
+    ranged strength, every other class fights in melee. `can_capture_city` and ZoC read the strengths, so a
     class that disagrees with them would be a unit the rules treat two ways.
     Breaks if a table is given a class its numbers contradict."""
     for name, cls in unit_model.COMBAT_CLASS.items():
@@ -79,7 +79,7 @@ def test_a_unit_class_agrees_with_the_unit_stats():
         ranged = unit_model.BASE_RANGED_STRENGTH[name]
         if cls in ("civilian", "support"):
             assert combat == 0 and ranged == 0, name
-        elif cls in ("ranged", "siege"):
+        elif cls in ("ranged", "siege", "naval_ranged"):
             assert ranged > 0 and combat > 0, name
         else:
             assert ranged == 0 and combat > 0, name
@@ -577,9 +577,15 @@ _BUILDABLE_UNITS = [o for o in BUILD_OPTIONS if o in unit_model.UNIT_NAMES]
 def test_a_city_produces_every_buildable_unit_as_its_registered_class(unit_type):
     """E2E through the build path: with the owner's research complete, a city
     that starts a unit and pays for it puts a unit of its registered subclass
-    on the board, whatever unit it is (the new Medieval units included). Breaks
-    if a build option cannot be produced, or is produced as the wrong class."""
+    on the board, whatever unit it is (the new Medieval units included). A
+    ship (v0.9.0 Q5) needs a spawn water tile, so for a water-domain unit one
+    tile beside the city is Coast -- the declared rule of §6.4, not an
+    exemption. Breaks if a build option cannot be produced, or is produced as
+    the wrong class."""
     env = make_flat_env()
+    if MOVEMENT_DOMAIN[unit_type] == "water":
+        coast = env.map.get_adjacent_coords((3, 3))[0]
+        env.map.get_tile(coast).set_layers("Coast", map_ref=env.map)
     city = env.create_city(env.players[0], (3, 3), "C")
     city.population = 3
     grant_all(env.players[0])

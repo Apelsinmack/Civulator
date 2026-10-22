@@ -516,14 +516,15 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
         if new_row < 0 or new_row >= n:
             continue
         dest = (new_row, new_col)
-
-        # Terrain first: the unit's movement domain must admit the tile
         dest_tile = game_env.map.get_tile(dest)
-        if not unit.can_enter(dest_tile):
-            continue
 
         # An enemy on the tile makes this an attack, not a move: no slot or
         # movement-cost rule applies, and the attack always changes state.
+        # Tested BEFORE the terrain gate (v0.9.0 Q5, "v2 fixes" B5): melee
+        # crosses domains -- a Warrior attacks an adjacent Galley, a Galley a
+        # coastal unit, city or Encampment -- and the dispatcher
+        # (`_step_inner`) resolves it without asking `can_enter`; only the
+        # move-in after a kill does (`_execute_attack`).
         enemy_there = any(
             u.player != current_player for u in game_env.get_units_at(dest)
         )
@@ -554,7 +555,8 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
                 if stop_at_first:
                     return valid_move_mask
             elif (
-                unit.can_capture_city()
+                unit.can_enter(dest_tile)
+                and unit.can_capture_city()
                 and not game_env.is_slot_occupied(dest, unit.slot, current_player)
                 and unit.movement_points >= unit.step_cost((row, col), dest, game_env)
             ):
@@ -563,7 +565,11 @@ def _valid_order_mask_np(unit, game_env, n, m, stop_at_first=False):
                     return valid_move_mask
             continue
 
-        # Plain move: our slot must be free and the step must be payable.
+        # A move: the unit's movement domain must admit the tile (terrain:
+        # land/coast/water, impassable), our slot must be free and the step
+        # must be payable -- exactly `Unit.move`'s refusals.
+        if not unit.can_enter(dest_tile):
+            continue
         if game_env.is_slot_occupied(dest, unit.slot, current_player):
             continue
         if unit.movement_points < unit.step_cost((row, col), dest, game_env):

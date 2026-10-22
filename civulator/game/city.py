@@ -15,7 +15,7 @@ from ..effects import (
     percent_sum,
     target_matches,
 )
-from ..terrain_model import can_enter
+from ..terrain_model import DOMAIN_WATER, can_enter
 from ..unit_model import (
     BUILDING_COSTS as _BUILDING_COSTS,
     BUILDING_DEFENSE_BONUS,
@@ -25,7 +25,6 @@ from ..unit_model import (
     CITY_RANGED_BUILDING,
     CITY_RANGED_RANGE,
     CITY_RANGED_STRENGTH,
-    FIGHTING_CLASSES,
     growth_percent,
 )
 from . import territory
@@ -44,7 +43,8 @@ from .unit import (
     Unit, WarriorUnit, SlingerUnit, ArcherUnit, SwordsmanUnit, SpearmanUnit,
     HorsemanUnit, CatapultUnit, BatteringRamUnit, SiegeTowerUnit,
     ManAtArmsUnit, PikemanUnit, CrossbowmanUnit, KnightUnit, TrebuchetUnit,
-    MusketmanUnit, TraderUnit, SettlerUnit, WorkerUnit, movement_domain,
+    MusketmanUnit, TraderUnit, SettlerUnit, WorkerUnit, GalleyUnit,
+    QuadriremeUnit, CaravelUnit, MOVEMENT_DOMAIN, is_land_military, movement_domain,
 )
 
 
@@ -166,9 +166,16 @@ class City:
         (`improvements.worker_has_work`, #116 P8): a Trader that could never
         be sent, a Worker with nothing to build, is an option that cannot pay
         off. The one unit predicate of `produce_unit`, the build mask and
-        `purchase`."""
+        `purchase`.
+
+        A water-domain unit (v0.9.0 Q5, districts_religion_design §6.4) is
+        admitted only while the city has a spawn water tile
+        (`ship_spawn_tiles`): a ship that could never be placed is an option
+        that cannot pay off."""
         if not player_can_build(self.player, "unit", unit_type):
             return False
+        if MOVEMENT_DOMAIN.get(unit_type) == DOMAIN_WATER:
+            return bool(self.ship_spawn_tiles(unit_type, self.player.game_env))
         if unit_type == TRADER_UNIT:
             return trader_slot_free(self.player)
         if UNIT_CLASSES.get(unit_type) is WorkerUnit:
@@ -492,20 +499,57 @@ class City:
         """Get the production cost for a building type."""
         return self.BUILDING_COSTS[building_type]
 
+    def ship_spawn_tiles(self, unit_type, game_env):
+        """The tiles a new water-domain `unit_type` of this city's owner may
+        appear on, in candidate order (v0.9.0 Q5, districts_religion_design
+        §6.4): the tile of each complete `ship_spawn` district of the city
+        (the Harbor), then the water tiles adjacent to the centre in
+        `Map.get_adjacent_coords` order -- each one the unit's movement
+        domain for its owner can enter (`movement_domain`), never a land
+        tile, no tile twice. A Lake beside the centre counts. Occupancy is
+        not read: this is where the city COULD put a ship (the build
+        predicate); `complete_unit_production` takes the first free one."""
+        if game_env is None:
+            return []
+        domain = movement_domain(unit_type, self.player)
+        tiles = []
+        for district in self.districts:
+            if district.complete and district_spec(district.type).ship_spawn:
+                tiles.append(tuple(district.coordinates))
+        tiles += [tuple(pos) for pos in game_env.map.get_adjacent_coords(self.coordinates)]
+        out = []
+        for pos in tiles:
+            if pos not in out and can_enter(domain, game_env.map.get_tile(pos)):
+                out.append(pos)
+        return out
+
     def complete_unit_production(self, unit_type, game_env):
         """Place a newly produced unit on the city tile or first empty adjacent tile.
 
         Priority: city center > the city's complete fortified districts (an
         Encampment; v0.9.0 Q3, districts_religion_design §4.1 -- for a land
-        military unit only -- a FIGHTING_CLASSES unit of the land domain: never a
-        civilian or siege support, never a water-domain unit) >
+        military unit only, `unit.is_land_military`: never a civilian or
+        siege support, never a water-domain unit) >
         adjacent tiles. Every candidate goes through the canonical
         terrain-domain check (§3.3, §9.10) — production may not drop a land
         unit into a lake or onto a mountain — and a fortified-district tile,
         like an adjacent one, must hold no unit at all.
+        A water-domain unit (v0.9.0 Q5, §6.4) goes to the first free tile of
+        `ship_spawn_tiles` (the Harbor, then the adjacent water tiles), never
+        to land; it counts `episode_stats["naval_units_built"]`.
         If none is available, returns False (unit deferred to next turn).
         """
-        domain = movement_domain(unit_type)
+        domain = movement_domain(unit_type, self.player)
+
+        if MOVEMENT_DOMAIN.get(unit_type) == DOMAIN_WATER:
+            for pos in self.ship_spawn_tiles(unit_type, game_env):
+                if game_env.is_valid_position(pos) and not game_env.is_occupied(pos):
+                    unit = _create_unit(unit_type, self.player, pos)
+                    self.player.units.append(unit)
+                    game_env.add_unit_to_tile(unit, pos)
+                    game_env.episode_stats[self.player.player_index]["naval_units_built"] += 1
+                    return True
+            return False
 
         # Try city center first
         friendly_on_center = any(
@@ -517,9 +561,9 @@ class City:
             game_env.add_unit_to_tile(unit, self.coordinates)
             return True
 
-        # The Encampment (v0.9.0 Q3): land military units only -- the
-        # fighting classes, the one "land military" definition (unit_model).
-        if domain == "land" and Unit.COMBAT_CLASS.get(unit_type) in FIGHTING_CLASSES:
+        # The Encampment (v0.9.0 Q3): land military units only -- the one
+        # "land military" definition (fighting class AND land domain, Q5).
+        if is_land_military(unit_type):
             for district in self.fortified_districts():
                 pos = district.coordinates
                 if not can_enter(domain, game_env.map.get_tile(pos)):
@@ -649,6 +693,9 @@ UNIT_CLASSES = {
     "Trader": TraderUnit,
     "Settler": SettlerUnit,
     "Worker": WorkerUnit,
+    "Galley": GalleyUnit,
+    "Quadrireme": QuadriremeUnit,
+    "Caravel": CaravelUnit,
 }
 
 

@@ -110,6 +110,11 @@ class Tile:
         return self.composed.domain
 
     @property
+    def deep(self):
+        """Deep water (Ocean, v0.9.0 Q5): closed to the "coast" movement domain."""
+        return self.composed.deep
+
+    @property
     def impassable(self):
         """Blocks every domain (mountain relief) and makes the tile unworkable (§3)."""
         return self.composed.impassable
