@@ -214,7 +214,7 @@ POOL_YIELDS = tuple(unit_model.YIELD_BASE)
 # What a `religion_param` entry may set (design §7.3, v3 fixes L3): `range`
 # raises the pressure range AND citizen_weight of the founder's religion;
 # the percents scale directed-spread pressure and the spread/inquisition
-# cost. All ints, read by game/religion.py (Q9).
+# cost. All ints, read by game/religion.py religion_params (v0.9.0 Q9).
 RELIGION_PARAMS = ("range", "spread_amount_percent", "cost_percent")
 
 # The rules an `enables` effect may switch on, each gated where it is applied.
@@ -598,7 +598,8 @@ def _parse_per_follower_city(raw, where, ctx):
 
 def _parse_religion_param(raw, where, ctx):
     """`religion_param { range?, spread_amount_percent?, cost_percent? }`
-    (v0.9.0 Q8, the enhancer beliefs; read by game/religion.py in Q9): at
+    (v0.9.0 Q8, the enhancer beliefs; read by game/religion.py
+    religion_params, v0.9.0 Q9): at
     least one of RELIGION_PARAMS, every one an int; `range` >= 0 and still
     passing `check_pressure_weights` with both numbers raised by it (v3
     fixes L3: Itinerant Preachers raises range AND citizen_weight);

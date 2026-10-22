@@ -49,8 +49,9 @@ Config schema:
 Q7 consumes `pantheon_cost` (game/religion.py can_choose_pantheon,
 GameEnvironment.choose_pantheon); Q8 `found_cost`, `belief_costs`,
 `max_religions`, `exclusive`, `founding_building` and the belief tables
-(founding and beliefs); the spread keys are parsed and validated here so Q9
-only adds readers. The tier ladder `belief_costs` buys is BELIEF_LADDER.
+(founding and beliefs); Q9 the pressure, conversion, spread, upkeep,
+inquisition and loyalty keys (game/religion.py, GameEnvironment's religion
+phase and actions). The tier ladder `belief_costs` buys is BELIEF_LADDER.
 """
 
 from dataclasses import dataclass
