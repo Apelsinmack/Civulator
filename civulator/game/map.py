@@ -64,11 +64,17 @@ if civulator_core_commit:
     except Exception:
         _repo_head = None
     if _repo_head and civulator_core_commit != _repo_head:
+        # To stderr, never stdout: the hash-seed subprocess tests
+        # (test_worker_default, test_resource_tiers, test_amenities) compare a
+        # child's stdout with the parent's result, and on any checkout whose
+        # HEAD has moved past the configure-time stamp this line would be the
+        # only difference (seen 2026-10-22 on develop, #128 checkpoint 4).
         print(
             f"[map] WARNING: civulator_core.pyd was built from commit "
             f"{civulator_core_commit[:12]} but this checkout's HEAD is "
             f"{_repo_head[:12]} -- if the difference touches cpp/, "
-            f"reconfigure and rebuild (stale-pyd check, issue #47)."
+            f"reconfigure and rebuild (stale-pyd check, issue #47).",
+            file=sys.stderr,
         )
 
 # A* adapter encoding: the C++ hex_astar wire format treats cost >= 99 as
