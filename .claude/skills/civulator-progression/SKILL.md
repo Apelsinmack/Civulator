@@ -27,9 +27,12 @@ Engine defaults, Round-end phases, Victory, Win/score). This skill is the
    `effects` raw, and rejects unknown keys through strict key lists
    (`UNIT_KEYS`, `BUILDING_KEYS`, `_DISTRICT_KEYS`, the improvement keys,
    `_POOL_TABLE_EXTRA_KEYS`). **A new column must be added to the list or
-   the config fails to load** — that is the point.
+   the config fails to load** — that is the point. `religion_model.py`
+   (v0.9.0 Q7: `[religion]`, `[pantheons.*]`, `[beliefs.*]`) sits with
+   them, after `unit_model` (a belief's `requires_building`): strict keys,
+   raw `effects`, `check_pressure_weights(citizen_weight, range)`.
 3. `civulator/effects.py` — validates every `effects` list from the parsed
-   specs (never from `CFG`); `CONSUMERS` maps every kind to its one consumer;
+   specs (never from `CFG`), the pantheons' included; `CONSUMERS` maps every kind to its one consumer;
    `DEFERRED_KINDS` is empty and must stay so.
 4. `civulator/game/*` — `trade.py` reads `[trade]`, `loyalty.py` reads
    `[loyalty]`, `victory.py` reads `[game.score]` (`training/trainer.py`
@@ -52,7 +55,8 @@ Engine defaults, Round-end phases, Victory, Win/score). This skill is the
 | a **wonder** | `[districts.<Name>]` with `kind = "wonder"`, era, fixed cost, `max_per_player = 1`, placement, columns, scoped effects | nothing | `tests/test_wonders.py` runs the placeability property over every wonder |
 | an **improvement** | `[improvements.<Name>]` on, housing, food/production/gold, requires_tech | nothing (the Worker default ranks by the columns, config order breaks ties) | `tests/test_improvement_yields.py`, `tests/test_worker_default.py` |
 | a **resource** | `[terrain.resource.<Name>]` class, on, (yields); bonus: `chance`; strategic/luxury: `improved_by`, `frequency`, optional `reveals` (v0.9.0 Q1) | a bonus one: append to `mapgen/resources.RESOURCE_ORDER` with a purpose id in `seeding.py`; a strategic/luxury one: a purpose id in `seeding.py` + its `tiered_resources.TIERED_PURPOSE` entry (append-only). Access, gating and district placement need nothing | `tests/test_resource_tiers.py` runs over the registry; a golden re-baseline (`tests/test_mapgen_golden.py`, `test_rng.py`'s frozen world) with the field-by-field diff in the CHANGELOG |
-| an **effect kind** | — | one parser in `effects.py` + exactly one consumer named in `CONSUMERS` (`amenity`, v0.9.0 Q2: `game/amenities.py effect_supply`; `regional_yield`, v0.9.0 Q4: `game/yields.py _regional_tenths`, a building of scope player only; `movement_delta`, v0.9.0 Q5: `Unit.get_max_movement`, player scope only); a `tests/test_effects.py` case showing the kind moves its consumer and nothing else | that test is the rule: "each kind has exactly one consumer" |
+| a **pantheon** | a `[pantheons.<Name>]` table of effects — nothing else (`description` optional); player-scope kinds only (v0.9.0 Q7). Config order is the default's order | nothing if every effect kind exists | `tests/test_religion.py` registry properties run over `[pantheons.*]` |
+| an **effect kind** | — | one parser in `effects.py` + exactly one consumer named in `CONSUMERS` (`amenity`, v0.9.0 Q2: `game/amenities.py effect_supply`; `regional_yield`, v0.9.0 Q4: `game/yields.py _regional_tenths`, a building of scope player only; `movement_delta`, v0.9.0 Q5: `Unit.get_max_movement`, player scope only; v0.9.0 Q7, all player scope only: `border_cost_percent` → `territory.run_border_phase` (`claim_cost`), `improvement_yield` → `game/yields.py _improvement_tenths`, `adjacency_row` → `districts.adjacency_score` (rows parsed by `district_model.parse_adjacency_row`)); a `tests/test_effects.py` case showing the kind moves its consumer and nothing else | that test is the rule: "each kind has exactly one consumer" |
 
 Every build path reads `game/availability.py` (`player_can_build`,
 `city_can_build_building`) and `City.can_produce_unit` — the build mask,
@@ -121,6 +125,7 @@ All in `civulator/game/defaults.py`, each called from exactly one place in
 | `default_loadout` | keep legal cards, fill empty slots with the newest unlocked card of the slot's type (runs on civic completion and government change) | `set_policies` |
 | `default_trade` | idle Trader on an own centre → best-yield destination over `eligible_routes`, each candidate ranked by `pair_yields` with its overseas flag (v0.9.0 Q6); stray Trader steps home | `establish_trade_route` + a move order |
 | `default_workers` | idle Worker builds the best improvement under it (ties: the one that grants the tile's resource, v0.9.0 Q2), else steps toward the nearest improvable owned tile (a build that grants a resource its owner lacks counts `access_bonus` tiles nearer) | an improvement order (the (option, tile) action space) |
+| `default_pantheon` (v0.9.0 Q7; the economy phase's religion step) | no pantheon yet and faith ≥ `[religion] pantheon_cost` → the first pantheon in config order (`religion.can_choose_pantheon`); braindead by design | `choose_pantheon` |
 | — | purchase, upgrade, district and wonder placement have **no** default | `purchase`, `upgrade_unit`, `place_district` |
 
 Both movement defaults share `defaults.step_toward` (one `Unit.move` step,
@@ -133,7 +138,8 @@ identical with or without them (`tests/test_determinism.py`,
 
 `Player.start_turn`: exploration → units reset/heal → cities (`process_turn`:
 repair → food → growth → yields → production) → `GameEnvironment.
-economy_phase` (maintenance → bankruptcy → research → civics → government
+economy_phase` (maintenance → bankruptcy → religion (v0.9.0 Q7: the
+pantheon default; Q8/Q9 add founding, beliefs, upkeep, founder pay) → research → civics → government
 and loadout defaults → route expiry → Trader default → spent Workers removed
 → Worker default) →
 city ranged strikes (per city: the centre, then each fortified district,
