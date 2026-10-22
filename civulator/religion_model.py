@@ -33,27 +33,31 @@ Config schema:
     inquisition_cost = 75         # >= 0
     inquisition_rounds = 10       # >= 1
     foreign_religion_loyalty = -1 # any int (0 disables the term)
+    founding_building = "Temple"  # a [buildings.*] name with a requires_district (v0.9.0 Q8)
 
     [pantheons.<Name>]            # a table of effects -- nothing else
     description = "..."           # optional, for people
     effects = [...]               # required, non-empty, raw
 
-    [beliefs.<Name>]              # (shape only in Q7; the family is empty)
+    [beliefs.<Name>]
     tier = "founder"              # founder | follower | enhancer
     counts = "all"                # founder beliefs only, required there: all | foreign
     requires_building = "Shrine"  # optional, a [buildings.*] name
     description = "..."           # optional
     effects = [...]               # required, non-empty, raw
 
-Q7 consumes only `pantheon_cost` (game/religion.py can_choose_pantheon,
-GameEnvironment.choose_pantheon); the other `[religion]` keys are parsed and
-validated now so Q8/Q9 only add readers.
+Q7 consumes `pantheon_cost` (game/religion.py can_choose_pantheon,
+GameEnvironment.choose_pantheon); Q8 `found_cost`, `belief_costs`,
+`max_religions`, `exclusive`, `founding_building` and the belief tables
+(founding and beliefs); Q9 the pressure, conversion, spread, upkeep,
+inquisition and loyalty keys (game/religion.py, GameEnvironment's religion
+phase and actions). The tier ladder `belief_costs` buys is BELIEF_LADDER.
 """
 
 from dataclasses import dataclass
 
 from .config import CFG
-from .unit_model import BUILDING_NAMES
+from .unit_model import BUILDING_NAMES, BUILDING_REQUIRES_DISTRICT
 
 # --- [religion] --------------------------------------------------------------
 
@@ -77,8 +81,7 @@ _INT_KEYS = {
     "inquisition_rounds": 1,
     "foreign_religion_loyalty": None,
 }
-_RELIGION_KEYS = frozenset({*_INT_KEYS, "belief_costs", "exclusive"})
-BELIEF_TIER_COUNT = 2  # `belief_costs`: tier 2, tier 3
+_RELIGION_KEYS = frozenset({*_INT_KEYS, "belief_costs", "exclusive", "founding_building"})
 
 _PANTHEON_KEYS = frozenset({"effects", "description"})
 _BELIEF_KEYS = frozenset({"tier", "counts", "requires_building", "effects", "description"})
@@ -90,6 +93,13 @@ TIERS = (TIER_FOUNDER, TIER_FOLLOWER, TIER_ENHANCER)
 COUNTS_ALL = "all"
 COUNTS_FOREIGN = "foreign"
 COUNTS = (COUNTS_ALL, COUNTS_FOREIGN)
+# What `belief_costs[i]` buys, in order, after founding (design §7.1, §7.3):
+# tier 2 is a second follower belief, tier 3 the enhancer. A religion holds
+# one founder belief, up to 1 + the ladder's follower entries follower
+# beliefs, and one enhancer. `belief_costs` must have one entry per rung.
+BELIEF_LADDER = (TIER_FOLLOWER, TIER_ENHANCER)
+BELIEF_TIER_COUNT = len(BELIEF_LADDER)  # `belief_costs`: tier 2, tier 3
+MAX_FOLLOWER_BELIEFS = 1 + BELIEF_LADDER.count(TIER_FOLLOWER)
 
 
 @dataclass(frozen=True)
@@ -115,6 +125,13 @@ class ReligionRules:
     inquisition_cost: int
     inquisition_rounds: int
     foreign_religion_loyalty: int
+    founding_building: str  # v0.9.0 Q8: the seat qualifier (see founding_district)
+
+    @property
+    def founding_district(self):
+        """The district a seat city must hold complete: the `requires_district`
+        of `founding_building` (validated to exist at parse)."""
+        return BUILDING_REQUIRES_DISTRICT[self.founding_building]
 
 
 @dataclass(frozen=True)
@@ -160,9 +177,11 @@ def check_pressure_weights(citizen_weight, reach, where="[religion]"):
                          f"range ({reach})")
 
 
-def parse_religion(cfg):
+def parse_religion(cfg, building_names=BUILDING_NAMES,
+                   requires_district=BUILDING_REQUIRES_DISTRICT):
     """Parse one `[religion]` table -> ReligionRules; raises ValueError on an
-    unknown or missing key or a value out of its bound."""
+    unknown or missing key, a value out of its bound, or a
+    `founding_building` that is no building or has no `requires_district`."""
     if not isinstance(cfg, dict):
         raise ValueError("[religion] must be a table")
     unknown = set(cfg) - _RELIGION_KEYS
@@ -182,6 +201,13 @@ def parse_religion(cfg):
     if not isinstance(cfg["exclusive"], bool):
         raise ValueError(f"[religion] exclusive must be true or false, got {cfg['exclusive']!r}")
     values["exclusive"] = cfg["exclusive"]
+    building = cfg["founding_building"]
+    if building not in building_names:
+        raise ValueError(f"[religion] founding_building {building!r} is not a building")
+    if requires_district.get(building) is None:
+        raise ValueError(f"[religion] founding_building {building!r} has no requires_district: "
+                         f"a seat is a city with that district complete and the building")
+    values["founding_building"] = building
     check_pressure_weights(values["citizen_weight"], values["range"])
     return ReligionRules(**values)
 
@@ -269,3 +295,16 @@ PANTHEONS = parse_pantheons(CFG.get("pantheons", {}))
 PANTHEON_ORDER = tuple(PANTHEONS)
 BELIEFS = parse_beliefs(CFG.get("beliefs", {}))
 _check_unique(PANTHEONS, BELIEFS)
+
+
+def belief_tier(name):
+    """The tier of belief `name`, or None for a name that is no belief. Reads
+    BELIEFS at call time (a test may add a synthetic belief)."""
+    spec = BELIEFS.get(name)
+    return None if spec is None else spec.tier
+
+
+def beliefs_of_tier(tier):
+    """The belief names of `tier`, in config order (the defaults' order).
+    Reads BELIEFS at call time."""
+    return tuple(name for name, spec in BELIEFS.items() if spec.tier == tier)

@@ -242,7 +242,8 @@ def growth_percent(margin_tenths, bands=None):
 # `[gold]` and `[faith]` the purchase multiplier (#116 P5, PURCHASE_MULTIPLIER).
 _POOL_TABLE_EXTRA_KEYS = {
     "gold": ("upgrade_per_production", "upgrade_base", "purchase_multiplier"),
-    "faith": ("purchase_multiplier",),
+    # v0.9.0 Q8: the building categories a `faith_purchase` effect may unlock.
+    "faith": ("purchase_multiplier", "purchase_building_categories"),
 }
 
 
@@ -310,6 +311,21 @@ BUILDING_AMENITY = {
 }
 
 
+# Religious weight (v0.9.0 Q9, docs/districts_religion_design.md §7.4): the
+# optional `religious_weight` column, WHOLE points added to the weight a city's
+# citizens press with for the religion the city follows (1 + the columns of
+# its buildings and complete districts). Read by civulator/game/religion.py
+# only; nonzero entries only.
+BUILDING_RELIGIOUS_WEIGHT = {
+    name: points
+    for name, points in (
+        (name, whole_points(table["religious_weight"], f"[buildings.{name}] religious_weight"))
+        for name, table in _BUILDINGS_CFG.items() if "religious_weight" in table
+    )
+    if points
+}
+
+
 # --- Availability columns (#116 P2, docs/progression_design.md §4.1, §6.2) ---
 #
 # Every key a table may carry: a typo in a gating column (`requires_techs`)
@@ -329,6 +345,7 @@ BUILDING_KEYS = frozenset({
     "purchasable", "effects",  # #116 P4
     "loyalty",  # #116 P7
     "amenity",  # v0.9.0 Q2
+    "religious_weight",  # v0.9.0 Q9
 })
 
 
@@ -617,7 +634,35 @@ SIEGE_CLASS = frozenset(name for name, cls in COMBAT_CLASS.items() if cls == "si
 # fighting combat class on land (`is_land_military`; Civ 6: "land military
 # units" -- a ship is not one, v0.9.0 Q5).
 FAITH_CATEGORY_LAND_MILITARY = "land_military"
-FAITH_CATEGORIES = (FAITH_CATEGORY_LAND_MILITARY,)
+
+
+def parse_building_faith_categories(table, where="[faith] purchase_building_categories"):
+    """`[faith] purchase_building_categories` (v0.9.0 Q8, Jesuit Education)
+    -> {category: district name}: the buildings a category covers are those
+    whose `requires_district` is that district. Category names are strings
+    distinct from the unit category; the district names are checked against
+    the district registry by effects.py, which loads after it."""
+    if not isinstance(table, dict):
+        raise ValueError(f"{where} must be a table of category = district")
+    out = {}
+    for category, district in table.items():
+        if not isinstance(category, str) or not category:
+            raise ValueError(f"{where}: a category must be a non-empty string, got {category!r}")
+        if category == FAITH_CATEGORY_LAND_MILITARY:
+            raise ValueError(f"{where}: {category!r} is the unit category, not a building one")
+        if not isinstance(district, str) or not district:
+            raise ValueError(f"{where} {category}: must name a district, got {district!r}")
+        if district in out.values():
+            raise ValueError(f"{where}: district {district!r} is named by two categories")
+        out[category] = district
+    return out
+
+
+# category -> district (v0.9.0 Q8): a building is in the category when its
+# `requires_district` is that district (`building_faith_category`).
+BUILDING_FAITH_CATEGORIES = parse_building_faith_categories(
+    CFG["faith"]["purchase_building_categories"])
+FAITH_CATEGORIES = (FAITH_CATEGORY_LAND_MILITARY, *BUILDING_FAITH_CATEGORIES)
 
 
 def faith_category(unit_type, domain):
@@ -628,6 +673,21 @@ def faith_category(unit_type, domain):
     civulator/game/purchasing.py."""
     if is_land_military(unit_type, domain):
         return FAITH_CATEGORY_LAND_MILITARY
+    return None
+
+
+def building_faith_category(building):
+    """The faith-purchase category of `building` (v0.9.0 Q8): the
+    BUILDING_FAITH_CATEGORIES entry whose district is the building's
+    `requires_district`, or None (no district, a district no category
+    names, a name that is no building). Read by civulator/game/purchasing.py,
+    the building twin of `faith_category`."""
+    district = BUILDING_REQUIRES_DISTRICT.get(building)
+    if district is None:
+        return None
+    for category, named in BUILDING_FAITH_CATEGORIES.items():
+        if named == district:
+            return category
     return None
 
 # `[combat] class_bonuses` (see parse_class_bonuses and config.toml): the

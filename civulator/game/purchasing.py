@@ -14,10 +14,13 @@ about an item depends on how it was obtained.
 - `can_purchase(player, city, kind, name, resource)` -- `kind` is "unit" or
   "building" and `resource` "gold" or "faith"; the city is the player's; the
   item lists the resource in its `purchasable` column, or the resource is
-  faith, the item a unit and its faith category (`unit_model.faith_category`)
-  is unlocked by a `faith_purchase` effect in force for the city; the city
-  could start it (`City.can_produce_unit` for a unit, `city_can_build_building`
-  and not already owned for a building); and the pool covers 10 x the price.
+  faith and the item's faith category -- `unit_model.faith_category` for a
+  unit, `building_faith_category` for a building (v0.9.0 Q8, Jesuit
+  Education: the buildings of a `[faith] purchase_building_categories`
+  district) -- is unlocked by a `faith_purchase` effect in force for the
+  city; the city could start it (`City.can_produce_unit` for a unit,
+  `city_can_build_building` and not already owned for a building); and the
+  pool covers 10 x the price.
 
 Pure: reads parsed config, the effects in force and live state.
 """
@@ -30,6 +33,7 @@ from ..unit_model import (
     PURCHASE_MULTIPLIER,
     PURCHASE_RESOURCES,
     UNIT_PURCHASABLE,
+    building_faith_category,
     faith_category,
 )
 from ..terrain_model import DOMAIN_LAND
@@ -106,8 +110,10 @@ def faith_purchase_categories(player, city):
 
 def purchasable_with(player, city, kind, name, resource):
     """Whether the item may be bought with `resource` in `city`: its
-    `purchasable` column lists it, or it is a unit bought with faith whose
-    faith category is unlocked there (`faith_purchase_categories`)."""
+    `purchasable` column lists it, or it is bought with faith and its faith
+    category -- a unit's (`faith_category`) or a building's
+    (`building_faith_category`, v0.9.0 Q8) -- is unlocked there
+    (`faith_purchase_categories`)."""
     if kind == ITEM_UNIT:
         listed = UNIT_PURCHASABLE.get(name, ())
     elif kind == ITEM_BUILDING:
@@ -116,9 +122,12 @@ def purchasable_with(player, city, kind, name, resource):
         return False
     if resource in listed:
         return True
-    if resource != RESOURCE_FAITH or kind != ITEM_UNIT:
+    if resource != RESOURCE_FAITH:
         return False
-    category = faith_category(name, MOVEMENT_DOMAIN.get(name, DOMAIN_LAND))
+    if kind == ITEM_UNIT:
+        category = faith_category(name, MOVEMENT_DOMAIN.get(name, DOMAIN_LAND))
+    else:
+        category = building_faith_category(name)
     return category is not None and category in faith_purchase_categories(player, city)
 
 

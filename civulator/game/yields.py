@@ -26,7 +26,13 @@ never scaled). The terms:
 - the `city_yield` effects in force for the city (#116 P4): each entry's
   amount of `name`, only in the city holding `[city] capital_building` when
   `capital_only`, times the city's complete specialty districts when
-  `per_district`;
+  `per_district`, times its complete wonders when `per_wonder` (v0.9.0 Q8);
+- the cross-yield term (v0.9.0 Q8, `_cross_yield_tenths`): the `cross_yield`
+  effects in force whose `to` is `name` -- each complete district of the
+  effect's `from_district` pays `percent` of its raw adjacency score
+  (`adjacency_score`, the owner's rows included, before any
+  `adjacency_percent`) as `name`, floored once in tenths, beside its normal
+  yield;
 - the trade routes of the city's owner that start here (#116 P5,
   `trade.yields_to_origin`): per route, the `[trade]` table entries of its
   destination and the `route_yield` effects in force, in tenths of every
@@ -51,6 +57,7 @@ on its own config table or an effect, never a term here.
 from ..effects import (
     KIND_ADJACENCY_PERCENT,
     KIND_CITY_YIELD,
+    KIND_CROSS_YIELD,
     KIND_IMPROVEMENT_YIELD,
     KIND_REGIONAL_YIELD,
     active_effects,
@@ -65,7 +72,13 @@ from ..unit_model import (
     YIELD_PER_POP,
 )
 from .amenities import yield_percent as amenity_yield_percent
-from .districts import district_spec, district_yields, specialty_districts
+from .districts import (
+    adjacency_score,
+    complete_wonders,
+    district_spec,
+    district_yields,
+    specialty_districts,
+)
 from .loyalty import loyalty_percent
 from .trade import yields_to_origin
 
@@ -78,7 +91,8 @@ def _effect_yield(city, name, in_force):
     effects), in tenths of `name`: each entry's amount, skipped outside the
     city holding the capital building when `capital_only`, multiplied by the
     city's complete specialty districts when `per_district` (#116 P4,
-    design §3). The one consumer of `city_yield`."""
+    design §3), by its complete wonders when `per_wonder` (v0.9.0 Q8). The
+    one consumer of `city_yield`."""
     total = 0
     for effect in in_force:
         if effect.kind != KIND_CITY_YIELD:
@@ -90,7 +104,34 @@ def _effect_yield(city, name, in_force):
             continue
         if effect["per_district"]:
             amount *= len(specialty_districts(city))
+        if effect["per_wonder"]:
+            amount *= len(complete_wonders(city))
         total += amount
+    return total
+
+
+def _cross_yield_tenths(city, name, in_force):
+    """Tenths of `name` from the `cross_yield` effects among `in_force` whose
+    `to` is `name` (v0.9.0 Q8, districts_religion_design §7.3): for each
+    complete district of the city of the effect's `from_district`, `percent`
+    of its adjacency score -- the raw score (`adjacency_score` with the
+    owner's rows, before any `adjacency_percent`), floored once in tenths --
+    paid as `name` beside the district's own yield. The one consumer of
+    `cross_yield`; food and production reach `calculate_food` /
+    `calculate_production` through `city_yield`."""
+    entries = [e for e in in_force if e.kind == KIND_CROSS_YIELD and e["to"] == name]
+    if not entries:
+        return 0
+    game_map = city.player.game_env.map
+    total = 0
+    for district in city.districts:
+        if not district.complete:
+            continue
+        for effect in entries:
+            if effect["from_district"] != district.type:
+                continue
+            score = adjacency_score(district.type, district.coordinates, game_map, city.player)
+            total += 10 * score * effect["percent"] // 100
     return total
 
 
@@ -220,8 +261,8 @@ def _improvement_tenths(city, name, in_force):
 
 def _source_tenths(city, name):
     """Every term the six yields share, in tenths: building and complete-
-    district columns, district adjacency, effects, the improvement effects,
-    routes and the regional term."""
+    district columns, district adjacency, effects, the cross-yield term, the
+    improvement effects, routes and the regional term."""
     in_force = active_effects(city.player, city)
     columns = sum(BUILDING_YIELDS[name].get(b, 0) for b in city.buildings)
     columns += sum(
@@ -229,6 +270,7 @@ def _source_tenths(city, name):
     )
     adjacency = 10 * district_yields(city, _effect_adjacency_percents(in_force)).get(name, 0)
     return (columns + adjacency + _effect_yield(city, name, in_force)
+            + _cross_yield_tenths(city, name, in_force)
             + _improvement_tenths(city, name, in_force)
             + _route_yield(city, name) + _regional_tenths(city, name, in_force))
 

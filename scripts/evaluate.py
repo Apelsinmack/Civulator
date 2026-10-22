@@ -50,7 +50,8 @@ pending):
 - Victory (#116 P9): each game's `victory` is how it ended, read from
   `civulator.game.victory.determine_outcome` -- the engine's one verdict, never
   re-derived here -- `"elimination"`, `"domination"` (a player holds every
-  Palace), `"score"` (the turn-cap score) or `"draw"` (a tied top score at the
+  Palace), `"religious"` (v0.9.0 Q9, only with `[game] religious_victory`:
+  a religion holds a majority of every living player's cities), `"score"` (the turn-cap score) or `"draw"` (a tied top score at the
   cap), and null for a truncated game. The summary records the engine's
   `game_version` and each side's weights' `weights_game_version` beside it:
   weights saved under an older rules epoch play today's rules (0.7 weights play

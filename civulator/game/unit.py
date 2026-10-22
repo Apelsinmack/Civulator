@@ -467,8 +467,10 @@ class Unit:
         # government's or a policy card's bonus to a combat class, or to
         # every unit), in BOTH roles like the class bonuses, added one by one.
         # Matched by class through the effects interpreter, never by a name
-        # written here.
-        for amount in self._effect_strength_amounts():
+        # written here. The target and this unit's tile go along (v0.9.0 Q8):
+        # an entry conditioned on the target's religion (Crusade) or on the
+        # tile this unit stands on (Defender of the Faith) is decided there.
+        for amount in self._effect_strength_amounts(target):
             strength += amount
 
         # Flanking (issue #59): the unit that is STRIKING gets a bonus per
@@ -483,13 +485,19 @@ class Unit:
 
         return max(0, strength)
 
-    def _effect_strength_amounts(self):
+    def _effect_strength_amounts(self, target=None):
         """The `combat_strength` effect amounts in force for this unit's owner
         that apply to its combat class (or to every unit), in order; none
-        without an owner. Read by get_combat_strength and get_ranged_strength."""
+        without an owner. `target` is what this unit fights (the defender
+        when it strikes, the attacker when it defends) and the tile is this
+        unit's own: the two religious conditions (v0.9.0 Q8) are read from
+        them in `effects.combat_strength_amounts`, for the unit that RECEIVES
+        the bonus (v3 fixes L9). Read by get_combat_strength and
+        get_ranged_strength."""
         if self.player is None:
             return []
-        return combat_strength_amounts(self.player, self.combat_class)
+        return combat_strength_amounts(self.player, self.combat_class,
+                                       target=target, tile=self.coordinates)
 
     def flanking_count(self, target):
         """How many tiles adjacent to `target` hold a flanking unit of ours.
@@ -561,8 +569,9 @@ class Unit:
                 strength += amount
 
         # `combat_strength` effects apply to the shooter's ranged strength
-        # too (#116 P4, design §3: "both roles").
-        for amount in self._effect_strength_amounts():
+        # too (#116 P4, design §3: "both roles"), the target and the
+        # shooter's tile deciding the religious conditions (v0.9.0 Q8).
+        for amount in self._effect_strength_amounts(target):
             strength += amount
 
         return max(0, strength)

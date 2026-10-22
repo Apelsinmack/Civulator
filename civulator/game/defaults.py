@@ -9,8 +9,16 @@ civic, government and policy-loadout defaults; P5 the Trader's
 `GameEnvironment.establish_trade_route` and `Unit.move`); P8 the Worker's
 (`default_workers`: `WorkerUnit.build_improvement` and `Unit.move`); v0.9.0
 Q7 the pantheon's (`default_pantheon`, through
-`GameEnvironment.choose_pantheon`). The two
+`GameEnvironment.choose_pantheon`); v0.9.0 Q8 founding and beliefs
+(`default_found_religion` / `default_add_belief`, through
+`GameEnvironment.found_religion` / `add_belief`). The two
 unit defaults that walk share one step rule, `step_toward`.
+
+v0.9.0 Q9 adds NO default (districts_religion_design §9): no engine default
+spends faith on spreading a religion (`GameEnvironment.spread_religion`) or
+on an inquisition (`GameEnvironment.inquisition`) -- without an agent,
+religions spread by passive pressure only, and the faith they cost is the
+upkeep the religion step debits. Both are agent actions of #99.
 
 "Newest" (v2 fixes, N2): a card unlocked by a civic later in
 `player.civics` (completion order) is newer; among the cards of one civic,
@@ -39,8 +47,43 @@ from .trade import (
     route_capacity,
 )
 from .unit import WorkerUnit
-from .religion import can_choose_pantheon
-from ..religion_model import PANTHEON_ORDER
+from .religion import can_add_belief, can_choose_pantheon, can_found_religion, free_beliefs
+from ..religion_model import PANTHEON_ORDER, TIER_FOLLOWER, TIER_FOUNDER
+
+
+def default_found_religion(player, env):
+    """The (founder belief, follower belief) pair the engine founds a religion
+    with for `player`, or None (v0.9.0 Q8, districts_religion_design §9):
+    the first FREE founder belief and the first FREE follower belief in
+    config order (`religion.free_beliefs`), when `can_found_religion` holds
+    for that pair -- which it does for every free pair or for none, since the
+    pair clauses are only "exists, right tier, not taken". Braindead by
+    design: it weighs nothing about what the beliefs do; it exists so
+    agentless games and the smoke script found religions. #99 replaces it
+    with the agent's `found_religion` action. Deterministic: config-order
+    walks, no RNG, no set iteration."""
+    founders = free_beliefs(env, TIER_FOUNDER)
+    followers = free_beliefs(env, TIER_FOLLOWER)
+    if not founders or not followers:
+        return None
+    pair = (founders[0], followers[0])
+    return pair if can_found_religion(player, pair[0], pair[1], env) else None
+
+
+def default_add_belief(player, env):
+    """The belief the engine adds to `player`'s religion, or None (v0.9.0 Q8,
+    design §9): the first FREE belief of the due tier (`Religion.due_tier`)
+    in config order that `can_add_belief` allows -- so nothing while the
+    rung's cost is not covered or the ladder is climbed. Braindead by
+    design; #99 replaces it with the agent's `add_belief` action.
+    Deterministic: a config-order walk, no RNG, no set."""
+    religion = player.religion
+    if religion is None or religion.due_tier is None:
+        return None
+    for name in free_beliefs(env, religion.due_tier):
+        if can_add_belief(player, name, env):
+            return name
+    return None
 
 
 def default_pantheon(player, env):

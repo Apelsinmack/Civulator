@@ -33,6 +33,11 @@ districts and wonders. The end line reports districts placed / completed,
 the Aqueduct housing seen, and per player the wonders completed, the wonder
 races lost and the complete wonders held at the end.
 
+Religion (v0.9.0 Q7-Q9): only the engine defaults act -- pantheon, founding
+and beliefs; nothing here spreads a religion or holds an inquisition (no
+default does, design §9), so the end line's conversions are passive
+pressure alone, beside the upkeep lapses and the spreads (always 0 here).
+
 Usage: python scripts/smoke_random_selfplay.py [--seed 4242] [--rounds 250]
 """
 
@@ -244,7 +249,17 @@ def main():
           f"overseas_routes={[env.episode_stats[i]['overseas_routes'] for i in range(num_players)]} "
           f"pantheons_chosen={[env.episode_stats[i]['pantheons_chosen'] for i in range(num_players)]} "
           f"faith_spent_religion_tenths={[env.episode_stats[i]['faith_spent_religion'] for i in range(num_players)]} "
-          f"pantheons={[p.pantheon for p in env.players]}")
+          f"pantheons={[p.pantheon for p in env.players]} "
+          f"religions_founded={[env.episode_stats[i]['religions_founded'] for i in range(num_players)]} "
+          f"beliefs_added={[env.episode_stats[i]['beliefs_added'] for i in range(num_players)]} "
+          f"founder_pay_tenths={[env.episode_stats[i]['founder_pay_tenths'] for i in range(num_players)]} "
+          f"religions={[None if p.religion is None else p.religion.beliefs for p in env.players]} "
+          f"follower_cities={[sum(c.religion == p.player_index for q in env.players for c in q.cities) if p.religion is not None else 0 for p in env.players]} "
+          f"faith_pool_tenths={[p.faith for p in env.players]} "
+          f"cities_converted_in={[env.episode_stats[i]['cities_converted_in'] for i in range(num_players)]} "
+          f"cities_converted_out={[env.episode_stats[i]['cities_converted_out'] for i in range(num_players)]} "
+          f"spreads={[env.episode_stats[i]['spreads'] for i in range(num_players)]} "
+          f"religion_lapsed_rounds={[env.episode_stats[i]['religion_lapsed_rounds'] for i in range(num_players)]}")
 
 
 if __name__ == "__main__":

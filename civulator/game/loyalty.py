@@ -9,7 +9,8 @@ digested in docs/civ6_progression_reference.md §11), in integers:
     pressure(C, P) = the sum over P's cities c within RANGE of C (canonical
                      wrap distance, inclusive) of
                      population(c) * (CITIZEN_WEIGHT - distance(c, C));
-                     C counts for its owner at distance 0
+                     C counts for its owner at distance 0 (`pressure_terms`,
+                     the one formula religious pressure shares, v0.9.0 Q9)
     own, foreign   = the owner's pressure; every other living player's, summed
     drift          = sign(own - foreign)
                      * (2 * DRIFT_GAIN * |own - foreign| // (2 * min(own, foreign) + 1)),
@@ -30,6 +31,10 @@ digested in docs/civ6_progression_reference.md §11), in integers:
                      + the loyalty column of the city's amenity band
                        (`amenities.loyalty_term`, v0.9.0 Q2: an unhappy city
                        loses loyalty -- the replacement for Civ 6's rebels)
+                     + `[religion] foreign_religion_loyalty` while the city
+                       follows a religion its owner did not found
+                       (`religion.loyalty_term`, v0.9.0 Q9, v3 fixes L5; Civ 6
+                       has no such term -- Erik's accepted call C6)
 
 `GameEnvironment._loyalty_phase` applies the deltas once per round, at round
 end, computed for every city from the state at the start of the phase, and
@@ -167,22 +172,35 @@ BANDS = RULES.bands
 # --- Pressure and drift -------------------------------------------------------------
 
 
+def pressure_terms(sources, target, env, reach, citizen_weight, weight=None):
+    """THE pressure formula, shared by loyalty and religion (v0.9.0 Q9,
+    districts_religion_design §7.4: "one function, two callers"): for each
+    city `c` of `sources`, in the order given, within `reach` of `target`
+    (canonical wrap distance, inclusive), yields `(c, population(c) *
+    weight(c) * (citizen_weight - distance(c, target)))`. `weight` is a
+    function of the source city, 1 when None (loyalty); religion passes the
+    religious weight. `target` itself, if among the sources, counts at
+    distance 0."""
+    distance = env.map.distance_function
+    for other in sources:
+        d = distance(other.coordinates, target.coordinates)
+        if d > reach:
+            continue
+        w = 1 if weight is None else weight(other)
+        yield other, other.population * w * (citizen_weight - d)
+
+
 def pressures(city, env):
     """Player index -> the pressure that player exerts on `city`, for every
     living player with a city within RANGE of it (a player absent from the
     dict exerts 0). The cities are read in `city_by_id` order; `city` itself
-    counts for its owner at distance 0."""
-    distance = env.map.distance_function
+    counts for its owner at distance 0. The formula is `pressure_terms`."""
+    living = [env.city_by_id[city_id] for city_id in sorted(env.city_by_id)
+              if not env.city_by_id[city_id].player.is_dead]
     out = {}
-    for city_id in sorted(env.city_by_id):
-        other = env.city_by_id[city_id]
-        if other.player.is_dead:
-            continue
-        d = distance(other.coordinates, city.coordinates)
-        if d > RANGE:
-            continue
+    for other, term in pressure_terms(living, city, env, RANGE, CITIZEN_WEIGHT):
         index = other.player.player_index
-        out[index] = out.get(index, 0) + other.population * (CITIZEN_WEIGHT - d)
+        out[index] = out.get(index, 0) + term
     return out
 
 
@@ -255,14 +273,16 @@ def effect_loyalty(city, env, garrisoned):
 def loyalty_delta(city, env):
     """What the city's loyalty moves by this round (before the clamp to
     LOYALTY_MIN..MAXIMUM): drift + garrison + columns + effects + the
-    city's amenity band (`amenities.loyalty_term`, v0.9.0 Q2)."""
+    city's amenity band (`amenities.loyalty_term`, v0.9.0 Q2) + the
+    foreign-religion term (`religion.loyalty_term`, v0.9.0 Q9)."""
     from . import amenities  # amenities reads `is_garrisoned` from this module
+    from . import religion  # religion reads `pressure_terms` from this module
 
     own, foreign = _own_and_foreign(city, pressures(city, env))
     garrisoned = is_garrisoned(city, env)
     return (drift(own, foreign) + (GARRISON if garrisoned else 0)
             + column_loyalty(city) + effect_loyalty(city, env, garrisoned)
-            + amenities.loyalty_term(city, env))
+            + amenities.loyalty_term(city, env) + religion.loyalty_term(city, env))
 
 
 def clamp(loyalty):

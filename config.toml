@@ -649,6 +649,10 @@ domination_victory = false  # #126 (Erik 2026-10-22): off on every map size -- l
                          # does not lose the game; a player is out only with no city and no
                          # Settler left (elimination). true: holding every Palace wins
                          # (victory.py, #116 P9). Read only through victory.DOMINATION_ENABLED.
+religious_victory = false   # v0.9.0 Q9 (design §7.5, open call C7, off like domination): true --
+                         # a religion followed by more than half of the cities of EVERY living
+                         # player wins for its (living) founder. Read only through
+                         # victory.RELIGIOUS_ENABLED.
 
 # The turn-cap score (#55, #116 P9; progression design §11): the sum of one
 # term per kind of thing a player holds, a count times its weight. With
@@ -1139,18 +1143,31 @@ base = 0.0
 per_pop = 0.0
 # Civ 6: faith is 2x production (#116 P5). A whole number.
 purchase_multiplier = 2
+# Building categories a `faith_purchase` effect may unlock (v0.9.0 Q8, Jesuit
+# Education): category -> the district whose `requires_district` buildings it
+# covers. `land_military` (units) is not a row here: it derives from the
+# combat classes (unit_model.is_land_military). Read by unit_model
+# (BUILDING_FAITH_CATEGORIES, building_faith_category); the district names
+# are checked against the district registry when effects.py loads.
+purchase_building_categories = { campus_buildings = "Campus", theater_buildings = "Theater Square" }
 
 # --- Religion (v0.9.0 Q7; docs/districts_religion_design.md §7, §7.6) ---------
 # Read only by civulator/religion_model.py. Every key is parsed and validated
-# now; Q7 consumes only `pantheon_cost` (game/religion.py can_choose_pantheon,
-# GameEnvironment.choose_pantheon). Faith costs are whole points (the faith
-# pool is int tenths). `citizen_weight` must exceed `range` (v3 fixes L3).
+# at load; Q7 consumes `pantheon_cost` (game/religion.py can_choose_pantheon,
+# GameEnvironment.choose_pantheon), Q8 `found_cost`, `belief_costs`,
+# `max_religions`, `exclusive` and `founding_building` (founding and beliefs);
+# the spread keys are Q9's. Faith costs are whole points (the faith pool is
+# int tenths). `citizen_weight` must exceed `range` (v3 fixes L3).
 [religion]
 pantheon_cost = 25            # Civ 6 (Standard speed)
 found_cost = 200              # Claude's starting value (§7.3)
 belief_costs = [300, 500]     # tier 2, tier 3
 max_religions = 0             # 0 = every player may found one
 exclusive = true              # a belief belongs to one religion (Civ 6)
+# The building whose city may seat a religion (§7.3: "a complete Holy Site
+# with a Temple"): an own city holding it, with its `requires_district`
+# complete, qualifies; the lowest-id one becomes the seat (v3 fixes L1).
+founding_building = "Temple"
 range = 9                     # pressure range, hexes (= [loyalty] range)
 citizen_weight = 10           # as [loyalty]
 secular_weight = 2            # a religionless city's own resistance per citizen
@@ -1224,6 +1241,115 @@ effects = [{ kind = "adjacency_row", district = "Holy Site", amount = 1, terrain
 [pantheons."Sacred Path"]
 description = "Holy Site +1 Faith per adjacent Rainforest tile (Civ 6)."
 effects = [{ kind = "adjacency_row", district = "Holy Site", amount = 1, terrain = { features = ["Rainforest"] } }]
+
+# Beliefs (v0.9.0 Q8; §7.3): a [beliefs.<Name>] table with `tier` (founder |
+# follower | enhancer), `effects`, `counts` on a founder belief (all |
+# foreign: which follower cities pay it), an optional `requires_building` on a
+# follower belief (in force only in follower cities holding it). Config order
+# is the engine defaults' order (defaults.default_found_religion /
+# default_add_belief). Civ 6 names and values where the mechanic exists
+# (docs/civ6_progression_reference.md); Scholars' Patron is ours (#93).
+#
+# FOUNDER beliefs (tier 1, one per religion) pay the founder per follower
+# city in the religion step of the economy phase -- the one kind
+# `per_follower_city`, read there and nowhere else. Never "in force".
+[beliefs.Tithe]
+tier = "founder"
+counts = "all"
+description = "+1 Gold per city following this religion (Civ 6)."
+effects = [{ kind = "per_follower_city", gold = 1 }]
+
+[beliefs.Pilgrimage]
+tier = "founder"
+counts = "foreign"
+description = "+2 Faith per foreign city following this religion (Civ 6)."
+effects = [{ kind = "per_follower_city", faith = 2 }]
+
+[beliefs."World Church"]
+tier = "founder"
+counts = "all"
+description = "+1 Culture per city following this religion (Civ 6)."
+effects = [{ kind = "per_follower_city", culture = 1 }]
+
+[beliefs."Cross-Cultural Dialogue"]
+tier = "founder"
+counts = "foreign"
+description = "+1 Science per foreign city following this religion (Civ 6)."
+effects = [{ kind = "per_follower_city", science = 1 }]
+
+# FOLLOWER beliefs (tiers 1 and 2): in force in EVERY city that follows the
+# religion, whoever owns it (effects.py, the `belief` source; scope city).
+[beliefs."Work Ethic"]
+tier = "follower"
+description = "Holy Site adjacency also paid as Production (Civ 6)."
+effects = [{ kind = "cross_yield", from_district = "Holy Site", to = "production", percent = 100 }]
+
+[beliefs."Choral Music"]
+tier = "follower"
+description = "Holy Site adjacency also paid as Culture (Civ 6)."
+effects = [{ kind = "cross_yield", from_district = "Holy Site", to = "culture", percent = 100 }]
+
+[beliefs."Scholars' Patron"]
+tier = "follower"
+description = "Half the Campus adjacency also paid as Culture (ours, #93: science gives culture)."
+effects = [{ kind = "cross_yield", from_district = "Campus", to = "culture", percent = 50 }]
+
+[beliefs."Feed the World"]
+tier = "follower"
+requires_building = "Shrine"
+description = "+2 Food in follower cities with a Shrine (Civ 6: Shrines and Temples give Food)."
+effects = [{ kind = "city_yield", food = 2 }]
+
+[beliefs."Religious Community"]
+tier = "follower"
+description = "+1 Housing from the Shrine and +1 from the Temple (Civ 6)."
+effects = [
+    { kind = "housing_with_building", building = "Shrine", amount = 1 },
+    { kind = "housing_with_building", building = "Temple", amount = 1 },
+]
+
+[beliefs."Zen Meditation"]
+tier = "follower"
+description = "+1 Amenity in follower cities with at least 2 specialty districts (Civ 6)."
+effects = [{ kind = "amenity", amount = 1, min_districts = 2 }]
+
+[beliefs."Jesuit Education"]
+tier = "follower"
+description = "Campus and Theater Square buildings may be bought with Faith (Civ 6)."
+effects = [{ kind = "faith_purchase", categories = ["campus_buildings", "theater_buildings"] }]
+
+[beliefs."Divine Inspiration"]
+tier = "follower"
+description = "+4 Faith per complete wonder in the city (Civ 6)."
+effects = [{ kind = "city_yield", faith = 4, per_wonder = true }]
+
+# ENHANCER beliefs (tier 3, the founder only; scope player): how the religion
+# spreads (`religion_param`, read by game/religion.py's pressure rules -- Q9)
+# and what it does in war (the two `combat_strength` attributes).
+[beliefs."Itinerant Preachers"]
+tier = "enhancer"
+description = "Pressure reaches 3 tiles further (Civ 6: +30% range; both range and citizen_weight rise, v3 fixes L3)."
+effects = [{ kind = "religion_param", range = 3 }]
+
+[beliefs."Missionary Zeal"]
+tier = "enhancer"
+description = "Directed spread adds 50% more pressure (ours, for Civ 6's Missionary bonuses)."
+effects = [{ kind = "religion_param", spread_amount_percent = 50 }]
+
+[beliefs."Holy Order"]
+tier = "enhancer"
+description = "Spreading and inquisitions cost 30% less Faith (Civ 6)."
+effects = [{ kind = "religion_param", cost_percent = -30 }]
+
+[beliefs.Crusade]
+tier = "enhancer"
+description = "+10 Combat Strength attacking a city (or fortified district) of another or no religion (Civ 6)."
+effects = [{ kind = "combat_strength", applies_to = ["all"], amount = 10, vs_city_of_other_religion = true }]
+
+[beliefs."Defender of the Faith"]
+tier = "enhancer"
+description = "+5 Combat Strength for units on tiles owned by a city following this religion, attacking or defending (Civ 6)."
+effects = [{ kind = "combat_strength", applies_to = ["all"], amount = 5, in_follower_territory = true }]
 
 # --- Trade routes (#116 P5; docs/progression_design.md §7.4 and "v2 fixes") ----
 # Read only by civulator/game/trade.py. A route runs from a city centre of its
@@ -1941,7 +2067,9 @@ effects = [{ kind = "production_percent", target = { kind = "wonder", wonder_era
 # `food` and `production` per turn into the city's own — all read by
 # civulator/game/yields.py city_yield, never by name. `loyalty` (optional,
 # default 0, whole points, #116 P7): per round into the city's loyalty, read by
-# civulator/game/loyalty.py.
+# civulator/game/loyalty.py. `religious_weight` (optional, default 0, whole
+# points, v0.9.0 Q9): added to the weight the city's citizens press with for the
+# religion it follows, read by civulator/game/religion.py.
 # Availability columns (#116 P2, all optional; checked by
 # civulator/game/availability.py city_can_build_building, the one predicate
 # production, the build mask and purchasing call):
@@ -2019,6 +2147,7 @@ requires_district = "Holy Site"
 faith = 2
 maintenance = 1
 purchasable = ["gold", "faith"]
+religious_weight = 1     # v0.9.0 Q9: + this to the religious weight of its city's followers' pressure
 
 [buildings.Temple]
 production_cost = 120
@@ -2028,6 +2157,7 @@ requires_building = "Shrine"
 faith = 4
 maintenance = 2
 purchasable = ["gold", "faith"]
+religious_weight = 1     # v0.9.0 Q9 (a seat with Holy Site, Shrine and Temple weighs 4)
 
 [buildings.Amphitheater]
 production_cost = 150
@@ -2165,6 +2295,10 @@ effects = [{ kind = "loyalty", amount = 1, per_population = true }]
 #                        none declared today
 #   loyalty              optional whole points per round into its city's loyalty
 #                        once complete (default 0; #116 P7, read by game/loyalty.py)
+#   religious_weight     optional whole points added, once complete, to the weight
+#                        its city's citizens press with for the religion the city
+#                        follows (default 0; v0.9.0 Q9, read by game/religion.py;
+#                        the [buildings.*] column of the same name is the same rule)
 #   requires_tech        a [techs.*] name the owner must know to place it
 #                        (#116 P2; checked through can_place_district)
 #   requires_civic       a [civics.*] name the owner must know to place it (#116 P4)
@@ -2233,6 +2367,7 @@ requires_tech = "Astrology"
 maintenance = 1
 cost_model = "discounted"
 discount_percent = 40
+religious_weight = 1     # v0.9.0 Q9: + this to its city's religious weight once complete
 adjacency_yield = "faith"
 adjacency = [
     { amount = 1, terrain = { relief = ["mountain"] } },

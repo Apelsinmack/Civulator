@@ -146,6 +146,13 @@ def ship_spawn_districts(city):
     return [d for d in city.districts if d.complete and district_spec(d.type).ship_spawn]
 
 
+def complete_wonders(city):
+    """The city's COMPLETE wonders (`kind == "wonder"` registry entries), in
+    placement order (v0.9.0 Q8): what a `city_yield` effect with
+    `per_wonder` multiplies by, read in `yields._effect_yield`."""
+    return [d for d in city.districts if d.complete and is_wonder(d.type)]
+
+
 def specialty_districts(city):
     """The city's COMPLETE specialty districts, in placement order: registry
     entries with `kind == "district"` that take a population slot
