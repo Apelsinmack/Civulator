@@ -95,6 +95,7 @@ the Slinger–Horseman pair).
 | `[gold] purchase_multiplier`, `[faith] purchase_multiplier`, `upgrade_per_production`, `upgrade_base` | purchase and upgrade prices | `gold_spent_purchases`, `faith_spent_purchases`, `units_upgraded` |
 | `[units.*] maintenance`, Conscription | army size the economy carries | `gold_maintenance`, `units_disbanded` |
 | `[trade] range`, `duration_turns`, the two yield tables | route value | `trade_routes_established`, the smoke script's route lines |
+| `[trade] sea_range`, `overseas_percent` (v0.9.0 Q6: 0 switches the jump off) | how far Harbors reach by water; the yield multiplier of a sea route between two landmasses | `sea_routes`, `overseas_routes` (the smoke end line) |
 | `[wonders] consolation_percent` (0: the pool is not sunk, so a loser keeps its production) | the cost of losing a race | `wonders_completed`, `wonder_races_lost` |
 | `[improvements.*] food/production/gold/housing` | what Workers build and what tiles are worth | `improvements_built` |
 | `[districts] cost_progress_factor` | district price over the game (`game_progress` = the larger tree fraction) | district placements in the smoke log |
@@ -118,7 +119,7 @@ All in `civulator/game/defaults.py`, each called from exactly one place in
 | `default_research` / `default_civic` | cheapest available by (scaled cost, config index) | `set_research` / `set_civic` |
 | `default_government` | highest tier available, config order | `set_government` |
 | `default_loadout` | keep legal cards, fill empty slots with the newest unlocked card of the slot's type (runs on civic completion and government change) | `set_policies` |
-| `default_trade` | idle Trader on an own centre → best-yield destination; stray Trader steps home | `establish_trade_route` + a move order |
+| `default_trade` | idle Trader on an own centre → best-yield destination over `eligible_routes`, each candidate ranked by `pair_yields` with its overseas flag (v0.9.0 Q6); stray Trader steps home | `establish_trade_route` + a move order |
 | `default_workers` | idle Worker builds the best improvement under it (ties: the one that grants the tile's resource, v0.9.0 Q2), else steps toward the nearest improvable owned tile (a build that grants a resource its owner lacks counts `access_bonus` tiles nearer) | an improvement order (the (option, tile) action space) |
 | — | purchase, upgrade, district and wonder placement have **no** default | `purchase`, `upgrade_unit`, `place_district` |
 
