@@ -1,7 +1,7 @@
 # Districts II and religion (#93 #94 #95 #96 #97 #102): design
 
-> **Status: v3 — the build contract, except for two flagged calls (C10,
-> C11 in §16).** Erik ruled on §16's nine calls (2026-10-22 evening, all
+> **Status: v3.1 — the build contract.** C10 and C11 ruled (R12, R13);
+> Q0 (philox32 RNG) precedes Q1 (R14, `docs/rng_philox_migration.md`). Erik ruled on §16's nine calls (2026-10-22 evening, all
 > accepted); lens 1 (systems) and lens 2 (rules semantics) both "survive with
 > fixes", resolved in "v2 fixes" and "v3 fixes" below, which win over §2–§15
 > where they differ (v3 over v2). Authored
@@ -41,6 +41,9 @@ and whose benefits are shared with whoever adopts it.
 | R8 | **Meaningful choices, no braindead micro** (standing principle, restated). | Every new agent action in §9 is a choice, never a chore: no per-unit religious orders, no per-turn confirmations. |
 | R9 | **State space is not designed now**; it gets one big pass later and may evolve through the whole 0.9 era. | §12 lists what the pass will need to see, nothing more. |
 | R10 | **Open calls C1–C9 all accepted as recommended** (Erik, 2026-10-22 evening: "C1 to C9 all good"). | Boolean strategic access and the gated Swordsman/Horseman; the nine luxuries; the Workshop's regional +1 production within 6 tiles; the Dam ships; the religion numbers and three tiers; `foreign_religion_loyalty = -1`; the religious-victory flag, off; Crusade and Defender of the Faith in combat (C8, explained to Erik: +10 when attacking a city of another or no religion; +5 for units fighting on tiles owned by a city that follows yours); the longer trees, `tech_cost_percent` re-tuned in the balancing pass. §16 is settled; its table stays as the record. |
+| R12 | **C10: embarkation (#76) gets its own design session before the 0.9 bump**, Claude designing it (Erik, 2026-10-22 evening). The overseas jump therefore ships in 0.9 with domestic intercontinental trade possible, not international-only. | Q6 is unchanged (its rule is geographic); #76's design adds the Settler crossing that makes it fire at home. Brief on #76. The opening/fair-start design (#85, #112) is slotted in the same session: a Settler start needs a neighbourhood fairness statistic in mapgen, before 0.9. |
+| R13 | **C11 accepted: `exclusive = true`, religions capped by the four founder beliefs** (Erik, 2026-10-22 evening). Erik on C8: "very good … it also creates an interesting game on which religion to adopt." | §7.3 as in v3 L4. |
+| R14 | **Q0 — the engine RNG moves to the shared `philox32` kit before Q1** (Erik: "I agree with Q0"). | `docs/rng_philox_migration.md`; the 0.9.0 version bump and the golden/fixture re-baseline happen there, Q1 keeps them. |
 | R11 | **Switching the engine RNG to the shared `philox32` kit is wanted if it is not too hard**, now, while 0.9 opens a new epoch anyway (Erik, 2026-10-22 evening). | Not part of this design; feasibility note and patch Q0 proposal in the #31 handoff / `docs/rng_philox_migration.md` when written. If it ships, it ships **before Q1**, so goldens, the fixture and `test_rng` re-baseline once. |
 
 ### 0.3 Principles (from `progression_design.md` §0.2, applied here)
@@ -917,8 +920,8 @@ classes; fairness rule; golden).
 | C7 | Religious victory flag exists, off | yes (mirrors domination) |
 | C8 | Crusade and Defender of the Faith touch combat strength through two new attributes | yes — they are the two beliefs that make religion matter in a war, which is the game the agents actually play |
 | C9 | Three techs + one civic lengthen the trees (+850 science, +220 culture) | accept; re-tune `tech_cost_percent` in the balancing pass, not here |
-| **C10** (v3, open) | The overseas x2 fires only on routes to an opponent on another continent until land units can embark (#76) | accept for 0.9; design #76 (embarkation) as the next sea feature |
-| **C11** (v3, open) | `exclusive = true` caps religions at the number of founder beliefs (4) | keep; four religions on a large map is Civ 6's own feel |
+| C10 (ruled, R12) | The overseas x2 fires only on routes to an opponent on another continent until land units can embark (#76) | Erik: design embarkation before the 0.9 bump, so it fires at home too |
+| C11 (ruled, R13) | `exclusive = true` caps religions at the number of founder beliefs (4) | Erik: accept |
 
 ## v2 fixes (critique round 1, lens: systems reuse / regression / determinism)
 
@@ -1164,8 +1167,7 @@ bug, and it is a dial.
 | Rules semantics, edge cases, principles (Opus, 2026-10-22; `docs/districts_religion_design_critique_lens2.md`) | survives with fixes | 10: (1) founding converted no city; (2) lapse / dead founder undefined; (3) Itinerant Preachers' range beyond `citizen_weight` gives 0 or negative pressure; (4) `exclusive` caps religions at four vs `max_religions = 0`; (5) foreign-religion loyalty term undefined for founders' secular cities; (6) ledger expiry, zero-pressure candidates, streak under immunity and candidate change unstated; (7) luxury assignment static vs greedy; (8) breached Encampment repairs under an enemy and fires at 0; (9) which tile / which defender for Crusade and Defender; (10) the overseas jump is international-only without embarkation. All resolved in "v3 fixes"; (4) and (10) carry open calls C11 and C10. |
 | Systems reuse, regression, determinism (Opus, 2026-10-22; `docs/districts_religion_design_critique_lens1.md`) | survives with fixes | 9: (1) `matches` takes no resource class; (2) access rule self-contradictory, no `improved_by` data; (3) §2.4 unbuildable in `place_resources` and would move `starts`; (4) Encampment unattackable as written, move-in bypasses its refusal; (5) cross-domain melee unreachable through the mask, no move-in `can_enter`, two domain sources; (6) sea routes via `path_finder` read unit positions, overseas bonus changed land routes, multiplier invisible to the Trader default; (7) `improvement_yield` in `Tile.yields` poisons the epoch cache; (8) `landmass_id` duplicates `starts._find_landmasses`; (9) version gate open Q1–Q8. All resolved in "v2 fixes". 20 non-blocking, folded in. |
 
-**Synthesis (v3).** Two lenses, both survive with fixes; 19 blockers
-resolved on paper, none reopening a ruling. **v3 is the build contract**,
-with two calls flagged for Erik (C10 overseas scope, C11 religion cap) whose
-defaults are stated so Q1–Q5 can start before he answers; Q6 (sea trade)
-and Q8 (beliefs) wait for C10 and C11 respectively.
+**Synthesis (v3.1).** Two lenses, both survive with fixes; 19 blockers
+resolved on paper, none reopening a ruling. **v3.1 is the build contract.**
+Order of work before the 0.9 bump: Q0 (RNG) → Q1–Q9 here → the embarkation
+and fair-start designs (#76, #85, #112) and their patches → release 0.9.0.
