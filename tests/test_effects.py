@@ -33,7 +33,15 @@ from civulator.game.housing import housing
 from civulator.game.loyalty import loyalty_delta
 from civulator.game.maintenance import maintenance_due
 from civulator.game.purchasing import faith_purchase_categories, purchase_cost
-from civulator.game.religion import Religion, founder_pay_tenths
+from civulator.game.religion import (
+    Religion,
+    founder_pay_tenths,
+    inquisition_cost_tenths,
+    pressure_citizen_weight,
+    pressure_reach,
+    spread_amount,
+    spread_cost_tenths,
+)
 from civulator.game.trade import DURATION_TURNS, TradeRoute, route_capacity, route_yields
 from civulator.game.unit import MOVEMENT_DOMAIN, is_land_military
 from civulator.game.upgrades import upgrade_cost
@@ -186,6 +194,14 @@ class Stage:
         # The v0.9.0 Q8 consumer of per_follower_city: what the player's
         # founder belief pays this turn (yield -> tenths; empty without one).
         out["founder pay"] = tuple(sorted(founder_pay_tenths(self.player, env).items()))
+        # The v0.9.0 Q9 consumer of religion_param (`religion.religion_params`):
+        # the player's religious pressure range and citizen weight, what a
+        # directed spread adds and costs it, and what an inquisition costs.
+        out["pressure range"] = pressure_reach(self.player)
+        out["pressure citizen weight"] = pressure_citizen_weight(self.player)
+        out["spread amount"] = spread_amount(self.player)
+        out["spread cost"] = spread_cost_tenths(self.player)
+        out["inquisition cost"] = inquisition_cost_tenths(self.player)
         return out
 
 
@@ -647,18 +663,27 @@ def test_in_follower_territory_moves_only_the_strengths_of_a_unit_on_a_follower_
     assert _moved(before, stage.fingerprint()) == set()
 
 
-def test_religion_param_moves_nothing_a_wired_consumer_computes_yet(monkeypatch):
-    """v0.9.0 Q8: a `religion_param` enhancer is in force for the founder but
-    its consumer -- the pressure rules of game/religion.py -- is Q9's, so
-    nothing any wired consumer computes today moves. Breaks if a consumer
-    reads it before Q9 names itself (Q9 adds its pressure to the stage
-    fingerprint and updates this test)."""
+def test_religion_param_moves_exactly_the_pressure_range_spread_and_costs(monkeypatch):
+    """v0.9.0 Q8 parses it, Q9 reads it (`religion.religion_params`): a
+    `religion_param` enhancer of range 3, spread amount +50 % and cost -30 %
+    moves exactly the founder's pressure range and citizen weight (both by 3,
+    v3 fixes L3), the directed-spread amount (x 1.5) and the spread and
+    inquisition costs (x 0.7, floored) -- no yield, strength, price or
+    loyalty term. Breaks if the kind gains a second reader, or one of its
+    three attributes stops reaching its number."""
     stage = Stage(monkeypatch)
     before = stage.fingerprint()
     _with_religion(monkeypatch, stage, enhancer=[{"kind": "religion_param", "range": 3,
                                                   "spread_amount_percent": 50,
                                                   "cost_percent": -30}])
-    assert _moved(before, stage.fingerprint()) == set()
+    after = stage.fingerprint()
+    assert _moved(before, after) == {"pressure range", "pressure citizen weight",
+                                     "spread amount", "spread cost", "inquisition cost"}
+    assert after["pressure range"] == before["pressure range"] + 3
+    assert after["pressure citizen weight"] == before["pressure citizen weight"] + 3
+    assert after["spread amount"] == before["spread amount"] * 150 // 100
+    assert after["spread cost"] == before["spread cost"] * 70 // 100
+    assert after["inquisition cost"] == before["inquisition cost"] * 70 // 100
     assert [e.kind for e in active_effects(stage.player, kind="religion_param")] == ["religion_param"]
 
 
