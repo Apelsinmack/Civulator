@@ -305,6 +305,76 @@ district defences (design §4, §0.4). No version bump: Q0 opened 0.9.0.
   `captured_health_percent` are starting values (dials in the progression
   skill's §4 table).
 
+### The Industrial Zone: strategic row, Workshop 2, regional production, the Dam (#128, patch Q4)
+
+**Rule changes, effects NOT yet measured.** Source:
+`docs/districts_religion_design.md` §5, rulings R5 and R10 (C3 and C4, Erik,
+2026-10-22: both yes); Civ 6 Gathering Storm's Industrial Zone, Workshop,
+Factory and Dam. No version bump: Q0 opened 0.9.0.
+
+- **Strategic adjacency row.** `[districts."Industrial Zone"] adjacency` gains
+  `{ amount = 1, terrain = { resources = ["strategic"] } }` (Civ 6 GS: +1 per
+  adjacent strategic resource). It names the class, so a new strategic resource
+  scores with no edit; each adjacent tile counts once (two Iron tiles count
+  twice), a luxury or bonus tile never. The class form of `resources` is Q1's.
+- **Workshop 3 -> 2 (declared rule change).** `[buildings.Workshop] production`
+  was 3 since 0.8.0; Civ 6 GS gives +2. Part of the value moves to the regional
+  effect below.
+- **Regional production (C3).** New effect kind **`regional_yield`**
+  (`{ kind = "regional_yield", <yields>, range = R, scope = "player" }`, a
+  building only; the loader refuses any other source and city scope). It pays
+  every **other** city of the owner whose centre lies within `range` (canonical
+  wrap distance, inclusive) of the carrier's **Industrial Zone tile** (the
+  carrier building's `requires_district`, complete; the carrier city's centre
+  for a building with none), a city taking the **max per yield** over the
+  carriers in reach -- never a sum, never the carrier's own city, never a
+  foreign city. `[buildings.Workshop] effects = [{ kind = "regional_yield",
+  production = 1, range = 6, scope = "player" }]`. This is Civ 6's Factory rule
+  (+3 production to every city within 6 tiles of the Industrial Zone, the
+  mechanic that makes players cluster cities), moved down to the Workshop
+  because the Factory lies beyond this tree; Erik's C3 ruling. One consumer:
+  `city_yield` (`game/yields.py`, the regional term beside the route term);
+  production reaches `calculate_production` through `city_yield`. Nothing from an
+  unbuilt Workshop or an unfinished Industrial Zone.
+- **The Dam (C4).** `[districts.Dam]`: Floodplains tile with a river along an
+  edge (`on = { features = ["Floodplains"] }`, `requires_adjacent =
+  [{ river_on_tile = true }]`, Floodplains already an allowed, kept feature),
+  Engineering, `counts_toward_limit = false` (no population slot), one per
+  city, `housing = 1`, `amenity = 1`, no maintenance, no adjacency of its own,
+  not a wonder. The Industrial Zone gains `{ amount = 2, district = ["Dam"] }`.
+  **Cost 36, progress model: the Aqueduct's** (the design's instruction,
+  written when the Dam's cost was thought to be missing from the digest).
+  Civ 6 GS's Dam costs 81 (`docs/civ6_progression_reference.md`, district base
+  costs): 36 is a starting value, a dial, and the open question is whether the
+  Dam should cost 81. Civ 6's flood prevention has no counterpart (no floods). With an Aqueduct and a Dam beside
+  one Industrial Zone between two cities the zone scores +4 before Mines.
+- **R5 verified, not assumed.** A test shows a neighbour city's Aqueduct, a
+  second city of the same player's and another player's alike, counts for an
+  Industrial Zone (`_neighbour_matches` never reads the owner): the
+  two-cities-one-river play.
+- **Stats.** `episode_stats["regional_production"]`: int tenths of production
+  the player's cities were paid by `regional_yield`, summed over cities and over
+  round ends (round-end bookkeeping, no rule); the smoke end line prints it as
+  `regional_production_tenths`.
+- **Existing tests changed (declared).** `test_district_config`'s unknown-
+  district probe named "Dam", now a real district: it names "Dungeon".
+  `test_districts`'s resource-row test took the first district with a
+  `resources` row, which is now the Industrial Zone's class row; it pins the
+  row that accepts `any` resource on Coast (the Harbor's). No pre-existing test
+  failed on Workshop 2.
+- **Smoke observations (not a measurement; `python scripts/smoke_random_selfplay.py
+  --seed S`, Duel, random policy).** Seeds 1-8 at the default rounds and seeds
+  11-16 at 400 rounds (14 games): no Industrial Zone and no Dam completed in
+  any game, so `regional_production_tenths` was 0 for both players in all 14.
+  The mechanic is exercised by `tests/test_industrial_zone.py` and
+  `tests/test_effects.py`, not by the smoke.
+- **Declared gaps.** The Factory itself, the Power Plant, and Civ 6's
+  Industrial Zone building line beyond the Workshop are not in the tree; the
+  range 6 and amount 1 are Claude's starting values (design §5).
+- **Effect NOT yet measured:** nothing was trained or evaluated. Dials in the
+  progression skill's §4 table: `[buildings.Workshop]` production and its
+  effect's `range` / amount, `[districts.Dam]`.
+
 ---
 
 ## v0.8.1 — Erik's rulings on the block's open calls; build charges (2026-10-22)

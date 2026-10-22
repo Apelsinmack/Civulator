@@ -2149,8 +2149,9 @@ water_housing_min = 6
 water_housing_boost = 2
 
 # The Dam (v0.9.0 Q4, C4 -- Erik yes; design section 5): Civ 6 GS, a district on a
-# Floodplains tile with a river along an edge. The digest has no Dam row, so the
-# cost is the Aqueduct's (36, progress model, Engineering). Civ 6's flood
+# Floodplains tile with a river along an edge. Cost: the Aqueduct's (36, progress
+# model, Engineering), the design's instruction; Civ 6 GS's Dam is 81 (digest,
+# district base costs), so 36 is a starting value. Civ 6's flood
 # prevention has no counterpart (no floods). Not a wonder; no adjacency of its
 # own; it feeds the Industrial Zone's +2 row. Floodplains is an allowed feature
 # (kept on placement), which is what `on` requires here.

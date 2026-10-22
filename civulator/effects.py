@@ -506,7 +506,9 @@ def parse_effect(entry, source_kind, source_name, districts=None):
     column); a `policy_slots` effect on a policy (a card cannot change the
     slots it is fitted into); a one-shot kind anywhere but on a `kind =
     "wonder"` table of the district registry (#116 P6); a `loyalty` entry
-    whose reach is wrong (`_check_loyalty_reach`, #116 P7). `districts` is the
+    whose reach is wrong (`_check_loyalty_reach`, #116 P7); a `regional_yield`
+    entry off a building or without scope "player" (`_check_regional_reach`,
+    v0.9.0 Q4). `districts` is the
     registry names resolve against (default: district_model.DISTRICTS).
     """
     if source_kind not in SOURCES:

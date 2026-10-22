@@ -52,7 +52,7 @@ Engine defaults, Round-end phases, Victory, Win/score). This skill is the
 | a **wonder** | `[districts.<Name>]` with `kind = "wonder"`, era, fixed cost, `max_per_player = 1`, placement, columns, scoped effects | nothing | `tests/test_wonders.py` runs the placeability property over every wonder |
 | an **improvement** | `[improvements.<Name>]` on, housing, food/production/gold, requires_tech | nothing (the Worker default ranks by the columns, config order breaks ties) | `tests/test_improvement_yields.py`, `tests/test_worker_default.py` |
 | a **resource** | `[terrain.resource.<Name>]` class, on, (yields); bonus: `chance`; strategic/luxury: `improved_by`, `frequency`, optional `reveals` (v0.9.0 Q1) | a bonus one: append to `mapgen/resources.RESOURCE_ORDER` with a purpose id in `seeding.py`; a strategic/luxury one: a purpose id in `seeding.py` + its `tiered_resources.TIERED_PURPOSE` entry (append-only). Access, gating and district placement need nothing | `tests/test_resource_tiers.py` runs over the registry; a golden re-baseline (`tests/test_mapgen_golden.py`, `test_rng.py`'s frozen world) with the field-by-field diff in the CHANGELOG |
-| an **effect kind** | — | one parser in `effects.py` + exactly one consumer named in `CONSUMERS` (`amenity`, v0.9.0 Q2: `game/amenities.py effect_supply`); a `tests/test_effects.py` case showing the kind moves its consumer and nothing else | that test is the rule: "each kind has exactly one consumer" |
+| an **effect kind** | — | one parser in `effects.py` + exactly one consumer named in `CONSUMERS` (`amenity`, v0.9.0 Q2: `game/amenities.py effect_supply`; `regional_yield`, v0.9.0 Q4: `game/yields.py _regional_tenths`, a building of scope player only); a `tests/test_effects.py` case showing the kind moves its consumer and nothing else | that test is the rule: "each kind has exactly one consumer" |
 
 Every build path reads `game/availability.py` (`player_can_build`,
 `city_can_build_building`) and `City.can_produce_unit` — the build mask,
@@ -99,6 +99,7 @@ the Slinger–Horseman pair).
 | `[improvements.*] food/production/gold/housing` | what Workers build and what tiles are worth | `improvements_built` |
 | `[districts] cost_progress_factor` | district price over the game (`game_progress` = the larger tree fraction) | district placements in the smoke log |
 | `[districts.Encampment] health`, `captured_health_percent` (v0.9.0 Q3) | how hard a forward wall is to breach, and how much of it a conqueror inherits | `encampment_breaches`, `encampment_strikes`; the smoke script's end line prints both |
+| `[buildings.Workshop] production` and its `regional_yield` effect `range` / amount (v0.9.0 Q4), `[districts.Dam]` costs and housing/amenity columns | how much a cluster of cities around one Industrial Zone is worth, and what the river minigame (Aqueduct + Dam beside the zone) pays | `regional_production` (int tenths, summed over cities and rounds), `district_yield_production`; the smoke script's end line prints `regional_production_tenths` |
 
 Method (CLAUDE.md "Research method"): one dial at a time; a seeded run
 before and after (`scripts/smoke_random_selfplay.py --seed 4242` for a sanity
