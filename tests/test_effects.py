@@ -27,7 +27,8 @@ from civulator.effects import (
     rule_enabled,
     slot_counts,
 )
-from civulator.game import amenities, districts as districts_mod
+from civulator import religion_model
+from civulator.game import amenities, districts as districts_mod, territory
 from civulator.game.housing import housing
 from civulator.game.loyalty import loyalty_delta
 from civulator.game.maintenance import maintenance_due
@@ -168,6 +169,11 @@ class Stage:
         out["fighter max movement"] = self.fighter.get_max_movement()
         out["shooter max movement"] = self.shooter.get_max_movement()
         out["enemy max movement"] = self.enemy.get_max_movement()
+        # The v0.9.0 Q7 consumer of border_cost_percent: what the capital's
+        # next culture claim costs in the border phase (tenths).
+        out["border claim cost"] = territory.claim_cost(
+            env.border_cost, city.border_claims + 1,
+            territory.border_cost_percent(self.player))
         return out
 
 
@@ -442,6 +448,68 @@ def test_growth_percent_moves_exactly_the_growth_bucket(monkeypatch):
     assert _moved(before, after) == {"growth gain"}
     assert after["growth gain"] == 7 * 100 * 100 * 125 // 10000
     assert stage.city.growth_bucket_gain(3, 25) == 3 * 25 * 100 * 125 // 10000
+
+
+def _with_pantheon(monkeypatch, stage, entries):
+    """v0.9.0 Q7: hand the stage's player a synthetic pantheon carrying
+    `entries` (the pantheon source; the action is tests/test_religion.py's)."""
+    name = "Synthetic Pantheon"
+    monkeypatch.setitem(religion_model.PANTHEONS, name,
+                        religion_model.PantheonSpec(name=name, effects=tuple(entries)))
+    stage.player.pantheon = name
+
+
+def test_border_cost_percent_moves_exactly_the_border_claim_cost(monkeypatch):
+    """v0.9.0 Q7: a -15 % `border_cost_percent` pantheon moves only the cost
+    of the owner's next culture claim, to `cost(n) * 85 // 100`. Breaks if
+    the kind gains a second reader or loses its one."""
+    stage = Stage(monkeypatch)
+    before = stage.fingerprint()
+    _with_pantheon(monkeypatch, stage, [{"kind": "border_cost_percent", "percent": -15}])
+    after = stage.fingerprint()
+    assert _moved(before, after) == {"border claim cost"}
+    assert after["border claim cost"] == max(1, before["border claim cost"] * 85 // 100)
+
+
+@pytest.mark.parametrize("yields, expected", [
+    ({"food": 1, "production": 1}, {"yield food": 1, "yield production": 1, "production": None}),
+    ({"faith": 2, "culture": 1}, {"yield faith": 20, "yield culture": 10}),
+])
+def test_improvement_yield_moves_exactly_the_yields_it_names(monkeypatch, yields, expected):
+    """v0.9.0 Q7: an `improvement_yield` pantheon, with one worked tile of
+    the capital carrying its improvement, moves only the yields it names in
+    `city_yield` (production reaching `calculate_production`) and nothing any
+    other consumer computes. Breaks if the kind gains a second reader (say
+    `Tile.yields`, read by the encoder and claim ranking) or pays a yield it
+    does not name."""
+    stage = Stage(monkeypatch)
+    improvement = sorted(district_model.terrain_model.IMPROVEMENT_NAMES)[0]
+    stage.env.map.get_tile(stage.city.worked_tiles[0]).improvements.append(improvement)
+    before = stage.fingerprint()
+    _with_pantheon(monkeypatch, stage, [{"kind": "improvement_yield",
+                                         "improvement": improvement, **yields}])
+    after = stage.fingerprint()
+    assert _moved(before, after) == set(expected)
+    for key, delta in expected.items():
+        if delta is not None:
+            assert after[key] - before[key] == delta, key
+
+
+def test_adjacency_row_moves_exactly_the_districts_adjacency_yield(monkeypatch):
+    """v0.9.0 Q7: an `adjacency_row` pantheon for Probe (+1 per six adjacent
+    tiles of the board's base terrain -- the stage board is one terrain, so
+    exactly +1) moves only the gold Probe's adjacency yields, by 1 point (10
+    tenths). Breaks if the kind gains a second reader or the row reaches
+    another district type."""
+    stage = Stage(monkeypatch)
+    base = stage.env.map.get_tile(stage.city.coordinates).base_terrain
+    before = stage.fingerprint()
+    _with_pantheon(monkeypatch, stage, [{"kind": "adjacency_row", "district": "Probe",
+                                         "amount": 1, "per": 6,
+                                         "terrain": {"bases": [base]}}])
+    after = stage.fingerprint()
+    assert _moved(before, after) == {"yield gold"}
+    assert after["yield gold"] - before["yield gold"] == 10
 
 
 def test_every_kind_names_its_one_consumer():
