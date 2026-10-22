@@ -6,11 +6,19 @@ import random
 import numpy as np
 
 from ..config import CFG
-from ..effects import RULE_FLANKING, combat_strength_amounts, rule_enabled
+from ..effects import (
+    KIND_BUILD_CHARGES,
+    KIND_BUILD_CHARGES_TRAINED,
+    RULE_FLANKING,
+    amount_sum,
+    combat_strength_amounts,
+    rule_enabled,
+)
 from ..terrain_model import can_enter
 from ..unit_model import (
     BASE_COMBAT_STRENGTH as _BASE_COMBAT_STRENGTH,
     BASE_RANGED_STRENGTH as _BASE_RANGED_STRENGTH,
+    BUILD_CHARGES as _BUILD_CHARGES,
     COMBAT_CLASS as _COMBAT_CLASS,
     DAMAGE_BASE,
     DAMAGE_EXPONENT_COEFFICIENT,
@@ -874,18 +882,36 @@ class TraderUnit(Unit):
 class WorkerUnit(Unit):
     """Unit for tile improvements. Idle, it is run by the engine default
     `defaults.default_workers` (#116 P8); an agent action would replace that
-    call (#99)."""
+    call (#99).
+
+    Build charges (#127, Civ 6 Builder): a Worker starts with its type's
+    `build_charges` column plus the `build_charges_trained` effects in force
+    for its owner when it is made (`trained_charges`, fixed: Serfdom); the
+    `build_charges` effects in force NOW add to every Worker of the owner,
+    existing and future (Pyramids, lost with the wonder). Every build spends
+    one (`charges_used`); a Worker with none left is removed."""
 
     def __init__(self, player, coordinates):
         super().__init__(player, coordinates, "Worker")
+        self.trained_charges = (_BUILD_CHARGES.get(self.unit_type, 0)
+                                + amount_sum(player, KIND_BUILD_CHARGES_TRAINED))
+        self.charges_used = 0
+
+    def charges_left(self):
+        """Builds this Worker has left: its trained charges, plus the live
+        `build_charges` effects of its owner, minus the builds made."""
+        return (self.trained_charges + amount_sum(self.player, KIND_BUILD_CHARGES)
+                - self.charges_used)
 
     def build_improvement(self, improvement_type, game_env):
         """Build an improvement on the current tile, if the owner may: a tile
         of one of its cities, the improvement's tech known, and the tile
         predicate (`GameEnvironment.can_player_build_improvement_at`, #116 P2).
         The build spends the Worker's movement, marks it acted and counts in
-        `episode_stats["improvements_built"]` (#116 P8)."""
-        if not game_env.can_player_build_improvement_at(
+        `episode_stats["improvements_built"]` (#116 P8). It spends one
+        charge, and the Worker is removed once it has none left (#127); a
+        Worker without a charge builds nothing."""
+        if self.charges_left() <= 0 or not game_env.can_player_build_improvement_at(
             self.player, self.coordinates, improvement_type
         ):
             return False
@@ -893,5 +919,8 @@ class WorkerUnit(Unit):
         game_env.build_improvement(self.coordinates, improvement_type)
         self.movement_points = 0
         self.has_acted = True
+        self.charges_used += 1
         game_env.episode_stats[self.player.player_index]["improvements_built"] += 1
+        if self.charges_left() <= 0:
+            game_env.delete_unit(self)
         return True

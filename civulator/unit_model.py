@@ -306,6 +306,7 @@ UNIT_KEYS = frozenset({
     "max_movement", "combat_strength", "ranged_strength", "range",
     "production_cost", "requires_tech", "requires_civic",
     "combat_class", "era", "maintenance", "purchasable", "upgrades_to",
+    "build_charges",  # #127
 })
 BUILDING_KEYS = frozenset({
     "production_cost", "defense_bonus", "housing", *YIELD_COLUMNS,
@@ -472,13 +473,16 @@ def parse_unit_columns(units_cfg):
       silently free unit; >= 0);
     - `purchasable`: name -> tuple of PURCHASE_RESOURCES (default `("gold",)`);
     - `upgrades_to`: name -> the unit type it upgrades into, for the units
-      declaring one (a configured unit other than itself; chains may not loop).
+      declaring one (a configured unit other than itself; chains may not loop);
+    - `build_charges`: name -> how many improvements a newly made unit may
+      build (a positive int), for the units declaring one (#127).
 
     A unit type may not share a name with a combat class: a `class_bonuses`
     row names either, and a clash would be ambiguous.
     """
     _check_keys(units_cfg, UNIT_KEYS, "units")
     combat_class, era, maintenance, purchasable, upgrades_to = {}, {}, {}, {}, {}
+    build_charges = {}
     for name, table in units_cfg.items():
         where = f"[units.{name}]"
         if name in COMBAT_CLASSES:
@@ -499,6 +503,11 @@ def parse_unit_columns(units_cfg):
         if tenths:
             maintenance[name] = tenths
         purchasable[name] = _purchasable(table, where)
+        if "build_charges" in table:
+            charges = table["build_charges"]
+            if type(charges) is not int or charges <= 0:
+                raise ValueError(f"{where}: build_charges must be a positive int, got {charges!r}")
+            build_charges[name] = charges
     upgrades_to = _name_column(units_cfg, "upgrades_to", "units")
     for name, target in upgrades_to.items():
         if target not in units_cfg:
@@ -510,7 +519,8 @@ def parse_unit_columns(units_cfg):
             seen.add(target)
             target = upgrades_to.get(target)
     return {"combat_class": combat_class, "era": era, "maintenance": maintenance,
-            "purchasable": purchasable, "upgrades_to": upgrades_to}
+            "purchasable": purchasable, "upgrades_to": upgrades_to,
+            "build_charges": build_charges}
 
 
 def parse_class_bonuses(rows, unit_names):
@@ -558,6 +568,10 @@ UNIT_ERA = _UNIT_COLUMNS["era"]
 UNIT_MAINTENANCE = _UNIT_COLUMNS["maintenance"]
 UNIT_PURCHASABLE = _UNIT_COLUMNS["purchasable"]
 UPGRADES_TO = _UNIT_COLUMNS["upgrades_to"]
+# Build charges a newly made unit starts with (#127; Civ 6 Builder: 3); the
+# `build_charges` / `build_charges_trained` effects add to them (game/unit.py
+# WorkerUnit).
+BUILD_CHARGES = _UNIT_COLUMNS["build_charges"]
 
 # Unit types in the siege class (issue #66): derived from `combat_class`, no
 # longer a boolean column of its own (#116 P3).

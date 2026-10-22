@@ -47,7 +47,7 @@ Engine defaults, Round-end phases, Victory, Win/score). This skill is the
 | a **policy card** | `[policies.<Name>]` type, requires_civic, obsolete_with, effects | nothing if every effect kind exists | `tests/test_effects.py` validates every configured effect at import |
 | a **government** | `[governments.<Name>]` requires_civic, tier, effects incl. `policy_slots` | nothing | same |
 | a **building** | `[buildings.<Name>]` production_cost, maintenance, purchasable, requires_tech/civic/district/building/government_tier, yield and loyalty columns, effects | **append** to `BUILD_OPTIONS` (`agents/build_agent.py`) — never reorder | `tests/test_build_options.py` partition; availability tests run over the registry |
-| a **unit** | `[units.<Name>]` every column (combat_class, era, stats, maintenance, purchasable, requires_tech, upgrades_to) | `UNIT_SLOT`, `MOVEMENT_DOMAIN` (`game/unit.py`), a subclass registered in `UNIT_CLASSES` (`game/city.py`), **append** to `BUILD_OPTIONS` or name it in `DEFERRED_BUILD_UNITS` with a reason; `CLASS_INDEX` is derived — never edit it | `test_build_options.py`, `test_combat_classes.py` (registry properties); run the oracle (§3) if any `[combat]` row changes |
+| a **unit** | `[units.<Name>]` every column (combat_class, era, stats, maintenance, purchasable, requires_tech, upgrades_to; `build_charges` for a unit that builds improvements, #127) | `UNIT_SLOT`, `MOVEMENT_DOMAIN` (`game/unit.py`), a subclass registered in `UNIT_CLASSES` (`game/city.py`), **append** to `BUILD_OPTIONS` or name it in `DEFERRED_BUILD_UNITS` with a reason; `CLASS_INDEX` is derived — never edit it | `test_build_options.py`, `test_combat_classes.py` (registry properties); run the oracle (§3) if any `[combat]` row changes |
 | a **district** | `[districts.<Name>]` (see `docs/districts_design.md`), requires_tech/civic, maintenance, loyalty | nothing | `tests/test_districts.py` placement properties |
 | a **wonder** | `[districts.<Name>]` with `kind = "wonder"`, era, fixed cost, `max_per_player = 1`, placement, columns, scoped effects | nothing | `tests/test_wonders.py` runs the placeability property over every wonder |
 | an **improvement** | `[improvements.<Name>]` on, housing, food/production/gold, requires_tech | nothing (the Worker default ranks by the columns, config order breaks ties) | `tests/test_improvement_yields.py`, `tests/test_worker_default.py` |
@@ -127,7 +127,8 @@ identical with or without them (`tests/test_determinism.py`,
 `Player.start_turn`: exploration → units reset/heal → cities (`process_turn`:
 repair → food → growth → yields → production) → `GameEnvironment.
 economy_phase` (maintenance → bankruptcy → research → civics → government
-and loadout defaults → route expiry → Trader default → Worker default) →
+and loadout defaults → route expiry → Trader default → spent Workers removed
+→ Worker default) →
 city ranged strike → queued units. Round end in `next_turn`: `_border_phase`
 → `_loyalty_phase` → `_update_done` (the one end-of-game check, through
 `victory.game_over`) → `turn_counter += 1`. A rule that must not depend on
