@@ -206,6 +206,17 @@ luxury assignment). No version bump: Q0 opened 0.9.0.
   `test_improvement_yields`, `test_wonders`) now use the `neutral_amenities`
   fixture (`tests/conftest.py`: one band row, no change). `tests/test_amenities.py`
   pins the rule itself.
+- **Smoke observations (not a measurement; `python scripts/smoke_random_selfplay.py
+  --seed S`, Duel, 250 rounds, random policy, one city per player for most of
+  the game).** Seed 4242: `luxuries_accessible=[0, 0]` -- neither player's
+  territory held a luxury tile (the only non-bonus resource each owned was
+  Horses), so the Worker change had nothing to act on;
+  `amenity_surplus_mean_tenths=[-22, -18]`, `cities_unhappy_rounds=[240, 261]`
+  (a size-9 city short of amenities for nearly every round, which the rule
+  predicts and the random policy does nothing about). Seeds 2 and 3 end with
+  `luxuries_accessible=[1, 0]`, the access coming from a Camp on Furs and a
+  Plantation on Dyes built by the Worker default (read from a per-tile listing
+  of the final boards). 3 games; wall time 2.7-3.9 s each.
 - **Effect NOT yet measured:** nothing was trained or evaluated; the bands'
   loyalty column and the order of the two percents are starting values.
 
