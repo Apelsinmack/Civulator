@@ -26,7 +26,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pyray as rl
 
-from civulator.game.environment import GameEnvironment, resolve_size_and_players
+from civulator.game.environment import GameEnvironment, MAX_WORLD_RETRIES, resolve_size_and_players
+from civulator.mapgen.starts import StartPlacementError
 from civulator.meta import build_manifest
 from civulator.viz.hex_render import (
     draw_hex,
@@ -139,8 +140,28 @@ class PainterState:
         reconstructs identically from its saved seed regardless of which
         generator painted it.
         """
-        self.seed = random.randint(0, 99999)
-        env = GameEnvironment(MAP_ROWS, MAP_COLS, num_players=2, map_type=MAP_TYPE, seed=self.seed)
+        # A seeded reset fails loudly on a world without a legal start (by
+        # design: a seed is never silently swapped). The painter draws its own
+        # seed, so it may draw a bad one -- roughly one Duel world in five to
+        # ten (#122). Mirror the unseeded-reset policy: try up to
+        # [map] max_world_retries seeds, keep the one that built, and log the
+        # skips. The SAVED seed is the one that built, so a saved scenario
+        # still reconstructs identically.
+        last_error = None
+        for attempt in range(MAX_WORLD_RETRIES):
+            self.seed = random.randint(0, 99999)
+            try:
+                env = GameEnvironment(MAP_ROWS, MAP_COLS, num_players=2, map_type=MAP_TYPE, seed=self.seed)
+            except StartPlacementError as exc:
+                last_error = exc
+                print(f"[painter] seed {self.seed} has no legal start ({exc}); "
+                      f"drawing another ({attempt + 1}/{MAX_WORLD_RETRIES})", file=sys.stderr)
+                continue
+            break
+        else:
+            raise StartPlacementError(
+                f"painter: {MAX_WORLD_RETRIES} seeds in a row had no legal start; last: {last_error}"
+            )
         self.game_map = env.map
         self.units = []
         self.cities = []
