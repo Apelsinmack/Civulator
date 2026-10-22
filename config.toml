@@ -660,6 +660,7 @@ combat_class = "civilian"
 era = "Ancient"
 maintenance = 0
 purchasable = ["gold"]
+build_charges = 3        # #127, Civ 6 Builder: every build spends one; removed at 0
 max_movement = 2
 combat_strength = 0
 ranged_strength = 0
@@ -1514,6 +1515,13 @@ type = "military"
 requires_civic = "Feudalism"
 effects = [{ kind = "production_percent", target = { unit_class = ["melee", "ranged", "anti_cavalry"], unit_era = ["Ancient", "Classical", "Medieval", "Renaissance"] }, percent = 50 }]
 
+# Civ 6: newly trained Builders gain 2 extra build actions (#127). Obsolete in
+# Civ 6 with Civil Engineering, which is not in our tree, so never here.
+[policies.Serfdom]
+type = "economic"
+requires_civic = "Feudalism"
+effects = [{ kind = "build_charges_trained", amount = 2 }]
+
 # The Civ 6 vanilla card (removed in Rise and Fall): +1 culture per specialty district.
 [policies.Meritocracy]
 type = "economic"
@@ -1940,8 +1948,10 @@ water_housing_boost = 2
 # "player", in every city of its owner. Civ 6's "+2 tiles on completion" and
 # the amenity effects are not implemented (borders and amenities, #96).
 
-# Civ 6: Desert only, +1 Builder and a charge; here Desert or Plains and three
-# Workers (Erik: "quite a few builders"; design §9.4).
+# Civ 6: Desert only; here Desert or Plains (design §9.4). Its Civ 6 effect
+# since #127: one free Worker and +1 build charge for every Worker of the
+# owner, existing and future, while it holds the wonder (it gave three Workers
+# while Workers had no charges).
 [districts.Pyramids]
 kind = "wonder"
 era = "Ancient"
@@ -1953,7 +1963,10 @@ max_per_city = 1
 max_per_player = 1
 on = { relief = ["flat"], bases = ["Desert", "Plains"] }
 culture = 2
-effects = [{ kind = "free_units", units = [{ unit = "Worker", count = 3 }] }]
+effects = [
+    { kind = "free_units", units = [{ unit = "Worker", count = 1 }] },
+    { kind = "build_charges", amount = 1, scope = "player" },
+]
 
 # Civ 6: +2 faith and a Great Prophet; no prophets here, so faith 4.
 [districts.Stonehenge]

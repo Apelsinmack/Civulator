@@ -60,7 +60,7 @@ from .trade import (
     origin_city,
     route_capacity,
 )
-from .unit import WarriorUnit, calculate_damage, movement_domain
+from .unit import WarriorUnit, WorkerUnit, calculate_damage, movement_domain
 from .upgrades import can_upgrade, upgrade_cost, upgrade_target
 from ..config import CFG
 from ..unit_model import CAPITAL_BUILDING
@@ -1673,7 +1673,8 @@ class GameEnvironment:
            (#116 P4)
         6. route expiry and Trader return -- `trade.expire_routes` (#116 P5)
         7. Trader auto-send -- `defaults.default_trade` (#116 P5)
-        8. Worker default -- `defaults.default_workers` (#116 P8)
+        8. Worker default -- `defaults.default_workers` (#116 P8), after
+           `_remove_spent_workers` (#127)
 
         Steps 1-8 exist; a later patch inserts its steps at their place here.
         """
@@ -1686,7 +1687,17 @@ class GameEnvironment:
         self._government_and_loadout_defaults(player, refit=civic is not None)
         expire_routes(player, self)
         default_trade(player, self)
+        self._remove_spent_workers(player)
         default_workers(player, self)
+
+    def _remove_spent_workers(self, player):
+        """Remove every Worker of `player` with no build charge left (#127).
+        A build removes the Worker that spends its last charge; this catches
+        the one left at 0 by losing a live `build_charges` source (a
+        captured Pyramids), so no Worker lingers that can never build."""
+        for unit in [u for u in player.units if isinstance(u, WorkerUnit)]:
+            if unit.charges_left() <= 0:
+                self.delete_unit(unit)
 
     # --- Upgrades (#116 P3, docs/progression_design.md §6.4) ---
 

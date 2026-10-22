@@ -519,6 +519,8 @@ def test_a_crowd_of_workers_improves_every_open_tile_and_none_is_left_behind():
         assert len(owned) > 30, "fixture: a wide territory"
         for _ in range(6):
             assert city.complete_unit_production("Worker", env)
+        for worker in [u for u in player.units if isinstance(u, WorkerUnit)]:  # fixture: charges (#127) are not what
+            worker.trained_charges = len(owned)  # this scene is about
         for rounds in range(1, 41):
             new_turn(player)
             env.economy_phase(player)

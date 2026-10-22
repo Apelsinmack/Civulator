@@ -93,6 +93,8 @@ KIND_FREE_UNITS = "free_units"
 KIND_FREE_TECH = "free_tech"
 KIND_FREE_CIVIC = "free_civic"
 KIND_FREE_POPULATION = "free_population"
+KIND_BUILD_CHARGES = "build_charges"
+KIND_BUILD_CHARGES_TRAINED = "build_charges_trained"
 
 # The one consumer of each kind (design §3, "consumed by"). Since #116 P7
 # every kind is wired: each names its reader.
@@ -126,6 +128,10 @@ CONSUMERS = {
                      "the current or default civic completed at once",
     KIND_FREE_POPULATION: "game/environment.py GameEnvironment._one_shot_effects "
                           "(complete_district): population added, assign_tiles re-run",
+    KIND_BUILD_CHARGES: "game/unit.py WorkerUnit.charges_left (live: every Worker of the "
+                        "player, existing and future, while the source is in force; #127)",
+    KIND_BUILD_CHARGES_TRAINED: "game/unit.py WorkerUnit.__init__ (fixed when the Worker is "
+                                "made: trained, bought or granted while in force; #127)",
 }
 KINDS = tuple(CONSUMERS)
 # Kinds validated before their consumer exists, each naming in CONSUMERS the
@@ -136,7 +142,8 @@ DEFERRED_KINDS = frozenset()
 ONE_SHOT_KINDS = frozenset({KIND_FREE_UNITS, KIND_FREE_TECH, KIND_FREE_CIVIC,
                             KIND_FREE_POPULATION})
 # Kinds whose consumer takes no city: a city-scoped entry would never be read.
-_PLAYER_ONLY_KINDS = frozenset({KIND_POLICY_SLOTS, KIND_ENABLES})
+_PLAYER_ONLY_KINDS = frozenset({KIND_POLICY_SLOTS, KIND_ENABLES, KIND_BUILD_CHARGES,
+                                KIND_BUILD_CHARGES_TRAINED})
 
 # The rules an `enables` effect may switch on, each gated where it is applied.
 RULE_FLANKING = "flanking"  # #59, Unit.get_combat_strength
@@ -454,6 +461,8 @@ _PARSERS = {
     KIND_FREE_TECH: _parse_count,
     KIND_FREE_CIVIC: _parse_count,
     KIND_FREE_POPULATION: _parse_free_population,
+    KIND_BUILD_CHARGES: _amount_only(_positive_int),
+    KIND_BUILD_CHARGES_TRAINED: _amount_only(_positive_int),
 }
 assert set(_PARSERS) == set(KINDS), "every kind has one parser and one consumer"
 
@@ -732,6 +741,14 @@ def percent_sum(entries):
     """The summed `percent` of `entries`: effects of one kind are summed and
     then applied once with one floor (v2 fixes, N3), never compounded."""
     return sum(effect["percent"] for effect in entries)
+
+
+def amount_sum(player, kind):
+    """The summed `amount` of the entries of `kind` in force for `player`, a
+    kind read for the player only (_PLAYER_ONLY_KINDS)."""
+    if kind not in _PLAYER_ONLY_KINDS:
+        raise ValueError(f"{kind!r} is not a player-only kind")
+    return sum(effect["amount"] for effect in active_effects(player, kind=kind))
 
 
 def rule_enabled(player, rule):

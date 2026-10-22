@@ -1497,7 +1497,10 @@ Claude's calls that Erik may overturn.
   build replaces what stands there, any replacement allowed; the default
   revisits a tile when a better improvement is available. Same patch:
   domination off by default (`[game] domination_victory`), and elimination
-  needs no city and no Settler.
+  needs no city and no Settler. Then #127 (v0.8.1): Workers have 3 build
+  charges, Serfdom (+2 for Workers made while slotted) is added, and the
+  Pyramids take their Civ 6 effect (1 free Worker, +1 charge for every Worker)
+  -- the §9.4 "three Workers" and the omitted Serfdom of §5 are superseded.
 - A tile an earlier Worker of the same pass chose is a preference with a
   fallback, not an exclusion (an outright exclusion deadlocked six Workers on
   36 tiles).

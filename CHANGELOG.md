@@ -5,7 +5,7 @@ Training results (plots, win histories) are in `stats/`.
 
 ---
 
-## v0.8.1 — Erik's rulings on the block's open calls (2026-10-22)
+## v0.8.1 — Erik's rulings on the block's open calls; build charges (2026-10-22)
 
 **Rule changes, effects NOT yet measured** (#126; the open calls of #116).
 Nothing has been trained or evaluated under 0.8 rules, so no comparison is
@@ -31,6 +31,20 @@ broken; the major.minor version gate is unchanged.
   two equal improvements never replace each other back and forth). Housing's
   "a tile adds only its largest improvement housing" (#88) is moot for game
   builds now; it still holds for painted tiles.
+- **Build charges (#127).** A Worker has 3 build charges (`[units.Worker]
+  build_charges`, Civ 6 Builder); every build spends one, a replacement
+  included, and the Worker is removed after its last. Two new effect kinds
+  add charges: `build_charges_trained` (fixed when the Worker is made --
+  trained, bought or granted) and `build_charges` (live, every Worker of the
+  player, existing and future, while the source is in force; a Worker left at
+  0 when the source is lost is removed in its owner's economy phase, before
+  the Worker default).
+- **Serfdom**, a new Economic card (Feudalism): Workers made while it is
+  slotted get +2 charges (Civ 6: newly trained Builders gain 2 extra build
+  actions; never obsolete here, since Civil Engineering is not in our tree).
+- **Pyramids** take their Civ 6 effect: one free Worker (was three, which made
+  up for the missing charges) and +1 charge for every Worker of the owner
+  while it holds the wonder. With Serfdom too, a new Worker builds 6 times.
 
 ---
 
