@@ -351,14 +351,19 @@ def _digest(env):
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
-# Recorded on develop at 7e4fa79 (before ownership existed).
+# Recorded on develop at 7e4fa79 (before ownership existed), under the PCG32
+# stream. Re-baselined at the v0.9.0 Q0 migration (#128, philox32): every
+# digest includes the world and the next RNG draw, both of which the stream
+# change moves by design. The "no draw, no world change from borders"
+# property they protected is kept stream-independent by
+# `test_world_fingerprint_equals_a_reset_without_founding_claims` below.
 _PRE_BORDERS_DIGESTS = [
     (dict(n=8, m=16, num_players=2, map_type="basic"), 123,
-     "6ccc82f18566eae95aad73b8beaa17b9fc717dfeb441154dce992cdfa72573db"),
+     "5c16cd0ab7648505c373775f1d90ec0e32e23f6115a213bf21e4914a325b176b"),
     (dict(n=8, m=16, num_players=2, map_type="basic"), 7,
-     "e9da0c0fd07ec940bb61633f8a236fc00c7dd30c19e9587b210eead4ee0d565d"),
+     "ff969a89d102c6b5f843bf0cd60383fc42aacf3526b62f6ebe2890ba9cba5ee0"),
     (dict(size="duel", map_type="earthlike"), 4242,
-     "ca68b3bd5f4c1d9f3fc9899f35bb8ca878d6fbf9e35aa541086837f7ba9beb05"),
+     "2d37c8ef83d9000b21251e1a6977ec6e2904ecd2be51df64d583ef7b914694f0"),
 ]
 
 
@@ -368,6 +373,20 @@ def test_world_fingerprint_at_reset_is_unchanged_by_borders(kwargs, seed, expect
     and the RNG stream after reset are what they were before ownership
     existed. Breaks if reset-time claims consume `PortableRNG`."""
     assert _digest(GameEnvironment(**kwargs).reset(seed=seed)) == expected
+
+
+@pytest.mark.parametrize("kwargs,seed,expected", _PRE_BORDERS_DIGESTS)
+def test_world_fingerprint_equals_a_reset_without_founding_claims(
+        kwargs, seed, expected, monkeypatch):
+    """Property (§2.1), independent of which RNG stream is in force: a reset
+    with founding claims produces the same terrain, cities, units and next RNG
+    draw as a reset where no founding claim is ever made (ownership absent).
+    Breaks if reset-time claims consume the engine RNG or change what is built."""
+    with_claims = _digest(GameEnvironment(**kwargs).reset(seed=seed))
+    monkeypatch.setattr(GameEnvironment, "_founding_claim",
+                        lambda self, city: set())
+    without_claims = _digest(GameEnvironment(**kwargs).reset(seed=seed))
+    assert with_claims == without_claims
 
 
 def test_founding_claims_at_reset_draw_no_rng(monkeypatch):
