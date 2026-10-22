@@ -30,11 +30,15 @@ def _clamp01(value):
 # count and invalidate every trained .pth. -1 means "no class channel":
 # civilians, and the siege support units (#66: combat strength 0, no attack of
 # their own). The five channels are EnhancedStateEncoder's own-unit class
-# one-hot (channels 0-4).
+# one-hot (channels 0-4). Ships (v0.9.0 Q5) ride in the melee and ranged
+# channels -- the encoder depth does not change (R9: the state-space pass will
+# decide how the domain is seen; nothing encodes it yet). A new combat class
+# gets its row here in the same patch.
 CLASS_CHANNEL = {
     "melee": 0, "anti_cavalry": 1, "ranged": 2,
     "light_cavalry": 3, "heavy_cavalry": 3, "siege": 4,
     "support": -1, "civilian": -1,
+    "naval_melee": 0, "naval_ranged": 2,
 }
 # Class channel per unit TYPE: unit_model.COMBAT_CLASS through CLASS_CHANNEL.
 UNIT_CLASS_INDEX = {name: CLASS_CHANNEL[cls] for name, cls in COMBAT_CLASS.items()}

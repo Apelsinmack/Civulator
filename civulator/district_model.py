@@ -82,6 +82,7 @@ _DISTRICT_KEYS = frozenset({
     "loyalty",  # #116 P7
     "amenity",  # v0.9.0 Q2
     "health", "captured_health_percent",  # v0.9.0 Q3 (fortified districts)
+    "ship_spawn",  # v0.9.0 Q5 (the Harbor)
 })
 
 # What a registry entry is (progression design §9.1): the `kind` column,
@@ -174,6 +175,10 @@ class DistrictSpec:
     # Read through `game/districts.District` only.
     health: object = None
     captured_health_percent: object = None
+    # Ship spawn (v0.9.0 Q5, districts_religion_design §6.4): a complete
+    # district of this type is where its city's ships appear first and makes
+    # the city able to build them (`City.ship_spawn_tiles`). The Harbor.
+    ship_spawn: bool = False
 
 
 @dataclass(frozen=True)
@@ -339,6 +344,7 @@ def _parse_district(name, table, district_names):
                                             district_names),
         loyalty=whole_points(table.get("loyalty", 0), f"{where} loyalty"),
         amenity=whole_points(table.get("amenity", 0), f"{where} amenity"),
+        ship_spawn=_bool(table.get("ship_spawn", False), f"{where} ship_spawn"),
         **_fortification(table, where),
     )
 

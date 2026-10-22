@@ -51,7 +51,7 @@ below caches validated entries per raw list, never game state).
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 
-from . import district_model, research_model, unit_model
+from . import district_model, research_model, terrain_model, unit_model
 
 # --- Vocabulary -----------------------------------------------------------------
 
@@ -97,6 +97,7 @@ KIND_BUILD_CHARGES = "build_charges"
 KIND_BUILD_CHARGES_TRAINED = "build_charges_trained"
 KIND_AMENITY = "amenity"  # v0.9.0 Q2
 KIND_REGIONAL_YIELD = "regional_yield"  # v0.9.0 Q4
+KIND_MOVEMENT_DELTA = "movement_delta"  # v0.9.0 Q5
 
 # The one consumer of each kind (design §3, "consumed by"). Since #116 P7
 # every kind is wired: each names its reader.
@@ -137,6 +138,8 @@ CONSUMERS = {
     KIND_AMENITY: "game/amenities.py supply (effect_supply; v0.9.0 Q2)",
     KIND_REGIONAL_YIELD: "game/yields.py city_yield (the regional term, "
                          "_regional_tenths; v0.9.0 Q4)",
+    KIND_MOVEMENT_DELTA: "game/unit.py Unit.get_max_movement (the owner's units of "
+                         "that domain; v0.9.0 Q5)",
 }
 KINDS = tuple(CONSUMERS)
 # Kinds validated before their consumer exists, each naming in CONSUMERS the
@@ -148,11 +151,21 @@ ONE_SHOT_KINDS = frozenset({KIND_FREE_UNITS, KIND_FREE_TECH, KIND_FREE_CIVIC,
                             KIND_FREE_POPULATION})
 # Kinds whose consumer takes no city: a city-scoped entry would never be read.
 _PLAYER_ONLY_KINDS = frozenset({KIND_POLICY_SLOTS, KIND_ENABLES, KIND_BUILD_CHARGES,
-                                KIND_BUILD_CHARGES_TRAINED})
+                                KIND_BUILD_CHARGES_TRAINED, KIND_MOVEMENT_DELTA})
 
 # The rules an `enables` effect may switch on, each gated where it is applied.
 RULE_FLANKING = "flanking"  # #59, Unit.get_combat_strength
-RULES = (RULE_FLANKING,)
+# v0.9.0 Q5: a water-domain unit may enter deep water (Ocean) --
+# game/unit.py movement_domain answers "water" instead of "coast".
+RULE_OCEAN_NAVIGATION = "ocean_navigation"
+RULES = (RULE_FLANKING, RULE_OCEAN_NAVIGATION)
+
+# The static movement domains a `movement_delta` effect may name: the
+# `domain` values of the base terrain tables ("land", "water"). A water unit
+# moves in "coast" or "water" (its owner's rule), but its domain kind is
+# "water" either way.
+MOVEMENT_DELTA_DOMAINS = tuple(sorted({t.get("domain", "land")
+                                       for t in terrain_model.BASE_TABLE.values()}))
 
 # `combat_strength` applies_to: the six fighting classes, every unit, or the city.
 APPLIES_ALL = "all"
@@ -404,6 +417,13 @@ def _parse_regional_yield(raw, where, ctx):
             "range": _positive_int(raw["range"], f"{where} range")}
 
 
+def _parse_movement_delta(raw, where, ctx):
+    _keys(raw, ("domain", "amount"), ("domain", "amount"), where)
+    return {"domain": _name(raw["domain"], MOVEMENT_DELTA_DOMAINS, "movement domain",
+                            f"{where} domain"),
+            "amount": _int(raw["amount"], f"{where} amount")}
+
+
 def _parse_policy_slots(raw, where, ctx):
     _keys(raw, research_model.POLICY_TYPES, (), where)
     if not raw:
@@ -486,6 +506,7 @@ _PARSERS = {
     KIND_BUILD_CHARGES_TRAINED: _amount_only(_positive_int),
     KIND_AMENITY: _parse_amenity,
     KIND_REGIONAL_YIELD: _parse_regional_yield,
+    KIND_MOVEMENT_DELTA: _parse_movement_delta,
 }
 assert set(_PARSERS) == set(KINDS), "every kind has one parser and one consumer"
 
@@ -805,6 +826,17 @@ def amount_sum(player, kind):
     if kind not in _PLAYER_ONLY_KINDS:
         raise ValueError(f"{kind!r} is not a player-only kind")
     return sum(effect["amount"] for effect in active_effects(player, kind=kind))
+
+
+def movement_delta(player, domain):
+    """The summed `amount` of the `movement_delta` effects in force for
+    `player` that name `domain` (one of MOVEMENT_DELTA_DOMAINS); 0 for no
+    player. The one consumer is `Unit.get_max_movement` (v0.9.0 Q5)."""
+    if player is None:
+        return 0
+    return sum(effect["amount"]
+               for effect in active_effects(player, kind=KIND_MOVEMENT_DELTA)
+               if effect["domain"] == domain)
 
 
 def rule_enabled(player, rule):

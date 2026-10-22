@@ -238,7 +238,8 @@ def main():
           f"units_refused_resource={[env.episode_stats[i]['units_refused_resource'] for i in range(num_players)]} "
           f"encampment_breaches={[env.episode_stats[i]['encampment_breaches'] for i in range(num_players)]} "
           f"encampment_strikes={[env.episode_stats[i]['encampment_strikes'] for i in range(num_players)]} "
-          f"regional_production_tenths={[env.episode_stats[i]['regional_production'] for i in range(num_players)]}")
+          f"regional_production_tenths={[env.episode_stats[i]['regional_production'] for i in range(num_players)]} "
+          f"naval_units_built={[env.episode_stats[i]['naval_units_built'] for i in range(num_players)]}")
 
 
 if __name__ == "__main__":

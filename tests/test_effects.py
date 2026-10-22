@@ -33,6 +33,7 @@ from civulator.game.loyalty import loyalty_delta
 from civulator.game.maintenance import maintenance_due
 from civulator.game.purchasing import faith_purchase_categories, purchase_cost
 from civulator.game.trade import DURATION_TURNS, TradeRoute, route_capacity, route_yields
+from civulator.game.unit import is_land_military
 from civulator.game.upgrades import upgrade_cost
 from civulator.game.yields import city_yield
 from civulator.research_model import CIVIC_ORDER, CIVICS
@@ -77,15 +78,17 @@ def _put(env, city, name, pos, complete=True):
 
 
 def _unit_types():
-    """(fighter, shooter): a melee-strength unit with an upgrade, and a
-    ranged unit of another fighting class -- derived from the unit tables."""
+    """(fighter, shooter): a land melee-strength unit with an upgrade, and a
+    land ranged unit of another fighting class -- derived from the unit
+    tables. Land (`is_land_military`, v0.9.0 Q5): the stage is a land board,
+    where a ship could be neither built nor stood."""
     fighter = next(
         u for u in sorted(unit_model.UPGRADES_TO)
         if unit_model.BASE_COMBAT_STRENGTH[u] > 0 and unit_model.BASE_RANGED_STRENGTH[u] == 0
-        and unit_model.COMBAT_CLASS[u] in COMBAT_STRENGTH_CLASSES)
+        and unit_model.COMBAT_CLASS[u] in COMBAT_STRENGTH_CLASSES and is_land_military(u))
     shooter = next(
         u for u in sorted(unit_model.UNIT_NAMES)
-        if unit_model.BASE_RANGED_STRENGTH[u] > 0
+        if unit_model.BASE_RANGED_STRENGTH[u] > 0 and is_land_military(u)
         and unit_model.COMBAT_CLASS[u] in COMBAT_STRENGTH_CLASSES
         and unit_model.COMBAT_CLASS[u] != unit_model.COMBAT_CLASS[fighter])
     return fighter, shooter

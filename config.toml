@@ -292,6 +292,7 @@ movement = 1
 defense = 0
 los = [0, 0]
 domain = "water"
+deep = true   # v0.9.0 Q5: ships enter it only once their owner knows Cartography
 
 # --- Relief (land only; water is always flat, §3) ---
 [terrain.relief.flat]
@@ -617,7 +618,7 @@ on = { bases = ["Plains", "Desert", "Grassland", "Tundra"], relief = ["flat"] }
 
 # Civ 6 unlocks Fishing Boats with Sailing, which this tree cuts (design §4.2).
 [improvements."Fishing Boats"]
-requires_tech = "Celestial Navigation"
+requires_tech = "Sailing"   # Civ 6's placement (moved from Celestial Navigation in v0.9.0 Q5)
 housing = 0.5
 food = 1           # Civ 6 GS: +1 Food (wiki Fishing_Boats_(Civ6))
 on = { bases = ["Coast", "Lake"] }
@@ -682,7 +683,8 @@ wonder_weight = 10
 #   max_movement, combat_strength, ranged_strength, range, production_cost
 #                    the five stat tables (#64)
 #   combat_class     REQUIRED. melee | anti_cavalry | ranged | light_cavalry |
-#                    heavy_cavalry | siege | support | civilian. The one class
+#                    heavy_cavalry | siege | support | civilian | naval_melee |
+#                    naval_ranged (v0.9.0 Q5). The one class
 #                    registry: [combat] class_bonuses rows, the siege rules,
 #                    civilian capture and the encoder's class channel all read
 #                    it, so no combat rule names a unit.
@@ -957,6 +959,48 @@ ranged_strength = 0
 range = 0
 production_cost = 40
 
+# Ships (v0.9.0 Q5, districts_religion_design §6.2; Civ 6 GS stats, digest
+# §6). Water domain (game/unit.py MOVEMENT_DOMAIN): Coast and Lake only until
+# the owner knows the `ocean_navigation` rule (Cartography), then Ocean too.
+# Built only in a city with a spawn water tile (its Harbor's, else a water
+# tile beside the centre), placed on the Harbor first. Military slot 0.
+[units.Galley]
+requires_tech = "Sailing"
+combat_class = "naval_melee"
+era = "Ancient"
+maintenance = 1
+purchasable = ["gold"]
+upgrades_to = "Caravel"
+max_movement = 3
+combat_strength = 30
+ranged_strength = 0
+range = 1
+production_cost = 65
+
+[units.Quadrireme]
+requires_tech = "Shipbuilding"
+combat_class = "naval_ranged"
+era = "Classical"
+maintenance = 2
+purchasable = ["gold"]
+max_movement = 3
+combat_strength = 20
+ranged_strength = 25
+range = 1
+production_cost = 120
+
+[units.Caravel]
+requires_tech = "Cartography"
+combat_class = "naval_melee"
+era = "Renaissance"
+maintenance = 4
+purchasable = ["gold"]
+max_movement = 4
+combat_strength = 55
+ranged_strength = 0
+range = 1
+production_cost = 240
+
 # --- Combat formula constants (Civ6-inspired modifier stacking, #60/#63) ---
 [combat]
 # Class-pair modifiers (#116 P3; replaces anti_cavalry_bonus,
@@ -984,6 +1028,10 @@ class_bonuses = [
     { unit = "Archer", target = "heavy_cavalry", amount = -5, strength = "ranged" },
     { unit = "Crossbowman", target = "light_cavalry", amount = -5, strength = "ranged" },
     { unit = "Crossbowman", target = "heavy_cavalry", amount = -5, strength = "ranged" },
+    # v0.9.0 Q5 (§6.2): Civ 6 gives every land ranged unit (Slinger, Archer,
+    # Crossbowman) -17 ranged strength vs naval units -- by class, shooter only.
+    { unit = "ranged", target = "naval_melee", amount = -17, strength = "ranged" },
+    { unit = "ranged", target = "naval_ranged", amount = -17, strength = "ranged" },
 ]
 ranged_city_penalty = 17         # flat ranged-strength penalty vs cities (subtracted)
 fortification_bonus = [3, 6]     # indexed by fortification level - 1 (level is 1 or 2)
@@ -1261,6 +1309,13 @@ era = "Ancient"
 cost = 50
 era = "Ancient"
 
+# Sailing, Shipbuilding, Cartography (v0.9.0 Q5, districts_religion_design
+# §6.1): the three Civ 6 naval techs the progression block cut for "no naval".
+# Sailing is Civ 6's fifth starting tech (no prerequisite).
+[techs.Sailing]
+cost = 50
+era = "Ancient"
+
 [techs.Irrigation]
 cost = 50
 era = "Ancient"
@@ -1289,7 +1344,7 @@ requires = ["Mining"]
 [techs."Celestial Navigation"]
 cost = 120
 era = "Classical"
-requires = ["Astrology"]  # Civ 6 also requires Sailing (cut)
+requires = ["Sailing", "Astrology"]  # Civ 6 (Sailing returned in v0.9.0 Q5)
 
 [techs.Currency]
 cost = 120
@@ -1305,6 +1360,11 @@ requires = ["Archery"]
 cost = 120
 era = "Classical"
 requires = ["Bronze Working"]
+
+[techs.Shipbuilding]
+cost = 200
+era = "Classical"
+requires = ["Sailing"]
 
 [techs.Engineering]
 cost = 200
@@ -1351,6 +1411,16 @@ cost = 600
 era = "Renaissance"
 requires = ["Apprenticeship", "Stirrups", "Military Engineering"]
 
+# Civ 6 GS: Buttress (cut); the digest's per-tech page names Shipbuilding, and
+# Celestial Navigation is this design's second prerequisite (§6.1). Naval units
+# (and, Q6, sea routes) may enter Ocean once known: the `ocean_navigation`
+# rule, read by game/unit.py movement_domain.
+[techs.Cartography]
+cost = 600
+era = "Renaissance"
+requires = ["Shipbuilding", "Celestial Navigation"]
+effects = [{ kind = "enables", rules = ["ocean_navigation"] }]
+
 # --- Culture: the civics tree (issue #116 P4, docs/progression_design.md §5.1) ---
 # Read only by civulator/research_model.py, with the same parser as the techs
 # (parse_tree): cost (Civ 6 Gathering Storm culture, Standard speed), era,
@@ -1358,8 +1428,8 @@ requires = ["Apprenticeship", "Stirrups", "Military Engineering"]
 # (interpreted by civulator/effects.py). Culture (Player.culture, tenths) pays
 # for one civic at a time: GameEnvironment.resolve_civic. Names, eras and
 # costs are Civ 6's (docs/civ6_progression_reference.md §2); prerequisites
-# are this design's where a cut civic (Mysticism, Naval Tradition, the
-# Renaissance) sat in between. What a civic unlocks is never declared here:
+# are this design's where a cut civic (Mysticism, the Renaissance) sat in
+# between (Naval Tradition returned in v0.9.0 Q5). What a civic unlocks is never declared here:
 # it is the `requires_civic` column of the unlocked item's own table
 # (units, buildings, districts, governments, policies).
 [civics."Code of Laws"]
@@ -1430,6 +1500,13 @@ requires = ["Games and Recreation", "Political Philosophy"]
 cost = 175
 era = "Classical"
 requires = ["Drama and Poetry", "Political Philosophy"]
+
+# v0.9.0 Q5 (districts_religion_design §6.1; digest §2's row: GS 220,
+# requires Defensive Tactics). Cards: Maritime Industries, Naval Infrastructure.
+[civics."Naval Tradition"]
+cost = 220
+era = "Classical"
+requires = ["Defensive Tactics"]
 
 [civics.Feudalism]
 cost = 300
@@ -1656,6 +1733,19 @@ effects = [
     { kind = "production_percent", target = { district = ["Encampment", "Harbor"] }, percent = 30 },
     { kind = "production_percent", target = { in_district = ["Encampment", "Harbor"] }, percent = 30 },
 ]
+
+# v0.9.0 Q5 (§6.1): Civ 6 hangs Maritime Industries on Foreign Trade; here on
+# Naval Tradition, so Foreign Trade's node stays Trader + Caravansaries. Civ 6
+# retires it with Exploration (cut): no obsolete_with.
+[policies."Maritime Industries"]
+type = "military"
+requires_civic = "Naval Tradition"
+effects = [{ kind = "production_percent", target = { unit_class = ["naval_melee", "naval_ranged"], unit_era = ["Ancient", "Classical"] }, percent = 100 }]
+
+[policies."Naval Infrastructure"]
+type = "economic"
+requires_civic = "Naval Tradition"
+effects = [{ kind = "adjacency_percent", district = "Harbor", percent = 100 }]
 
 [policies.Scripture]
 type = "economic"
@@ -2087,6 +2177,7 @@ requires_tech = "Celestial Navigation"
 cost_model = "discounted"
 discount_percent = 40
 adjacency_yield = "gold"
+ship_spawn = true   # v0.9.0 Q5: the city's ships appear here first (City.ship_spawn_tiles)
 on = { bases = ["Coast", "Lake"] }
 requires_adjacent = [
     { terrain = { bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] } },
@@ -2286,13 +2377,13 @@ requires_adjacent = [{ district = ["Campus"] }]
 science = 3
 effects = [{ kind = "free_tech", count = 1 }]
 
-# Civ 6: Shipbuilding; here Celestial Navigation. On Coast (not a Lake),
-# adjacent to land AND to a Harbor.
+# Civ 6: Shipbuilding (here since v0.9.0 Q5; Celestial Navigation before). On
+# Coast (not a Lake), adjacent to land AND to a Harbor.
 [districts.Colossus]
 kind = "wonder"
 era = "Classical"
 production_cost = 400
-requires_tech = "Celestial Navigation"
+requires_tech = "Shipbuilding"
 cost_model = "fixed"
 counts_toward_limit = false
 max_per_city = 1
@@ -2307,6 +2398,28 @@ effects = [
     { kind = "trade_route_capacity", amount = 1, scope = "player" },
     { kind = "free_units", units = [{ unit = "Trader", count = 1 }] },
 ]
+
+# Civ 6 GS: Celestial Navigation, 290; on Coast, adjacent to land and to a
+# Harbor WITH A LIGHTHOUSE -- relaxed here to "a Harbor" (v0.9.0 Q5, §6.1: the
+# `requires_adjacent_all` sources match districts, not their buildings). +3
+# gold; +1 movement for its owner's naval units (`movement_delta`, read by
+# Unit.get_max_movement); the Great Admiral point is cut (no Great People).
+[districts."Great Lighthouse"]
+kind = "wonder"
+era = "Classical"
+production_cost = 290
+requires_tech = "Celestial Navigation"
+cost_model = "fixed"
+counts_toward_limit = false
+max_per_city = 1
+max_per_player = 1
+on = { bases = ["Coast"] }
+requires_adjacent_all = [
+    { terrain = { bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] } },
+    { district = ["Harbor"] },
+]
+gold = 3
+effects = [{ kind = "movement_delta", domain = "water", amount = 1, scope = "player" }]
 
 # Civ 6 (Rise and Fall / GS): +2 Loyalty and +2 amenities to every city centre
 # within 6 tiles; here to its owner's own cities only (#116 P7; the amenity

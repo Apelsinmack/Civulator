@@ -16,8 +16,9 @@ digested in docs/civ6_progression_reference.md §11), in integers:
                      clamped to +-DRIFT_CAP -- Civ 6's
                      10 * (D - F) / (min(D, F) + 0.5), truncated toward zero
     delta          = drift
-                     + GARRISON while a unit of the owner of a fighting class
-                       (`unit_model.FIGHTING_CLASSES`) stands on the centre
+                     + GARRISON while a land military unit of the owner (a
+                       fighting class on land, `unit.is_land_military`; v0.9.0
+                       Q5) stands on the centre
                      + the `loyalty` columns of the city's buildings and
                        complete districts
                      + the `loyalty` effects in force for the city (the one
@@ -47,7 +48,8 @@ from dataclasses import dataclass
 
 from ..config import CFG
 from ..effects import KIND_LOYALTY, active_effects
-from ..unit_model import BUILDING_LOYALTY, FIGHTING_CLASSES
+from ..unit_model import BUILDING_LOYALTY
+from .unit import is_land_military
 from .districts import district_spec
 
 # The floor of the score: a city here after the phase flips, if anyone presses it.
@@ -210,9 +212,11 @@ def drift(own, foreign):
 
 
 def is_garrisoned(city, env):
-    """Whether a unit of the city's owner of a fighting combat class (not
-    `support`, not `civilian`) stands on its centre."""
-    return any(unit.player is city.player and unit.combat_class in FIGHTING_CLASSES
+    """Whether a land military unit of the city's owner (a fighting combat
+    class -- not `support`, not `civilian` -- of the land domain,
+    `unit.is_land_military`; a ship is no garrison, v0.9.0 Q5) stands on its
+    centre."""
+    return any(unit.player is city.player and is_land_military(unit.unit_type)
                for unit in env.get_units_at(city.coordinates))
 
 

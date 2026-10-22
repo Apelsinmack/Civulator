@@ -32,7 +32,9 @@ from ..unit_model import (
     UNIT_PURCHASABLE,
     faith_category,
 )
+from ..terrain_model import DOMAIN_LAND
 from .availability import city_can_build_building
+from .unit import MOVEMENT_DOMAIN
 
 ITEM_UNIT = "unit"
 ITEM_BUILDING = "building"
@@ -116,7 +118,7 @@ def purchasable_with(player, city, kind, name, resource):
         return True
     if resource != RESOURCE_FAITH or kind != ITEM_UNIT:
         return False
-    category = faith_category(name)
+    category = faith_category(name, MOVEMENT_DOMAIN.get(name, DOMAIN_LAND))
     return category is not None and category in faith_purchase_categories(player, city)
 
 

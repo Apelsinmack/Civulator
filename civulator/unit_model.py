@@ -442,13 +442,31 @@ def _raw_effects(table, where):
 # --- Combat classes, prices and upgrades (#116 P3, docs/progression_design.md §6) ---
 
 # The classes a unit may declare. `support` (siege support) and `civilian` have
-# no attack; the encoder gives both no class channel.
+# no attack; the encoder gives both no class channel. `naval_melee` and
+# `naval_ranged` (v0.9.0 Q5) are the ships' classes; the encoder maps them onto
+# the melee and ranged channels (state_encoders.CLASS_CHANNEL).
 COMBAT_CLASSES = ("melee", "anti_cavalry", "ranged", "light_cavalry",
-                  "heavy_cavalry", "siege", "support", "civilian")
-# The fighting classes: every class but `support` and `civilian`. A unit of one
-# of them is "land military" for faith purchases (#116 P5) and garrisons a city
-# for loyalty (#116 P7).
+                  "heavy_cavalry", "siege", "support", "civilian",
+                  "naval_melee", "naval_ranged")
+# The fighting classes: every class but `support` and `civilian`, ships
+# included. A unit of one of them that is also of the LAND domain is "land
+# military" (`is_land_military`): bought with faith (#116 P5), a garrison for
+# loyalty (#116 P7), spawned on an Encampment (v0.9.0 Q3). A ship fights but is
+# none of those (v0.9.0 Q5, "v2 fixes": the domain filter).
 FIGHTING_CLASSES = frozenset(c for c in COMBAT_CLASSES if c not in ("support", "civilian"))
+# The movement domain a unit type's table puts it in for the land-military
+# test: game/unit.py MOVEMENT_DOMAIN's "land" (its other value is "water").
+DOMAIN_LAND = "land"
+
+
+def is_land_military(unit_type, domain):
+    """Whether a unit of `unit_type` whose static movement domain
+    (game/unit.py MOVEMENT_DOMAIN, passed in: this module loads before the
+    game layer) is `domain` is land military: a fighting combat class on
+    land. The one definition every FIGHTING_CLASSES consumer filters through
+    (v0.9.0 Q5): faith purchase (`faith_category`), the loyalty garrison, the
+    Encampment spawn."""
+    return domain == DOMAIN_LAND and COMBAT_CLASS.get(unit_type) in FIGHTING_CLASSES
 # The resources a unit or building may be bought with (#116 P5: each has a
 # `purchase_multiplier` in its pool table and a Player pool of the same name).
 PURCHASE_RESOURCES = ("gold", "faith")
@@ -596,18 +614,19 @@ SIEGE_CLASS = frozenset(name for name, cls in COMBAT_CLASS.items() if cls == "si
 #
 # The categories a `faith_purchase` effect may unlock (effects.py validates
 # its `categories` against this tuple). `land_military` = every unit of a
-# fighting combat class -- all but `support` and `civilian` (every unit is a
-# land unit here; Civ 6: "land military units").
+# fighting combat class on land (`is_land_military`; Civ 6: "land military
+# units" -- a ship is not one, v0.9.0 Q5).
 FAITH_CATEGORY_LAND_MILITARY = "land_military"
 FAITH_CATEGORIES = (FAITH_CATEGORY_LAND_MILITARY,)
 
 
-def faith_category(unit_type):
-    """The faith-purchase category of `unit_type`: FAITH_CATEGORY_LAND_MILITARY
-    for a unit of a fighting class (melee, anti_cavalry, ranged,
-    light_cavalry, heavy_cavalry, siege), None otherwise (and for a name that
-    is no unit). Read by civulator/game/purchasing.py."""
-    if COMBAT_CLASS.get(unit_type) in FIGHTING_CLASSES:
+def faith_category(unit_type, domain):
+    """The faith-purchase category of `unit_type`, whose static movement
+    domain is `domain` (game/unit.py MOVEMENT_DOMAIN): FAITH_CATEGORY_LAND_
+    MILITARY for a land military unit (`is_land_military`), None otherwise
+    (a ship, a civilian, a support unit, a name that is no unit). Read by
+    civulator/game/purchasing.py."""
+    if is_land_military(unit_type, domain):
         return FAITH_CATEGORY_LAND_MILITARY
     return None
 

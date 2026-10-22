@@ -109,7 +109,7 @@ def outer_neighbours(env, city, pos):
 def land_unit():
     """A land unit type with combat strength (from the unit tables)."""
     return next(u for u in sorted(unit_model.UNIT_NAMES)
-                if movement_domain(u) == "land" and unit_model.BASE_COMBAT_STRENGTH[u] > 0)
+                if movement_domain(u, None) == "land" and unit_model.BASE_COMBAT_STRENGTH[u] > 0)
 
 
 def owned_units(player, unit_type):
@@ -428,10 +428,13 @@ def test_free_units_are_queued_when_the_city_has_no_room(monkeypatch):
     env = board()
     a = make_city(env, (3, 3))
     assert env.place_district(a, "Marvel", site(env, a))
-    monkeypatch.setattr(City, "complete_unit_production", lambda self, t, e: False)
-    env.complete_district(a, a.districts[0])
+    # Only the placement refusal is undone (v0.9.0 Q5): the synthetic Marvel
+    # registry must stay, since placing a unit now reads the effects in force
+    # (`Unit.get_max_movement`, the `movement_delta` consumer).
+    with monkeypatch.context() as patch:
+        patch.setattr(City, "complete_unit_production", lambda self, t, e: False)
+        env.complete_district(a, a.districts[0])
     assert a.player.queued_units == [(a.city_id, unit)]
-    monkeypatch.undo()
     a.player.place_queued_units()
     assert a.player.queued_units == [] and owned_units(a.player, unit) >= 1
 
