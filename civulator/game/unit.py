@@ -159,6 +159,14 @@ def movement_domain(unit_type, player):
     kind = MOVEMENT_DOMAIN.get(unit_type, DOMAIN_LAND)
     if kind != DOMAIN_WATER:
         return kind
+    return naval_domain(player)
+
+
+def naval_domain(player):
+    """The domain every water-domain unit of `player` moves in: "water"
+    (Ocean included) once it knows the `ocean_navigation` rule, else "coast".
+    The one place that rule is read; `movement_domain` answers it for a ship,
+    and sea trade (`trade.route_kind`) asks it with no ship in hand."""
     if player is not None and rule_enabled(player, RULE_OCEAN_NAVIGATION):
         return DOMAIN_WATER
     return DOMAIN_COAST

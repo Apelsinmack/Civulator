@@ -20,17 +20,35 @@ The only interpreter of `[trade]` in config.toml and the only route state:
   definition), plus the `route_yield` effects in force (`international_only`
   honoured). The route term of `city_yield` reads it; the destination's
   owner gets nothing (Civ 6);
-- `eligible_destinations(trader, env)` -- the cities a Trader on an own city
-  centre may open a route to: any other city within `[trade] range` hexes
-  (canonical wrap distance) with no route of its player between the pair in
-  either direction, in city-id order.
+- `route_kind(origin, destination, player, env)` -- how a pair connects, and
+  whether the route is overseas (v0.9.0 Q6, districts_religion_design §6.6
+  and "v2 fixes" B6): `"sea"` when both cities hold a complete `ship_spawn`
+  district (the Harbor, found by the column) and the origin's owner's naval
+  domain has a water path between two of them of at most `[trade] sea_range`
+  tiles (`Map.water_distance`: terrain only, never a unit); else `"land"`
+  within `[trade] range` hexes (canonical wrap distance); else None. A pair
+  reachable both ways is a sea route. `overseas` is true for a sea route
+  whose two centres lie on different landmasses (`Map.landmass_id`) -- a
+  land pair across a strait is never overseas, and neither is a lake pair;
+- `eligible_routes(trader, env)` / `eligible_destinations(trader, env)` --
+  the cities a Trader on an own city centre may open a route to: every other
+  city with a route kind, with no route of its player between the pair in
+  either direction, in city-id order (the first with its kind and overseas
+  flag, the second the cities alone);
+- a route's kind and overseas flag are decided by `establish_trade_route` and
+  kept for the route's duration: terrain or Cartography changing later
+  affects new routes only. The overseas jump multiplies every yield of
+  `pair_yields` by `(100 + [trade] overseas_percent) / 100`, floored in
+  tenths per yield; `route_yields` reads the route's stored flag, and the
+  Trader default ranks candidates through the same `pair_yields`.
 
 The unit that makes routes is named once, as `[trade] unit` (like `[city]
 capital_building`), so no code here names it. A route has no path on the
-map, no plunder and no round-trip arithmetic (design §7.4).
+map, no plunder and no round-trip arithmetic (design §7.4); a sea route is
+a reachability fact, not a ship.
 
-Imports no `civulator.game` module but `districts` (the registry accessor);
-cities and the environment arrive as arguments.
+Imports no `civulator.game` module but `districts` (the registry accessors)
+and `unit.naval_domain`; cities and the environment arrive as arguments.
 """
 
 from dataclasses import dataclass
@@ -47,12 +65,16 @@ from ..effects import (
     active_effects,
 )
 from ..unit_model import UNIT_NAMES, YIELD_COLUMNS
-from .districts import specialty_districts
+from .districts import ship_spawn_districts, specialty_districts
+from .unit import naval_domain
 
 DOMESTIC = "domestic"
 INTERNATIONAL = "international"
 ROUTE_KINDS = (DOMESTIC, INTERNATIONAL)
-_TRADE_KEYS = frozenset({"unit", "range", "duration_turns", *ROUTE_KINDS})
+LAND_ROUTE = "land"
+SEA_ROUTE = "sea"
+_TRADE_KEYS = frozenset({"unit", "range", "duration_turns", "sea_range",
+                         "overseas_percent", *ROUTE_KINDS})
 
 
 class TradeConfig(NamedTuple):
@@ -62,12 +84,20 @@ class TradeConfig(NamedTuple):
     unit: str
     route_range: int
     duration_turns: int
+    sea_range: int
+    overseas_percent: int
     tables: MappingProxyType
 
 
 def _positive_int(value, where):
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ValueError(f"{where} must be a positive whole number, got {value!r}")
+    return value
+
+
+def _non_negative_int(value, where):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{where} must be a whole number >= 0, got {value!r}")
     return value
 
 
@@ -96,8 +126,9 @@ def _route_table(table, where, district_names):
 
 def parse_trade(cfg, district_names, unit_names):
     """`[trade]` -> TradeConfig. Exactly the keys `unit` (a unit type),
-    `range`, `duration_turns` (positive whole numbers), `domestic` and
-    `international` (see `_route_table`); anything else raises."""
+    `range`, `duration_turns`, `sea_range` (positive whole numbers),
+    `overseas_percent` (a whole number >= 0; 0 switches the jump off),
+    `domestic` and `international` (see `_route_table`); anything else raises."""
     if not isinstance(cfg, dict) or set(cfg) != _TRADE_KEYS:
         got = sorted(cfg) if isinstance(cfg, dict) else cfg
         raise ValueError(f"[trade] must have exactly the keys {sorted(_TRADE_KEYS)}, got {got}")
@@ -108,6 +139,8 @@ def parse_trade(cfg, district_names, unit_names):
         unit=unit,
         route_range=_positive_int(cfg["range"], "[trade] range"),
         duration_turns=_positive_int(cfg["duration_turns"], "[trade] duration_turns"),
+        sea_range=_positive_int(cfg["sea_range"], "[trade] sea_range"),
+        overseas_percent=_non_negative_int(cfg["overseas_percent"], "[trade] overseas_percent"),
         tables=MappingProxyType({
             kind: _route_table(cfg[kind], f"[trade.{kind}]", district_names)
             for kind in ROUTE_KINDS
@@ -119,6 +152,8 @@ _TRADE = parse_trade(CFG["trade"], _CONFIGURED_DISTRICTS, UNIT_NAMES)
 TRADER_UNIT = _TRADE.unit            # the unit type that makes a route
 ROUTE_RANGE = _TRADE.route_range     # hexes, canonical wrap distance
 DURATION_TURNS = _TRADE.duration_turns
+SEA_RANGE = _TRADE.sea_range         # tiles of water path (Map.water_distance)
+OVERSEAS_PERCENT = _TRADE.overseas_percent
 ROUTE_TABLES = _TRADE.tables
 
 
@@ -126,12 +161,17 @@ ROUTE_TABLES = _TRADE.tables
 class TradeRoute:
     """One route of player `player_index`, from its city `origin_city_id` to
     the city `destination_city_id`, for `turns_left` more of its owner's
-    economy phases."""
+    economy phases; `kind` ("land" | "sea") and `overseas` are what
+    `route_kind` answered when it was opened."""
 
     origin_city_id: int
     destination_city_id: int
     player_index: int
     turns_left: int
+    # Decided once, by `GameEnvironment.establish_trade_route`, and kept for
+    # the route's duration (design v3 L10's non-blocking lines).
+    kind: str = LAND_ROUTE
+    overseas: bool = False
 
 
 # --- Capacity --------------------------------------------------------------------
@@ -185,13 +225,37 @@ def origin_city(trader, env):
     return city
 
 
-def eligible_destinations(trader, env):
-    """The cities `trader` could open a route to from where it stands: none
-    unless it is on one of its owner's city centres (the origin); otherwise
-    every other city within ROUTE_RANGE of the origin by
-    `distance_function`, with no route of this player between the pair in
-    either direction, in city-id order. Capacity is not this function's
-    question."""
+def route_kind(origin, destination, player, env):
+    """How `origin` (a city of `player`) connects to `destination`, as
+    `(kind, overseas)`: kind `"sea"` when both hold a complete `ship_spawn`
+    district and `Map.water_distance` between two of them, in `player`'s
+    naval domain (`unit.naval_domain`: "coast" before the `ocean_navigation`
+    rule, "water" after), is at most SEA_RANGE; else `"land"` when the
+    centres lie within ROUTE_RANGE by `distance_function`; else None. A pair
+    that qualifies both ways is a sea route. `overseas` is true only for a
+    sea route whose centres have different `landmass_id`s. Reads terrain and
+    districts, never a unit. The one route-kind decision."""
+    origin_harbors = ship_spawn_districts(origin)
+    destination_harbors = ship_spawn_districts(destination)
+    if origin_harbors and destination_harbors:
+        domain = naval_domain(player)
+        for a in origin_harbors:
+            for b in destination_harbors:
+                if env.map.water_reachable(a.coordinates, b.coordinates, domain, SEA_RANGE):
+                    mine = env.map.landmass_id(origin.coordinates)
+                    theirs = env.map.landmass_id(destination.coordinates)
+                    return SEA_ROUTE, mine is not None and theirs is not None and mine != theirs
+    if env.distance_function(origin.coordinates, destination.coordinates) <= ROUTE_RANGE:
+        return LAND_ROUTE, False
+    return None, False
+
+
+def eligible_routes(trader, env):
+    """`[(city, kind, overseas), ...]` for every city `trader` could open a
+    route to from where it stands: none unless it is on one of its owner's
+    city centres (the origin); otherwise every other city `route_kind` gives
+    a kind, with no route of this player between the pair in either
+    direction, in city-id order. Capacity is not this function's question."""
     origin = origin_city(trader, env)
     if origin is None:
         return []
@@ -200,24 +264,32 @@ def eligible_destinations(trader, env):
     out = []
     for city_id in sorted(env.city_by_id):
         city = env.city_by_id[city_id]
-        if city is origin:
+        if city is origin or frozenset((origin.city_id, city_id)) in linked:
             continue
-        if env.distance_function(origin.coordinates, city.coordinates) > ROUTE_RANGE:
-            continue
-        if frozenset((origin.city_id, city_id)) in linked:
-            continue
-        out.append(city)
+        kind, overseas = route_kind(origin, city, trader.player, env)
+        if kind is not None:
+            out.append((city, kind, overseas))
     return out
 
 
-def pair_yields(player, origin, destination):
+def eligible_destinations(trader, env):
+    """The cities of `eligible_routes`, in the same (city-id) order."""
+    return [city for city, _kind, _overseas in eligible_routes(trader, env)]
+
+
+def pair_yields(player, origin, destination, overseas=False):
     """Int tenths per yield (every YIELD_COLUMNS name) a route of `player`
     from its city `origin` to `destination` yields the origin per turn: the
     domestic table when `player` owns the destination, else the international
     one, over the destination's centre and its complete specialty districts
     (a district absent from the table adds nothing), plus each `route_yield`
     effect in force for the origin (an `international_only` one on an
-    international route only). The one consumer of `route_yield`."""
+    international route only). An `overseas` route (a sea route between two
+    landmasses, `route_kind`) then has every yield multiplied by
+    `(100 + OVERSEAS_PERCENT) / 100`, floored in tenths per yield (v0.9.0
+    Q6: the discrete jump). The one consumer of `route_yield`, and the one
+    place the multiplier lives: `route_yields` passes a route's stored flag,
+    the Trader default passes the candidate's."""
     international = destination.player is not player
     table = ROUTE_TABLES[INTERNATIONAL if international else DOMESTIC]
     totals = dict.fromkeys(YIELD_COLUMNS, 0)
@@ -229,18 +301,22 @@ def pair_yields(player, origin, destination):
             continue
         for yield_name, tenths in effect["yields"].items():
             totals[yield_name] += tenths
+    if overseas:
+        totals = {name: total * (100 + OVERSEAS_PERCENT) // 100
+                  for name, total in totals.items()}
     return totals
 
 
 def route_yields(route, env):
-    """What `route` yields its origin per turn (`pair_yields`), live; all
-    zero if either city no longer stands (a route never outlives its cities:
+    """What `route` yields its origin per turn (`pair_yields` with the
+    route's stored `overseas` flag), live otherwise; all zero if either city
+    no longer stands (a route never outlives its cities:
     `end_routes_touching`)."""
     origin = env.city_by_id.get(route.origin_city_id)
     destination = env.city_by_id.get(route.destination_city_id)
     if origin is None or destination is None:
         return dict.fromkeys(YIELD_COLUMNS, 0)
-    return pair_yields(env.players[route.player_index], origin, destination)
+    return pair_yields(env.players[route.player_index], origin, destination, route.overseas)
 
 
 def yields_to_origin(city, name):

@@ -54,6 +54,7 @@ from .maintenance import disband_candidate, maintenance_due, unit_maintenance_de
 from .purchasing import ITEM_UNIT, can_purchase, purchase_cost, spend
 from .trade import (
     DURATION_TURNS as TRADE_DURATION_TURNS,
+    SEA_ROUTE,
     TRADER_UNIT,
     TradeRoute,
     eligible_destinations,
@@ -61,6 +62,7 @@ from .trade import (
     expire_routes,
     origin_city,
     route_capacity,
+    route_kind,
 )
 from .unit import WarriorUnit, WorkerUnit, calculate_damage, movement_domain
 from .upgrades import can_upgrade, upgrade_cost, upgrade_target
@@ -288,6 +290,11 @@ class GameEnvironment:
                 "gold_spent_purchases": 0,
                 "faith_spent_purchases": 0,
                 "trade_routes_established": 0,
+                # Sea trade (v0.9.0 Q6): of those routes, the ones opened as
+                # sea routes (two Harbors, a water path) and the ones that
+                # cross landmasses (the overseas yield jump).
+                "sea_routes": 0,
+                "overseas_routes": 0,
                 # Improvements a Worker built (#116 P8): counted by
                 # WorkerUnit.build_improvement, the one player build path.
                 "improvements_built": 0,
@@ -1810,12 +1817,15 @@ class GameEnvironment:
         on (the origin) to `destination_city`. Refused (False, nothing
         changed) unless `trader` is a live unit of the trade type (`[trade]
         unit`) on one of its owner's city centres, the destination is among
-        `trade.eligible_destinations` (another city within range, no route of
-        this player between the pair) and a route slot is free
+        `trade.eligible_destinations` (another city within range or reachable
+        by sea between two Harbors, no route of this player between the
+        pair) and a route slot is free
         (`len(routes) < trade.route_capacity`). On success the Trader is
         consumed (`delete_unit`) and a `TradeRoute` of `[trade]
-        duration_turns` turns is appended to its owner's `routes`;
-        `episode_stats["trade_routes_established"]` counts it."""
+        duration_turns` turns is appended to its owner's `routes`, carrying the
+        `trade.route_kind` it was opened with; `episode_stats[
+        "trade_routes_established"]` counts it, `"sea_routes"` the sea ones
+        and `"overseas_routes"` those across landmasses."""
         player = trader.player
         if trader.unit_type != TRADER_UNIT or trader not in player.units:
             return False
@@ -1826,14 +1836,25 @@ class GameEnvironment:
             return False
         if len(player.routes) >= route_capacity(player):
             return False
+        # Kind and overseas flag are decided here, once, and kept for the
+        # route's duration (v0.9.0 Q6): a later Cartography or terrain
+        # change affects new routes only.
+        kind, overseas = route_kind(origin, destination_city, player, self)
         self.delete_unit(trader)
         player.routes.append(TradeRoute(
             origin_city_id=origin.city_id,
             destination_city_id=destination_city.city_id,
             player_index=player.player_index,
             turns_left=TRADE_DURATION_TURNS,
+            kind=kind,
+            overseas=overseas,
         ))
-        self.episode_stats[player.player_index]["trade_routes_established"] += 1
+        stats = self.episode_stats[player.player_index]
+        stats["trade_routes_established"] += 1
+        if kind == SEA_ROUTE:
+            stats["sea_routes"] += 1
+        if overseas:
+            stats["overseas_routes"] += 1
         return True
 
     def economy_phase(self, player):

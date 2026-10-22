@@ -31,7 +31,7 @@ from .availability import government_tier
 from .improvements import access_walk_bonus, best_improvement, worker_targets
 from .trade import (
     TRADER_UNIT,
-    eligible_destinations,
+    eligible_routes,
     origin_city,
     pair_yields,
     route_capacity,
@@ -137,17 +137,19 @@ def default_loadout(player):
 
 def best_destination(trader, env):
     """The city the engine sends `trader` to from the own city centre it
-    stands on: among `trade.eligible_destinations`, the one whose route would
+    stands on: among `trade.eligible_routes`, the one whose route would
     yield the origin the most, every yield counted equally (food,
     production, gold, science, culture, faith; summed in tenths, the order
-    whole points give), ties to the lower city id. None when the Trader is
-    not on an own city centre or nothing is eligible."""
+    whole points give), ties to the lower city id. The candidate's overseas
+    flag goes through `pair_yields` like a live route's, so an idle Trader
+    finds the overseas route when it pays most (v0.9.0 Q6). None when the
+    Trader is not on an own city centre or nothing is eligible."""
     origin = origin_city(trader, env)
     if origin is None:
         return None
     best, best_key = None, None
-    for destination in eligible_destinations(trader, env):
-        total = sum(pair_yields(trader.player, origin, destination).values())
+    for destination, _kind, overseas in eligible_routes(trader, env):
+        total = sum(pair_yields(trader.player, origin, destination, overseas).values())
         key = (-total, destination.city_id)
         if best_key is None or key < best_key:
             best, best_key = destination, key

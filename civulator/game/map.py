@@ -170,6 +170,13 @@ class Map:
         self._cost_grids = {}
         self._fresh_water_cache = None
         self._fresh_water_cache_epoch = None
+        # Landmass labelling (v0.9.0 Q6) and sea-reachability BFS results,
+        # both terrain-derived: keyed by (map_uid, terrain_epoch) and
+        # dropped when the epoch moves on. Never read unit positions.
+        self._landmass_cache = None
+        self._landmass_cache_epoch = None
+        self._water_reach_cache = {}
+        self._water_reach_cache_epoch = None
         # River-edge flags for A* (design doc §11 P6) — domain-independent,
         # so cached separately from the per-domain cost grids; same
         # invalidation trigger (terrain_epoch) as everything else in §3.4.
@@ -446,6 +453,78 @@ class Map:
             )
             self._fresh_water_cache_epoch = self.terrain_epoch
         return self._fresh_water_cache
+
+    def _landmass_grid(self):
+        """rows x cols int32 grid of landmass ids (-1 on water), cached per
+        (map_uid, terrain_epoch). The components come from the ONE landmass
+        kernel, `mapgen.landmasses.find_landmasses` (design doc B8); the id
+        of a component is its index in the kernel's list."""
+        if self._landmass_cache is None or self._landmass_cache_epoch != self.terrain_epoch:
+            base_terrain = np.empty((self.n, self.m), dtype=object)
+            for r in range(self.n):
+                for c in range(self.m):
+                    tile = self.tiles[r, c]
+                    base_terrain[r, c] = tile.base_terrain if tile is not None else None
+            grid = np.full((self.n, self.m), -1, dtype=np.int32)
+            for index, component in enumerate(
+                mapgen.landmasses.find_landmasses(base_terrain, self.n, self.m)
+            ):
+                for (r, c) in component:
+                    grid[r, c] = index
+            self._landmass_cache = grid
+            self._landmass_cache_epoch = self.terrain_epoch
+        return self._landmass_cache
+
+    def landmass_id(self, coordinates):
+        """The id of the landmass (connected land-domain component, canonical
+        adjacency and wrap) the tile belongs to, or None on water or
+        off-map. The engine's only continent test (v0.9.0 Q6): sea trade's
+        overseas bonus reads it. Ids are stable while the terrain is; they
+        are only ever compared for equality."""
+        row, col = coordinates
+        if not 0 <= row < self.n:
+            return None
+        value = int(self._landmass_grid()[row, col % self.m])
+        return None if value < 0 else value
+
+    def water_distance(self, a, b, domain, max_steps):
+        """The length in tiles of the shortest water path from tile `a` to
+        tile `b` for movement `domain` ("coast" or "water"), or None when
+        there is none within `max_steps` (v0.9.0 Q6, design "v2 fixes" B6).
+
+        A breadth-first search over the tiles `can_enter(domain, tile)`
+        admits, adjacency from `get_adjacent_coords`: TERRAIN only, never a
+        unit position, so a parked ship cannot change the answer (unlike
+        `path_finder`, which routes around occupied tiles). Both endpoints
+        must themselves be enterable. Cached per (map_uid, terrain_epoch,
+        domain, a, max_steps)."""
+        a = (int(a[0]), int(a[1]) % self.m)
+        b = (int(b[0]), int(b[1]) % self.m)
+        if self._water_reach_cache_epoch != (self.map_uid, self.terrain_epoch):
+            self._water_reach_cache = {}
+            self._water_reach_cache_epoch = (self.map_uid, self.terrain_epoch)
+        key = (domain, a, max_steps)
+        reached = self._water_reach_cache.get(key)
+        if reached is None:
+            reached = {}
+            if can_enter(domain, self.get_tile(a)):
+                reached[a] = 0
+                frontier = [a]
+                for steps in range(1, max_steps + 1):
+                    following = []
+                    for here in frontier:
+                        for there in self.get_adjacent_coords(here):
+                            there = (int(there[0]), int(there[1]))
+                            if there not in reached and can_enter(domain, self.get_tile(there)):
+                                reached[there] = steps
+                                following.append(there)
+                    frontier = following
+            self._water_reach_cache[key] = reached
+        return reached.get(b)
+
+    def water_reachable(self, a, b, domain, max_steps):
+        """Whether `water_distance(a, b, domain, max_steps)` finds a path."""
+        return self.water_distance(a, b, domain, max_steps) is not None
 
     def get_tile(self, coordinates):
         """Get the tile at the specified coordinates, handling horizontal wrapping."""
