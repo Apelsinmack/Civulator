@@ -1,8 +1,10 @@
 # Districts II and religion (#93 #94 #95 #96 #97 #102): design
 
-> **Status: v1, awaiting Erik's rulings and the critique round.** Authored
+> **Status: v2 — critique lens 1 resolved on paper ("v2 fixes" below wins
+> where it differs from §2–§15); awaiting Erik's rulings on §16.** Authored
 > 2026-10-22 by Claude as lead game designer, at Erik's request (chat,
-> 2026-10-22, Erik away for the rest of the session). Rules that are Erik's
+> 2026-10-22, Erik away for the rest of the session). Lens 1's full report:
+> `docs/districts_religion_design_critique_lens1.md`. Rules that are Erik's
 > are marked *(Erik)*; everything else is Claude's call, flagged where it
 > constrains later design. Civ 6 facts: `docs/civ6_progression_reference.md`
 > (the digest) and `docs/districts_design.md` (the dumps). The build
@@ -880,7 +882,7 @@ Artifact manifests (`check_version` gates on 0.9).
 | Sea trade | `trade.is_sea_route`, `[trade] sea_range / overseas_percent`, `route_yields` multiplier | The only route-kind decision; a route's kind is derived from Harbors and a water path at establishment, never stored twice |
 | Religion registry | `civulator/religion_model.py` (`[religion]`, `[pantheons.*]`, `[beliefs.*]`) | The only interpreter; a pantheon or belief is a table of effects; `exclusive`, tiers and costs are columns here |
 | Religion engine | `game/religion.py` (`pressure`, `_religion_phase`, upkeep, the five predicates), `Player.pantheon/religion`, `City.religion`, the ledger | The only religious state and the only change of a city's religion; pressure mirrors `loyalty.pressure`'s formula (one test pins them equal); every action has a predicate the mask calls; no RNG |
-| Effect kinds added | `amenity`, `border_cost_percent`, `improvement_yield`, `adjacency_row`, `regional_yield`, `cross_yield`, `per_follower_city`, `religion_param` | Each has exactly one consumer named in §3/§5/§7; `DEFERRED_KINDS` stays empty |
+| Effect kinds added | `amenity`, `border_cost_percent`, `improvement_yield`, `adjacency_row`, `regional_yield`, `cross_yield`, `per_follower_city`, `religion_param`, `movement_delta` (v2) | Each has exactly one consumer named in §3/§5/§7/v2; `DEFERRED_KINDS` stays empty at every merge |
 
 ### (c) Existing rows amended at implementation
 
@@ -911,8 +913,165 @@ classes; fairness rule; golden).
 | C8 | Crusade and Defender of the Faith touch combat strength through two new attributes | yes — they are the two beliefs that make religion matter in a war, which is the game the agents actually play |
 | C9 | Three techs + one civic lengthen the trees (+850 science, +220 culture) | accept; re-tune `tech_cost_percent` in the balancing pass, not here |
 
+## v2 fixes (critique round 1, lens: systems reuse / regression / determinism)
+
+Where this section and §2–§15 differ, **this section wins**. Every item is
+a technical correction against the code as it is (file:line in the lens-1
+report); none changes a ruling in §0.2 or a call in §16.
+
+**B1 — a resource class in `matches`.** `terrain_model._match` and
+`validate_on_table` accept resource *names* and `"any"` only; the class form
+planned in districts design v3 never shipped. Q1 extends both: `resources`
+may name a class (`"bonus" | "luxury" | "strategic"`), and a resource may not
+be named like a class. The Industrial Zone's strategic row waits for that.
+
+**B2 — `improved_by`, the one column that defines access.** §2.2's "any
+improvement counts" and §2.1's "a Farm on Niter does not" cannot both hold,
+and improvement `on` tables cannot name a resource, so "the improvement
+whose `on` admits the tile" is not unique (Farm, Plantation, Camp and
+Pasture all admit Grassland/Plains flat). Each strategic and luxury table
+declares `improved_by = ["Mine"]` (validated against `IMPROVEMENT_NAMES`),
+read only by `player_has_access`: a tile is accessed when it holds one of
+*those* improvements, a district or wonder, or a centre. Bonus resources
+declare nothing (they grant nothing). A luxury is still one table.
+
+**B3 — a third mapgen stage for the new tiers, after starts.** Start
+fertility *does* compose resources into tile yields (`starts._yield_sum_grid`,
+`_is_settleable`), the start regions exist only inside `generate_starts` and
+are not returned, there is no founding-ring rule for the bonus tier, and the
+fairness rule is conditional on what a region holds. So: `generate_starts`
+returns its regions; a new stage `place_tiered_resources(map_data, regions,
+master_seed)` runs **after** it, ranks candidate tiles by `tile_roll01` under
+purpose ids appended to `seeding.py`, uses total sort keys, processes regions
+in start order, and is declared as the third sequential mapgen stage (design
+§4.2 rule 3 allows a sequential stage by name). Fertility, regions and
+`starts` are then provably unchanged, and the golden diff is `resource` plus
+`params` only. The bonus tier keeps its per-tile hash.
+
+**B4 — fortifications are a first-class target.** `_step_inner` dispatches
+an attack only on an enemy unit or `_get_enemy_city_at`; both mask loops
+offer only those; `Unit.attack` reads `target.is_city` and calls
+`get_combat_strength(is_attacking, target)`; the melee move-in checks only
+`enemy_city_blocks`. One new lookup, `GameEnvironment.enemy_fortification_at
+(coords)`, with `Unit.enemy_fortification_blocks` beside `enemy_city_blocks`,
+read by: the dispatcher (an order on a healthy enemy Encampment is an
+attack), both mask loops, both branches of `Unit.move`, the post-kill move-in,
+and `defaults.step_toward`. The defender protocol is `health`, `player`
+(through the district's city, so capture and flip carry it), `coordinates`,
+`get_combat_strength(is_attacking, target)`, and the flag `Unit.attack` reads
+for the ranged penalty and the floor (`is_city` today; the district sets the
+same flag — rename to `is_fortification` only if the implementer finds every
+reader, otherwise keep the name and document it).
+
+**B5 — one movement-domain function; the mask looks for an enemy before
+`can_enter`.** `movement_domain(unit_type)` is static and feeds spawning
+(`City.complete_unit_production`); `get_movement_domain()` is per unit. One
+source: `movement_domain(unit_type, player)`, `get_movement_domain`
+delegating. The melee mask tests for an enemy on the neighbour *before* the
+`can_enter` gate, so a Warrior is offered an adjacent Galley and a Galley a
+coastal unit or city; the post-kill move-in gains the explicit `can_enter`
+clause (it does not exist today — a Galley would otherwise land).
+
+**B6 — sea reachability from terrain alone; the overseas bonus on sea
+routes only; the multiplier in `pair_yields`.** `path_finder` blocks
+occupied tiles, so a parked ship would flicker a route's kind. Sea
+reachability is a BFS over the `"coast"` / `"water"` cost grid with no
+occupancy, cached on `terrain_epoch`, path length in tiles ≤ `sea_range`.
+The ×(100 + overseas_percent) applies to **sea routes** between different
+landmasses only — a land pair across a strait within range 15 keeps today's
+yield (§10's "a strait rewards the Harbor pair" was right; §6.6's wording
+was not). The multiplier lives in `trade.pair_yields`, which both
+`route_yields` and the Trader default read, so the default finds the
+overseas route.
+
+**B7 — `improvement_yield` is consumed in `game/yields.py`, never in
+`Tile.yields`.** `Tile.yields` is food and production only, player-blind,
+and read by the epoch-keyed encoder cache and by `claim_rank`; an
+owner-dependent value there goes stale without an epoch bump. The consumer
+is `city_yield` over the centre and worked tiles (beside `_tile_yield` /
+`_tile_gold_tenths`), for all six yields.
+
+**B8 — one landmass kernel.** `starts._find_landmasses` already computes
+land components with hexmath adjacency and wrap. It becomes a public pure
+kernel (`hexmath`-level or `mapgen`-level, the implementer's call), and
+`Map.landmass_id` caches its result on `terrain_epoch`. Mapgen and sea
+trade share one definition.
+
+**B9 — Q1 bumps `__version__` to 0.9.0 and regenerates the fixture.**
+`check_version` gates on `__version__`'s major.minor; Q1 changes every
+seeded world's resources and gates two units, so a 0.8 scenario must refuse
+to load from Q1 on (the #116 P1 precedent). Q9 only dates the entry.
+
+**Non-blocking, folded in:**
+- The spawn routine is `City.complete_unit_production` (there is no
+  `place_new_unit`); §4.1 and §6.4 refer to it.
+- Encampment repair: use the full ring test of `is_city_under_siege`, with
+  the tile as argument (Civ 6's rule, not "an enemy adjacent"). Its premise
+  that water is impassable stops holding in Q5 — ships do not count toward a
+  blockade (ACCEPTED GAP, declared in the CHANGELOG).
+- `_bombard_target` takes the origin too. Strike order: centre first, then
+  the Encampment. Every strike and every attack on an Encampment draws
+  `env.rng` through `calculate_damage` — deterministic, but the stream
+  shifts; §15(a)'s "nothing here draws" applies to §2, §3, §6.6 and §7 only.
+- Amenity percent on production is applied in `City.calculate_production`
+  (where the loyalty percent for production lives), not in `city_yield`;
+  the Amenities row says "through the same two readers loyalty uses".
+- `loyalty.parse_bands` bounds mins to 0..maximum and fixes three columns;
+  the amenity parser is a sibling with the same contract (strictly
+  descending mins, first match, last row catches all), allowing negatives
+  and four columns.
+- `border_cost_percent` is applied in `run_border_phase`, where the claiming
+  city is known; `territory.cost(n)` stays player-blind.
+- Crusade / Defender of the Faith: `combat_strength_amounts` and
+  `Unit._effect_strength_amounts` gain a target (and the defender's tile);
+  applied in `get_combat_strength` *and* `get_ranged_strength`; the
+  attribute is `applies_to = ["all"]` (`scope` is player|city). The matchup
+  oracle joins Q8's gate.
+- Follower beliefs are a new entry in `effects.SOURCES`; at load, a follower
+  belief may carry only kinds whose consumer passes a city.
+- Jesuit Education: `FAITH_CATEGORIES` (`unit_model.py`) gains building
+  categories and `purchasing.can_purchase` a building branch.
+- Naval classes: `CLASS_CHANNEL` maps `naval_melee` / `naval_ranged` to
+  existing channels (melee, ranged) so encoder depth does not change (R9);
+  ships are excluded from the `land_military` faith category and from
+  `is_garrisoned` (both derive from `FIGHTING_CLASSES`: add a domain filter).
+- `BUILD_OPTIONS` appends Galley, Quadrireme, Caravel, Arena (append-only;
+  `NUM_BUILD_CHANNELS` grows for new build heads — allowed, noted under R9).
+- The Great Lighthouse's +1 naval movement is a **ninth** kind,
+  `movement_delta { domain = "water", amount = 1 }`, consumer
+  `Unit.get_max_movement` (or wherever `max_movement` is read once). Nine
+  kinds, not eight, in §15(b).
+- Religious victory goes in `victory.decisive_outcome` so `game_over` ends
+  the game.
+- `tests/test_build_options.py` asserts the Swordsman is producible with its
+  tech alone: Q1 updates it as a **declared rule change**. The `basic`
+  generator never runs `place_resources`: on basic worlds gated units are
+  unbuildable — so `requires_resource` is **honoured only when the world has
+  any resource of that class** (`resources.world_has_class(map, cls)`,
+  cached on `terrain_epoch`); basic boards and the matchup board keep today's
+  roster. Declared in the CHANGELOG.
+- Access lost mid-production (capture/flip of the resource city): the item
+  stays in production and completes (Civ 5's rule — the order was legal when
+  given); only new orders are refused.
+- Religion state (§7.1) also holds: per city the conversion streak
+  `(candidate, rounds)`, per player the spread-use counter and the lapsed
+  flag; all in `Player.reset_state` and the episode fingerprint. Tie-break
+  for the strongest foreign pressure: lower founder index.
+- Patch dependencies: Q4's Dam (`amenity` column) and Q8's Zen Meditation
+  (`amenity` kind) need **Q2**; Q8's `religion_param` consumer is built in
+  **Q9**, so Q8 ships the parser and Q9 the consumer, with the kind listed
+  in `DEFERRED_KINDS` *between* the two patches only if they do not merge
+  the same day — otherwise Q8 and Q9 merge together. Order: Q1 → Q2 → (Q3,
+  Q4) → Q5 → Q6 → Q7 → Q8+Q9.
+
 ## Critique (lens table)
 
 | Lens | Verdict | Blockers |
 |---|---|---|
-| (pending) | | |
+| Systems reuse, regression, determinism (Opus, 2026-10-22; `docs/districts_religion_design_critique_lens1.md`) | survives with fixes | 9: (1) `matches` takes no resource class; (2) access rule self-contradictory, no `improved_by` data; (3) §2.4 unbuildable in `place_resources` and would move `starts`; (4) Encampment unattackable as written, move-in bypasses its refusal; (5) cross-domain melee unreachable through the mask, no move-in `can_enter`, two domain sources; (6) sea routes via `path_finder` read unit positions, overseas bonus changed land routes, multiplier invisible to the Trader default; (7) `improvement_yield` in `Tile.yields` poisons the epoch cache; (8) `landmass_id` duplicates `starts._find_landmasses`; (9) version gate open Q1–Q8. All resolved in "v2 fixes". 20 non-blocking, folded in. |
+
+**Synthesis (v2).** One lens, survives with fixes, nine blockers resolved on
+paper. A second lens (rules semantics and edge cases) is worth running
+**after Erik's rulings on §16**, since several of its targets (C1, C3, C4,
+C8) may change shape. v2 is not yet the build contract: Erik's rulings
+first.
