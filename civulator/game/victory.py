@@ -11,8 +11,10 @@ engine lives here because `civulator/game/` may import nothing of training.
 
 The ways a game ends, in the order the verdict tests them:
 
-1. **elimination** -- exactly one living player;
-2. **domination** -- a living player holds every Palace in the game (the
+1. **elimination** -- exactly one living player (a player dies with no city
+   and no Settler left, `Player.has_lost`, #126);
+2. **domination**, only while `[game] domination_victory` is true (off by
+   default since #126) -- a living player holds every Palace in the game (the
    capital marker, `[city] capital_building`) and at least one of them was
    granted to another player (`Player.palace_granted`). The second clause is
    what stops a vacuous win: a board with no Palace at all (a painted
@@ -78,6 +80,18 @@ def parse_score_weights(game_cfg):
 
 
 SCORE_WEIGHTS = parse_score_weights(CFG["game"])
+
+
+def parse_domination_enabled(game_cfg):
+    """`[game] domination_victory` -> bool. Required, and a real boolean: the
+    switch decides when games end, so it has one home and no default here."""
+    value = game_cfg.get("domination_victory")
+    if type(value) is not bool:
+        raise ValueError(f"[game] domination_victory must be true or false, got {value!r}")
+    return value
+
+
+DOMINATION_ENABLED = parse_domination_enabled(CFG["game"])
 CITY_SCORE_WEIGHT = SCORE_WEIGHTS["cities"]
 
 
@@ -129,13 +143,16 @@ def palace_holders(env):
 
 
 def domination_winner(env):
-    """The player index that holds every Palace in the game, or None.
+    """The player index that holds every Palace in the game, or None --
+    always None while `DOMINATION_ENABLED` is false (read at call time).
 
     Needs exactly one holder, alive, and a Palace that was granted to some
     OTHER player: `Player.palace_granted` outlives the Palace's city, so a
     capital that was captured still counts. Without that clause a board with
     no Palace, and the first player to found a capital while the others have
     none yet, would "hold every Palace" vacuously."""
+    if not DOMINATION_ENABLED:
+        return None
     holders = palace_holders(env)
     if len(holders) != 1:
         return None

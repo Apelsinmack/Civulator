@@ -259,8 +259,9 @@ def default_workers(player, env):
     (a) it stands on a tile where its owner may build an improvement
         (`improvements.best_improvement`: `can_player_build_improvement_at`,
         so ownership, research and the tile predicate; the largest gain,
-        ties by config order; none on a tile that holds one already) and
-        builds that one through `WorkerUnit.build_improvement`;
+        ties by config order; none on a tile whose improvement already
+        ranks at least as high) and builds that one through
+        `WorkerUnit.build_improvement`, replacing what stood there (#126);
     (b) otherwise it takes one step, `step_toward`, through `Unit.move`
         toward the nearest `worker_target`. A tile a Worker chose earlier in
         the same pass is chosen again only when no other is left, so Workers

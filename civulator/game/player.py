@@ -1,5 +1,7 @@
 """Player class managing units, cities, and turn logic."""
 
+from .unit import SettlerUnit
+
 
 class Player:
     """Represents a player in the game."""
@@ -102,9 +104,17 @@ class Player:
             if not city.complete_unit_production(unit_type, env):
                 self.queued_units.append((city_id, unit_type))
 
+    def has_lost(self):
+        """Whether the player is out of the game: no city and no Settler left
+        to found one (#126, Erik 2026-10-22). Losing the capital, or every
+        city while a Settler lives, does not end a player."""
+        return not self.cities and not any(isinstance(unit, SettlerUnit)
+                                           for unit in self.units)
+
     def end_turn(self):
-        """Process the end of a player's turn."""
-        if len(self.cities) == 0:
+        """Process the end of a player's turn: a player that `has_lost` dies
+        and its remaining units are removed."""
+        if self.has_lost():
             self.is_dead = True
             units_copy = self.units.copy()
             for unit in units_copy:

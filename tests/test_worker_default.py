@@ -281,9 +281,10 @@ def test_the_worker_builds_only_what_its_owner_knows_on_land_its_owner_holds():
 def test_a_tile_never_holds_two_improvements_under_the_default():
     """Over many rounds, with two improvements both placeable everywhere,
     every owned tile ends with exactly one improvement and none with two; the
-    Workers then have nothing to do and stay idle. The engine's tile predicate
-    lets several stack (housing design) -- the default does not use it.
-    Breaks if the default improves an improved tile, or never finishes."""
+    Workers then have nothing to do and stay idle: the two rank equal in gain
+    and config order breaks the tie, so neither ever replaces the other
+    (#126). Breaks if the default replaces an improvement with one that ranks
+    no higher (a back-and-forth), lets two stack, or never finishes."""
     tables = {"A": _table(food=1), "B": _table(gold=1)}
     with synthetic_improvements(tables):
         env, player, city = scene()
@@ -871,3 +872,50 @@ def test_a_built_improvement_adds_its_housing_to_the_city():
         env.economy_phase(player)
         assert terrain_model.IMPROVEMENT_HOUSING["Roofed"] == 5
         assert housing(city) == before + 5
+
+
+# --- one improvement per tile, and replacement (#126) -------------------------------------
+
+
+def test_a_build_replaces_the_improvement_on_the_tile():
+    """`GameEnvironment.build_improvement` leaves exactly the new improvement
+    on the tile, whatever stood there -- a lower-ranked one too, since a
+    player may re-improve however it likes -- and bumps the terrain epoch.
+    Breaks if builds stack again, or if replacement is limited to better
+    improvements in the engine."""
+    tables = {"Low": _table(food=1), "High": _table(food=3)}
+    with synthetic_improvements(tables):
+        env, player, city = scene()
+        pos = ring(env, CENTRE, 1)[0]
+        for name in ("High", "Low", "High"):
+            epoch = env.map.terrain_epoch
+            assert env.build_improvement(pos, name)
+            assert env.map.get_tile(pos).improvements == [name]
+            assert env.map.terrain_epoch > epoch
+        assert not env.build_improvement(pos, "High")   # the one already there
+
+
+def test_the_worker_replaces_an_improvement_once_a_better_one_is_unlocked():
+    """A tile improved before a tech was known is improved again once it is:
+    the Worker replaces the old improvement with the better gated one, and
+    the tile becomes a Worker target again. With the better one already there
+    the tile is no target. Breaks if an improved tile is never revisited, or
+    if the default rebuilds a tile that holds its best improvement."""
+    tech = research_model.TECH_ORDER[-1]
+    tables = {"Plain": _table(food=1), "Gated": _table(gold=3, requires_tech=tech)}
+    with synthetic_improvements(tables):
+        env, player, city = scene()
+        known = list(player.techs)
+        player.techs[:] = [t for t in known if t != tech]
+        pos = ring(env, CENTRE, 1)[0]
+        open_only(env, city, [pos], "Gated")
+        improve(env, [pos], "Plain")
+        assert best_improvement(player, pos, env) is None
+        assert not list(worker_targets(player, env))
+
+        player.techs[:] = known
+        assert list(worker_targets(player, env)) == [pos]
+        stand(env, "Worker", 0, pos)
+        env.economy_phase(player)
+        assert env.map.get_tile(pos).improvements == ["Gated"]
+        assert best_improvement(player, pos, env) is None
