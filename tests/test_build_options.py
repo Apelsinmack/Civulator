@@ -21,6 +21,14 @@ Since #116 P2 the tech tree gates units: the Swordsman is offered and
 produced once its owner knows Iron Working and refused before (restated from
 "offered from turn 1"); the Slinger stays ungated. The gate for every option
 is pinned in tests/test_availability.py.
+
+Since v0.9.0 Q1 (DECLARED rule change, docs/districts_religion_design.md
+§2.2) the Swordsman also needs Iron access, but only on a world that carries
+strategic resources: the flat boards below hold none, so their assertions
+(tech alone suffices) still describe those boards. On a world with strategic
+resources and no Iron access the Swordsman is refused by every path, with
+access offered by every path: `test_swordsman_needs_iron_access_where_the_world_has_strategics`
+here, every gated unit in tests/test_resource_tiers.py.
 """
 
 import pytest
@@ -103,6 +111,40 @@ def test_the_build_mask_offers_the_unit(unit_type):
         assert get_valid_build_mask(city)[idx] == 0.0
         grant(env.players[0], tech)
     assert get_valid_build_mask(city)[idx] == 1.0
+
+
+@pytest.mark.parametrize("with_iron", [False, True])
+def test_swordsman_needs_iron_access_where_the_world_has_strategics(with_iron):
+    """v0.9.0 Q1, declared rule change: on a world with a strategic resource,
+    a Swordsman whose owner knows Iron Working but has no Iron access is
+    refused by `can_produce_unit`, `produce_unit`, the build mask and
+    `purchase`; with an improved Iron tile in its territory, all four offer
+    it. Breaks if a path skips `player_can_build`'s resource clause, or the
+    clause stops reading access."""
+    from civulator.game.purchasing import can_purchase
+    from civulator.terrain_model import RESOURCE_IMPROVED_BY
+
+    env = make_flat_env()
+    player = env.players[0]
+    player.gold = 10 ** 6
+    city = env.create_city(player, (3, 3), "Test City")
+    grant(player, required_tech("unit", "Swordsman"))
+    if with_iron:
+        site = (3, 5)
+        if env.map.owner_id_at(site) != city.city_id:
+            env.map.claim(site, city)
+    else:
+        site = (7, 14)  # far and neutral: the world has Iron, the player not
+    tile = env.map.get_tile(site)
+    tile.set_layers("Plains", relief="hills", resource="Iron", map_ref=env.map)
+    tile.add_improvement(RESOURCE_IMPROVED_BY["Iron"][0], map_ref=env.map)
+
+    idx = BUILD_OPTIONS.index("Swordsman")
+    assert city.can_produce_unit("Swordsman") is with_iron
+    assert get_valid_build_mask(city)[idx] == float(with_iron)
+    if "gold" in unit_model.UNIT_PURCHASABLE["Swordsman"]:
+        assert can_purchase(player, city, "unit", "Swordsman", "gold") is with_iron
+    assert city.produce_unit("Swordsman") is with_iron
 
 
 @pytest.mark.parametrize("unit_type", ["Slinger", "Swordsman"])

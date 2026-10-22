@@ -231,7 +231,9 @@ def main():
           f"palaces_held={[sum(CAPITAL_BUILDING in c.buildings for c in p.cities) for p in env.players]} "
           f"score={[sum(score_breakdown(p).values()) for p in env.players]} "
           f"terms={[score_breakdown(p) for p in env.players]}")
-    print(f"done={env.done} steps={steps} wall={time.perf_counter() - t0:.1f}s")
+    print(f"done={env.done} steps={steps} wall={time.perf_counter() - t0:.1f}s "
+          f"luxuries_accessible={[env.episode_stats[i]['luxuries_accessible'] for i in range(num_players)]} "
+          f"units_refused_resource={[env.episode_stats[i]['units_refused_resource'] for i in range(num_players)]}")
 
 
 if __name__ == "__main__":
