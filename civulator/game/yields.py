@@ -3,11 +3,14 @@ docs/progression_design.md §2.1 as corrected by its "v2 fixes").
 
     city_yield(city, name), name in unit_model.YIELD_COLUMNS
 
-Science, culture, gold and faith are integer TENTHS scaled by
-`loyalty.loyalty_percent(city)` (the city's loyalty band, #116 P7); food and
-production are WHOLE points, unscaled (loyalty scales production once, at its
-consumer `City.calculate_production`, and growth at `City.growth_bucket_gain`;
-food is never scaled). The terms:
+Science, culture, gold and faith are integer TENTHS scaled first by
+`loyalty.loyalty_percent(city)` (the city's loyalty band, #116 P7) and THEN by
+`(100 + yield_percent) / 100` of the city's amenity band
+(`amenities.yield_percent`, v0.9.0 Q2), each step an integer floor in tenths;
+food and production are WHOLE points, unscaled here (loyalty and the amenity
+percent scale production once each, in that order, at its consumer
+`City.calculate_production`, and growth at `City.growth_bucket_gain`; food is
+never scaled). The terms:
 
 - science/culture/gold/faith: `[<name>] base + per_pop * population`;
   food/production: the city centre plus the worked tiles (`Tile.yields`,
@@ -44,6 +47,7 @@ from ..unit_model import (
     YIELD_COLUMNS,
     YIELD_PER_POP,
 )
+from .amenities import yield_percent as amenity_yield_percent
 from .districts import district_spec, district_yields, specialty_districts
 from .loyalty import loyalty_percent
 from .trade import yields_to_origin
@@ -134,8 +138,8 @@ def _source_tenths(city, name):
 
 
 def city_yield(city, name):
-    """What `city` yields of `name` this turn: int tenths (loyalty-scaled)
-    for science/culture/gold/faith, whole points (unscaled, unfloored at 1)
+    """What `city` yields of `name` this turn: int tenths (scaled by the
+    loyalty percent, then by the amenity percent) for science/culture/gold/faith, whole points (unscaled, unfloored at 1)
     for food/production. Raises ValueError for any other name."""
     if name in _TILE_YIELD_INDEX:
         return (10 * _tile_yield(city, name) + _source_tenths(city, name)) // 10
@@ -144,5 +148,6 @@ def city_yield(city, name):
                  + _source_tenths(city, name))
         if name == "gold":  # the one pool yield tiles produce (Tile.gold)
             total += _tile_gold_tenths(city)
-        return total * loyalty_percent(city) // 100
+        total = total * loyalty_percent(city) // 100
+        return total * (100 + amenity_yield_percent(city, city.player.game_env)) // 100
     raise ValueError(f"city_yield: unknown yield {name!r}, expected one of {YIELD_COLUMNS}")

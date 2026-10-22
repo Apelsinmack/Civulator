@@ -43,7 +43,7 @@ from ..district_model import (
     CONSOLATION_PERCENT as WONDER_CONSOLATION_PERCENT,
     REMOVABLE_FEATURES as DISTRICT_REMOVABLE_FEATURES,
 )
-from . import loyalty, territory
+from . import amenities, loyalty, territory
 from .victory import game_over
 from .territory import (
     FOUNDING_RING, NEUTRAL, border_cost_function, choose_claim_tile,
@@ -253,6 +253,9 @@ class GameEnvironment:
         2026-09-02): pure bookkeeping, reset with every episode. The eval
         harness reads these after each game; nothing in the engine or the
         agents ever reads them back."""
+        # [sum of the round means in int tenths, rounds seen] per player: the
+        # state `_amenity_stats` derives `amenity_surplus_mean` from.
+        self._amenity_rounds = {i: [0, 0] for i in range(self.num_players)}
         return {
             i: {
                 "kills": 0,
@@ -298,6 +301,13 @@ class GameEnvironment:
                 # predicate evaluation counts).
                 "luxuries_accessible": 0,
                 "units_refused_resource": 0,
+                # Amenities (v0.9.0 Q2; `_amenity_stats`, round-end
+                # bookkeeping, no rule): the mean surplus over a player's
+                # cities at each round end, then over the rounds, in INT
+                # TENTHS of an amenity (floored), and the city-rounds with a
+                # surplus below 0.
+                "amenity_surplus_mean": 0,
+                "cities_unhappy_rounds": 0,
                 # Summed adjacency score per yield, per city-round (#86 s5)
                 **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
             }
@@ -878,6 +888,7 @@ class GameEnvironment:
             self._border_phase()
             self._loyalty_phase()
             self._resource_stats()
+            self._amenity_stats()
             self._update_done()  # the round-end verdict: a flip can end the game
             self.turn_counter += 1
 
@@ -905,13 +916,30 @@ class GameEnvironment:
         """Round-end bookkeeping, no rule (v0.9.0 Q1): each living player's
         `luxuries_accessible` stat becomes the max of itself and the count of
         distinct luxuries it has access to now (`resources.player_has_access`).
-        Luxuries have no consumer yet (amenities are Q2)."""
+        Luxuries are read by game/amenities.py (v0.9.0 Q2)."""
         for player in self.players:
             if player.is_dead:
                 continue
             stats = self.episode_stats[player.player_index]
             count = len(accessible_resources(player, self, "luxury"))
             stats["luxuries_accessible"] = max(stats["luxuries_accessible"], count)
+
+    def _amenity_stats(self):
+        """Round-end bookkeeping, no rule (v0.9.0 Q2): for each living player
+        with a city, `amenity_surplus_mean` becomes the mean over the rounds
+        seen so far of that round's mean city surplus (each in int tenths,
+        floored) and `cities_unhappy_rounds` grows by the cities whose surplus
+        is below 0 (`amenities.surpluses`, one luxury assignment per player)."""
+        for player in self.players:
+            if player.is_dead or not player.cities:
+                continue
+            surplus = amenities.surpluses(player, self)
+            stats = self.episode_stats[player.player_index]
+            stats["cities_unhappy_rounds"] += sum(1 for v in surplus.values() if v < 0)
+            acc = self._amenity_rounds[player.player_index]
+            acc[0] += 10 * sum(surplus.values()) // len(surplus)
+            acc[1] += 1
+            stats["amenity_surplus_mean"] = acc[0] // acc[1]
 
     def _loyalty_phase(self):
         """The round-end loyalty phase (#116 P7, progression design §8.3 and

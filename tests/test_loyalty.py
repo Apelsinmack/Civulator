@@ -44,6 +44,10 @@ from civulator.config import CFG
 from conftest import grant_civic, stand, synthetic_government
 from test_determinism import episode_fingerprint
 
+
+# v0.9.0 Q2: this module pins other rules' exact arithmetic, not the amenity band.
+pytestmark = pytest.mark.usefixtures("neutral_amenities")
+
 ROW = 4
 
 

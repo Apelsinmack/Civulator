@@ -297,6 +297,19 @@ BUILDING_LOYALTY = {
 }
 
 
+# Amenity sources (v0.9.0 Q2, docs/districts_religion_design.md §3.1): the
+# optional `amenity` column, WHOLE points added to the city's amenity supply.
+# Read by civulator/game/amenities.py only; nonzero entries only.
+BUILDING_AMENITY = {
+    name: points
+    for name, points in (
+        (name, whole_points(table["amenity"], f"[buildings.{name}] amenity"))
+        for name, table in _BUILDINGS_CFG.items() if "amenity" in table
+    )
+    if points
+}
+
+
 # --- Availability columns (#116 P2, docs/progression_design.md §4.1, §6.2) ---
 #
 # Every key a table may carry: a typo in a gating column (`requires_techs`)
@@ -315,6 +328,7 @@ BUILDING_KEYS = frozenset({
     "requires_civic", "requires_government_tier", "maintenance",
     "purchasable", "effects",  # #116 P4
     "loyalty",  # #116 P7
+    "amenity",  # v0.9.0 Q2
 })
 
 

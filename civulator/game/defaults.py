@@ -28,7 +28,7 @@ from ..research_model import (
     scaled_tech_cost,
 )
 from .availability import government_tier
-from .improvements import best_improvement, worker_targets
+from .improvements import access_walk_bonus, best_improvement, worker_targets
 from .trade import (
     TRADER_UNIT,
     eligible_destinations,
@@ -234,19 +234,26 @@ def default_trade(player, env):
 
 def worker_target(worker, env, claimed=frozenset()):
     """The tile `worker` is headed for: the nearest by `distance_function`
-    (ties by (row, col)) of `improvements.worker_targets` -- the owner's
-    tiles where an improvement may be built, with no foreign unit and no own
-    Worker standing -- preferring the tiles no earlier Worker of the pass
-    `claimed`. When every target is claimed it takes the nearest claimed one
-    instead of none: a Worker never idles while there is a tile to reach
+    of `improvements.worker_targets` -- the owner's tiles where an
+    improvement may be built, with no foreign unit and no own Worker standing
+    -- preferring the tiles no earlier Worker of the pass
+    `claimed`. "Nearest" is the total order (distance minus the tile's
+    `improvements.access_walk_bonus`, the bigger bonus, row, col): a build
+    that would grant a resource its owner lacks counts `[worker_default]
+    access_bonus` tiles nearer (v0.9.0 Q2). When every target is claimed it
+    takes the nearest claimed one instead of none: a Worker never idles while there is a tile to reach
     (without the fallback, a farther Worker whose way is blocked by a nearer
     one that has no target of its own would hold the last tile for ever).
     None when there is no target at all."""
     here = tuple(worker.coordinates)
     targets = list(worker_targets(worker.player, env))
     candidates = [pos for pos in targets if pos not in claimed] or targets
-    return min(candidates, key=lambda pos: (env.distance_function(here, pos), pos),
-               default=None)
+
+    def key(pos):
+        bonus = access_walk_bonus(worker.player, pos, env)
+        return env.distance_function(here, pos) - bonus, -bonus, pos
+
+    return min(candidates, key=key, default=None)
 
 
 def default_workers(player, env):
@@ -263,7 +270,8 @@ def default_workers(player, env):
         ranks at least as high) and builds that one through
         `WorkerUnit.build_improvement`, replacing what stood there (#126);
     (b) otherwise it takes one step, `step_toward`, through `Unit.move`
-        toward the nearest `worker_target`. A tile a Worker chose earlier in
+        toward the nearest `worker_target` (a tile whose build would grant a
+        resource its owner lacks counts `access_bonus` tiles nearer). A tile a Worker chose earlier in
         the same pass is chosen again only when no other is left, so Workers
         that start together spread over the land instead of queueing for one
         tile, and none idles while a tile can be reached;

@@ -33,7 +33,8 @@ from ..torch_env import resolve_device
 # #116 P4 civic- and government-gated buildings follow those, #116 P5 appends
 # the Market, the Lighthouse and the Trader (which left game/unit.py's
 # DEFERRED_BUILD_UNITS with the trade routes it makes), and #116 P8 appends the
-# Worker (which left it with the engine default that builds improvements).
+# Worker (which left it with the engine default that builds improvements), and
+# v0.9.0 Q2 appends the Arena (the Entertainment Complex's +2 amenity building).
 BUILD_OPTIONS = [
     "Warrior", "Spearman", "Archer", "Horseman", "Catapult",
     "Settler", "Granary", "Slinger", "Swordsman", "Walls",
@@ -43,6 +44,7 @@ BUILD_OPTIONS = [
     "Musketman",
     "Temple", "Amphitheater", "Ancestral Hall", "Grand Master's Chapel",
     "Market", "Lighthouse", "Trader", "Worker",
+    "Arena",
 ]
 NUM_BUILD_OPTIONS = len(BUILD_OPTIONS)
 

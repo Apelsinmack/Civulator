@@ -462,7 +462,8 @@ on = { bases = ["Coast", "Lake"] }
 #                Niter +1F +1P, Wine +1F +1G, Silk +1 culture, Dyes +1 faith,
 #                Cotton +3G, Salt +1F +1G, Silver +3G, Furs +1F +1G, Pearls
 #                +1 faith, Whales +1F +1P -- not modelled here.
-# Luxuries have no consumer yet (amenities are Q2).
+# Luxuries are read by game/amenities.py (v0.9.0 Q2): each distinct luxury is +1 amenity
+# in up to [amenities] luxury_cities cities.
 
 [terrain.resource.Horses]
 class = "strategic"
@@ -620,6 +621,17 @@ requires_tech = "Celestial Navigation"
 housing = 0.5
 food = 1           # Civ 6 GS: +1 Food (wiki Fishing_Boats_(Civ6))
 on = { bases = ["Coast", "Lake"] }
+
+# --- The Worker default's access preference (v0.9.0 Q2) ------------------------
+# Read only by civulator/game/improvements.py (a scalar here rather than under
+# [improvements], whose keys are all improvement names). Tiered resources yield
+# 0, so ranking improvements by yield alone never prefers the one that grants a
+# luxury or strategic resource. Among improvements of equal gain the one that
+# grants the tile's resource wins; and the walking default counts a build that
+# would grant a resource its player lacks `access_bonus` tiles nearer. A
+# placeholder for #99, which replaces the Worker default with an agent action.
+[worker_default]
+access_bonus = 1
 
 [game]
 num_players = 8
@@ -1189,6 +1201,31 @@ drift_cap = 20
 garrison = 2        # design §8.2, Claude's call (Civ 6 has no inherent garrison term)
 bands = [[76, 100, 100], [51, 75, 75], [26, 50, 25], [1, 0, 0]]
 
+# --- Amenities (v0.9.0 Q2, docs/districts_religion_design.md §3) ---------------
+# Read only by civulator/game/amenities.py. Civ 6 Gathering Storm's model in
+# integers: a city needs ceil(population / need_divisor) - free_first
+# amenities (a size-1 city needs 1) and has the `amenity` columns of its
+# buildings and complete districts, the `amenity` effects in force for it, and
+# its share of the player's luxuries (each distinct luxury serves up to
+# `luxury_cities` cities, the neediest first). The surplus picks a band row:
+#   [min surplus, yield %, growth %, loyalty / round]
+# mins strictly descending, first match wins, the last row catches every
+# deficit below the rest. Yield percent scales science, culture, gold, faith
+# and production by (100 + yield %) / 100 after the loyalty percent (never
+# food); growth percent multiplies the growth bucket; the loyalty column is
+# added to the city's loyalty delta each round. The yield and growth columns
+# are Civ 6 GS's (Ecstatic +20 %, Happy +10 %, Content 0, Displeased -10 % /
+# -15 % growth, Unhappy -20 % / -30 %, Unrest -30 %, Revolt -40 %; the growth
+# column is 100 minus Civ 6's penalty). Civ 6 spawns rebels at Unrest; we have
+# no barbarians, so the loyalty column replaces rebels, and its numbers are
+# Claude's starting values for Erik's dial (Civ 6 Rise and Fall ties amenity
+# state to loyalty with values the digest does not give).
+[amenities]
+need_divisor = 2          # Civ 6 GS: one amenity per two citizens, rounded up
+free_first = 0            # Civ 6 Vanilla gave two free citizens; GS none
+luxury_cities = 4         # Civ 6: each distinct luxury serves up to 4 cities
+bands = [[5, 20, 100, 1], [3, 10, 100, 0], [0, 0, 100, 0], [-2, -10, 85, -1], [-4, -20, 70, -2], [-6, -30, 50, -3], [-99, -40, 25, -4]]
+
 # --- Research: the tech tree (issue #116 P2, docs/progression_design.md §4) ---
 # Read only by civulator/research_model.py. A tech is one [techs.*] table:
 #   cost       Civ 6 base science (Standard speed), positive int
@@ -1495,14 +1532,15 @@ effects = [
     { kind = "production_percent", target = { kind = "wonder" }, percent = 10 },
 ]
 
-# Civ 6 GS: +1 housing (and +1 amenity, not modelled) in every city with a
-# district -- read here as a specialty district.
+# Civ 6 GS: +1 housing and +1 amenity in every city with a district -- read
+# here as a specialty district (the amenity v0.9.0 Q2, design §3.3).
 [governments."Classical Republic"]
 requires_civic = "Political Philosophy"
 tier = 1
 effects = [
     { kind = "policy_slots", economic = 2, wildcard = 2 },
     { kind = "housing_if_districts", amount = 1, min_districts = 1 },
+    { kind = "amenity", amount = 1, min_districts = 1 },
 ]
 
 # Civ 6 GS: land melee and anti-cavalry +4 combat strength (naval melee: no navy).
@@ -1663,6 +1701,12 @@ type = "military"
 requires_civic = "Mercenaries"
 effects = [{ kind = "upgrade_cost_percent", percent = -50 }]
 
+# Civ 6 GS: +1 amenity in every garrisoned city (v0.9.0 Q2, design §3.3).
+[policies.Retainers]
+type = "military"
+requires_civic = "Civil Service"
+effects = [{ kind = "amenity", amount = 1, requires_garrison = true }]
+
 [policies."Trade Confederation"]
 type = "economic"
 requires_civic = "Mercenaries"
@@ -1800,6 +1844,17 @@ requires_district = "Theater Square"
 culture = 2
 maintenance = 1
 
+# Civ 6 GS: the Arena, +2 amenities (and +1 culture) in the city holding its
+# Entertainment Complex (v0.9.0 Q2, design §3.4). Zoo and Stadium are beyond
+# the tree; the Colosseum is the regional amenity of this era.
+[buildings.Arena]
+production_cost = 150
+requires_civic = "Games and Recreation"
+requires_district = "Entertainment Complex"
+amenity = 2
+culture = 1
+maintenance = 1
+
 # Government Plaza buildings (Civ 6 Rise and Fall): one per tier of
 # government adopted. Their Civ 6 governor titles and the Tier-1 siblings
 # (Audience Chamber, Warlord's Throne) are not modelled; neither can be bought.
@@ -1873,6 +1928,8 @@ purchasable = []
 science = 2
 gold = 5
 production = 2
+# Civ 6 GS: +1 amenity (v0.9.0 Q2).
+amenity = 1
 # Civ 6 (Rise and Fall): +1 Loyalty per turn for each citizen of its city
 # (#116 P7, docs/progression_design.md §8.2).
 effects = [{ kind = "loyalty", amount = 1, per_population = true }]
@@ -2039,6 +2096,7 @@ adjacent_to_city_center = false
 production_cost = 54
 requires_civic = "Games and Recreation"
 maintenance = 1
+amenity = 1         # Civ 6 GS: +1 amenity (v0.9.0 Q2, design §3.4)
 cost_model = "discounted"
 discount_percent = 40
 
@@ -2075,8 +2133,8 @@ water_housing_boost = 2
 # district vocabulary. "Flat" is spelled with the land bases (water is flat).
 # Yields and housing are columns of the complete wonder in its city; effects
 # hold in its city (scope "city", the district default) or, with scope =
-# "player", in every city of its owner. Civ 6's "+2 tiles on completion" and
-# the amenity effects are not implemented (borders and amenities, #96).
+# "player", in every city of its owner. Civ 6's "+2 tiles on completion" is not
+# implemented (borders, #96); amenities are (`amenity` column and effect, Q2).
 
 # Civ 6: Desert only; here Desert or Plains (design §9.4). Its Civ 6 effect
 # since #127: one free Worker and +1 build charge for every Worker of the
@@ -2209,8 +2267,9 @@ effects = [
     { kind = "free_units", units = [{ unit = "Trader", count = 1 }] },
 ]
 
-# Civ 6 (Rise and Fall): +2 Loyalty to every city centre within 6 tiles; here
-# to its owner's own cities only (#116 P7).
+# Civ 6 (Rise and Fall / GS): +2 Loyalty and +2 amenities to every city centre
+# within 6 tiles; here to its owner's own cities only (#116 P7; the amenity
+# effect v0.9.0 Q2, design §3.3).
 [districts.Colosseum]
 kind = "wonder"
 era = "Classical"
@@ -2223,7 +2282,10 @@ max_per_player = 1
 on = { relief = ["flat"], bases = ["Grassland", "Plains", "Desert", "Tundra", "Snow"] }
 requires_adjacent = [{ district = ["Entertainment Complex"] }]
 culture = 2
-effects = [{ kind = "loyalty", amount = 2, range = 6, scope = "player" }]
+effects = [
+    { kind = "loyalty", amount = 2, range = 6, scope = "player" },
+    { kind = "amenity", amount = 2, range = 6, scope = "player" },
+]
 
 # Civ 6: "the same defensive bonuses as a Fort"; here +6 to its city's defence.
 [districts.Alhambra]
@@ -2237,6 +2299,7 @@ max_per_city = 1
 max_per_player = 1
 on = { relief = ["hills"] }
 requires_adjacent = [{ district = ["Encampment"] }]
+amenity = 2         # Civ 6 GS: +2 amenities (v0.9.0 Q2)
 effects = [
     { kind = "policy_slots", military = 1, scope = "player" },
     { kind = "combat_strength", applies_to = ["city"], amount = 6, scope = "city" },

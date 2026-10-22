@@ -761,6 +761,7 @@ def test_a_building_never_requires_a_wonder():
 # --- (i) growth_percent scales the growth bucket exactly -------------------------------------
 
 
+@pytest.mark.usefixtures("neutral_amenities")  # v0.9.0 Q2: not about the amenity band
 def test_growth_percent_scales_the_growth_bucket_exactly(monkeypatch):
     """With a complete wonder's +15 % growth (scope player), a city's turn
     adds food_net * housing_percent * 100 * 115 // 10000 hundredths to its

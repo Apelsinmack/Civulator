@@ -17,6 +17,7 @@ def _tenths(x):
     return round(10 * x)
 
 
+@pytest.mark.usefixtures("neutral_amenities")  # v0.9.0 Q2: not about the amenity band
 def test_culture_follows_the_config_formula():
     """culture(city) == base + per_pop * population from [culture], in int
     tenths. Breaks if base/per_pop are hardcoded or the formula drifts."""
