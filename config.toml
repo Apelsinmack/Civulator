@@ -1156,6 +1156,14 @@ purchase_multiplier = 2
 unit = "Trader"     # the unit that makes a route (a [units.*] name)
 range = 15
 duration_turns = 21
+# Sea trade (v0.9.0 Q6, districts_religion_design 6.6): two cities that each
+# hold a complete Harbor trade by sea when a water path of at most sea_range
+# tiles joins the Harbors (Civ 6's water range 30); a sea route between two
+# LANDMASSES is overseas and yields (100 + overseas_percent) / 100 of every
+# yield -- the discrete jump (100 = doubled; Civ 4's overseas doubling). 0
+# switches the jump off. Effect NOT yet measured.
+sea_range = 30
+overseas_percent = 100
 
 [trade.domestic]
 "City Center" = { food = 1, production = 1 }
@@ -1623,13 +1631,13 @@ effects = [
     { kind = "amenity", amount = 1, min_districts = 1 },
 ]
 
-# Civ 6 GS: land melee and anti-cavalry +4 combat strength (naval melee: no navy).
+# Civ 6 GS: melee, anti-cavalry and naval melee +4 combat strength.
 [governments.Oligarchy]
 requires_civic = "Political Philosophy"
 tier = 1
 effects = [
     { kind = "policy_slots", military = 2, economic = 1, wildcard = 1 },
-    { kind = "combat_strength", applies_to = ["melee", "anti_cavalry"], amount = 4 },
+    { kind = "combat_strength", applies_to = ["melee", "anti_cavalry", "naval_melee"], amount = 4 },
 ]
 
 # Civ 6: +1 housing per level of Walls; +50 % production toward them (the

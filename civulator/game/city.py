@@ -30,7 +30,7 @@ from ..unit_model import (
 from . import territory
 from .availability import city_can_build_building, player_can_build
 from .culture import culture
-from .districts import district_spec, district_yields, is_wonder
+from .districts import district_spec, district_yields, is_wonder, ship_spawn_districts
 from .housing import housing
 from .improvements import worker_has_work
 from .loyalty import CAPTURED as LOYALTY_CAPTURED, FOUNDED as LOYALTY_FOUNDED
@@ -513,9 +513,8 @@ class City:
             return []
         domain = movement_domain(unit_type, self.player)
         tiles = []
-        for district in self.districts:
-            if district.complete and district_spec(district.type).ship_spawn:
-                tiles.append(tuple(district.coordinates))
+        for district in ship_spawn_districts(self):
+            tiles.append(tuple(district.coordinates))
         tiles += [tuple(pos) for pos in game_env.map.get_adjacent_coords(self.coordinates)]
         out = []
         for pos in tiles:

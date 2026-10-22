@@ -392,7 +392,7 @@ Factory and Dam. No version bump: Q0 opened 0.9.0.
 non-blocking naval items, ruling R3 (Erik, 2026-10-22: Harbor, naval units,
 sea trade); Civ 6 Gathering Storm values from
 `docs/civ6_progression_reference.md` §1, §2, §5, §6. Sea trade (§6.6) is Q6,
-not here. No version bump: Q0 opened 0.9.0.
+not here (see below). No version bump: Q0 opened 0.9.0.
 
 - **Three techs return.** `[techs.Sailing]` (Ancient, 50, no prerequisite: Civ
   6's fifth starting tech), `[techs.Shipbuilding]` (Classical, 200, Sailing),
@@ -522,12 +522,98 @@ not here. No version bump: Q0 opened 0.9.0.
   R12): no land unit ever enters water, so a ship can never be captured or
   carry anything. Ships do not count toward a blockade (`is_city_under_siege`
   treats water as held, declared in Q3). Ships cannot enter a coastal city.
-  Oligarchy's Civ 6 bonus to naval melee is not added (its config comment
-  still says "no navy"; an open call, not a fix). Civ 6's Mathematics +1
+  Oligarchy's Civ 6 bonus to naval melee is not added here (added in Q6,
+  below). Civ 6's Mathematics +1
   naval movement is not in the tree (Mathematics is cut).
 - **Effect NOT yet measured:** nothing was trained or evaluated. Dials in the
   progression skill's §4 table: the naval techs' costs, the three `[units.*]`
   tables, `naval_units_built` to read them.
+
+### Sea trade: landmasses, sea routes, the overseas jump (#128, patch Q6)
+
+**Rule changes, effects NOT yet measured.** Source:
+`docs/districts_religion_design.md` §6.6, §10, §11 rows 22-24, "v2 fixes" B6
+and B8, "v3 fixes" L10 and its non-blocking lines; ruling R3 (Erik,
+2026-10-22: sea trade, "with the discrete yield jump when trade crosses the
+sea") and R12 (embarkation is designed later, #76). No version bump: Q0
+opened 0.9.0.
+
+- **Sea routes.** Two cities that each hold a complete `ship_spawn` district
+  (the Harbor, found by the column, never by name) trade by sea when a water
+  path of at most `[trade] sea_range = 30` tiles joins their Harbors in the
+  route owner's naval domain: Coast and Lake before Cartography's
+  `ocean_navigation` rule, Ocean too after it (the second jump, when the far
+  continent comes into reach). A pair reachable by land and by sea is a sea
+  route (longer reach, the bonus below); a Harbor on a Lake with no water
+  path to the other Harbor terminates nothing and the pair falls back to the
+  land rule (`[trade] range` 15, no path). The decision is `trade.route_kind`;
+  `eligible_destinations` now lists every city with a kind, in city-id order,
+  and the one-route-per-pair rule is unchanged.
+- **Sea reachability reads terrain only.** `Map.water_distance(a, b, domain,
+  max_steps)` (and `water_reachable`) is a breadth-first search over the
+  tiles `can_enter(domain, tile)` admits, adjacency from the canonical hex
+  kernels, cached per terrain epoch -- never `path_finder`, which routes
+  around occupied tiles and would make a route's kind flicker with a parked
+  ship.
+- **The overseas jump.** A sea route whose two city centres lie on different
+  landmasses yields `(100 + [trade] overseas_percent) / 100` of **every**
+  yield, floored in tenths per yield; `overseas_percent = 100` doubles them
+  (Civ 4's overseas doubling, where Erik's memory of it comes from; Civ 6 has
+  no such term). Erik's reason: the discrete, extremely satisfying jump when
+  trade crosses the sea. A land pair across a strait keeps today's yield
+  (design B6, correcting §6.6's first wording), and a Lake pair is never
+  overseas. The multiplier lives in `trade.pair_yields`, which `route_yields`
+  and the Trader default both read, so an idle Trader finds the overseas
+  route when it pays most.
+- **Kind and flag are fixed at establishment.** `TradeRoute` gains `kind`
+  ("land" | "sea") and `overseas`, set by `establish_trade_route` and never
+  recomputed: terrain changes or Cartography later affect new routes only; a
+  running route's yield does not move when its water path is later filled in.
+  Routes end as before on capture or removal.
+- **R12's scope.** Land units still never embark, so in this block an
+  overseas route runs to an opponent on another continent, or to an own city
+  gained by loyalty flip; a Duel whose players share a continent never fires
+  it. Embarkation (#76) is what makes it fire at home.
+- **One landmass definition.** `mapgen/landmasses.py find_landmasses` (promoted
+  from `starts._find_landmasses`, unchanged in behaviour: golden worlds and
+  start placement are byte-identical) is the kernel; `Map.landmass_id(coords)`
+  (None on water) reads a labelling of it cached per terrain epoch. Mapgen and
+  sea trade share it.
+- **Oligarchy.** Its `combat_strength` scope adds `naval_melee` (Civ 6: melee,
+  anti-cavalry and naval melee, +4); the "no navy" comment is gone. This
+  closes the open call recorded under Q5's gaps.
+- **Stats.** `episode_stats["sea_routes"]` and `["overseas_routes"]`: routes
+  this player opened as sea routes, and of those across landmasses
+  (`trade_routes_established` still counts all); the smoke end line prints
+  both.
+- **Nothing outside this patch changed behaviour.** `City.ship_spawn_tiles`
+  now reads the new shared helper `districts.ship_spawn_districts` (same
+  tiles); `unit.naval_domain(player)` is the former body of `movement_domain`'s
+  water branch, now also asked by `route_kind`. The combat oracle and the
+  goldens are untouched.
+- **Smoke (not a measurement; `python scripts/smoke_random_selfplay.py`,
+  Duel, random policy).** Seed 4242 (250 rounds) runs clean:
+  `sea_routes=[0, 0] overseas_routes=[0, 0]`. **Two-landmass seeds** (a Duel
+  world whose two starting cities have different `Map.landmass_id`s; found by
+  scanning seeds 1-60, one of which, 21, raises `StartPlacementError`): 1, 3,
+  11, 13, 16, 23, 26, 30, 34, 35, 36, 41. The smoke at 400 rounds on seed 1
+  and on each of the other eleven: **no sea route and no overseas route was
+  established in any of the twelve games** (`sea_routes` and `overseas_routes`
+  `[0, 0]` everywhere; random players rarely hold a Harbor and a Trader at
+  once, and every one of these starts is within land range 15 of the other,
+  7-14 hexes). So the mechanic is covered by tests and by the probe below,
+  not by an organic smoke event, as Q4's regional production was. Probe (not
+  committed; a Harbor placed through `place_district` on the first coastal tile
+  each capital could own, all techs known, no agent): in 10 of the 12 worlds
+  both capitals could take a Harbor; `route_kind` answered `("sea", True)` in
+  8 of them (seeds 1, 3, 13, 16, 23, 30, 35, 36; in seeds 1, 3 and 23 the
+  water path is Ocean-only, so it needs Cartography) and `("land", False)` in
+  2 (seeds 26 and 34: no water path, or a Lake Harbor); with `default_trade`
+  and a Trader at the capital, seeds 13 and 16 opened one sea, overseas route whose gold is twice the plain pair's (120
+  vs 60 tenths).
+- **Effect NOT yet measured:** nothing was trained or evaluated. Dials in the
+  progression skill's §4 table: `[trade] sea_range`, `overseas_percent`; read
+  them through `sea_routes` and `overseas_routes`.
 
 ---
 

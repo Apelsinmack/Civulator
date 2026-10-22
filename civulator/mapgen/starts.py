@@ -45,7 +45,8 @@ import math
 import numpy as np
 
 from .. import hexmath
-from ..terrain_model import BASE_TABLE, RESOURCE_TABLE, can_enter, compose, matches
+from ..terrain_model import RESOURCE_TABLE, can_enter, compose, matches
+from .landmasses import find_landmasses
 from .resources import RESOURCE_ORDER
 
 # --- defaults (mirrored into config.toml's [map.starts], design doc §11 P5
@@ -225,42 +226,6 @@ def is_start_eligible(coords, base_terrain, relief, feature, resource, rows, col
 # =====================================================================
 # 2. Region division (design doc §6.2)
 # =====================================================================
-
-
-def _find_landmasses(base_terrain, rows, cols):
-    """List of landmasses: each a sorted list of (row, col) land tiles
-    (design doc §6.2: "connected land component; hexmath adjacency with
-    wrap"). Land membership is DOMAIN, not passability/settleability -- a
-    mountain still occupies space inside a continent and can bridge two
-    grassland areas into one landmass (design doc §3: domain separates
-    land/water; impassable is an orthogonal flag). Flood fill (BFS); the
-    CALLER (`divide_into_regions`) imposes a fertility-based processing
-    order -- finding components has no natural "player order" of its own.
-    """
-    domain_land = np.zeros((rows, cols), dtype=bool)
-    for r in range(rows):
-        for c in range(cols):
-            domain_land[r, c] = BASE_TABLE.get(base_terrain[r, c], {}).get("domain") == "land"
-
-    visited = np.zeros((rows, cols), dtype=bool)
-    landmasses = []
-    for r in range(rows):
-        for c in range(cols):
-            if not domain_land[r, c] or visited[r, c]:
-                continue
-            component = []
-            stack = [(r, c)]
-            visited[r, c] = True
-            while stack:
-                tr, tc = stack.pop()
-                component.append((tr, tc))
-                for nr, nc in hexmath.adjacent_coords((tr, tc), rows, cols):
-                    if domain_land[nr, nc] and not visited[nr, nc]:
-                        visited[nr, nc] = True
-                        stack.append((nr, nc))
-            component.sort()
-            landmasses.append(component)
-    return landmasses
 
 
 def _apportion_players(landmass_fertilities, num_players):
@@ -573,7 +538,7 @@ def divide_into_regions(base_terrain, relief, feature, resource, yield_sum, fres
     passed `is_start_eligible` themselves, where the refined value is
     identical to the raw `tile_fertility` score.
     """
-    landmasses = _find_landmasses(base_terrain, rows, cols)
+    landmasses = find_landmasses(base_terrain, rows, cols)
     if not landmasses:
         raise StartPlacementError("no land tiles at all -- cannot place any start")
 

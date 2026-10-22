@@ -136,6 +136,15 @@ def completed_wonder_city(game_env, wonder_type):
     return None
 
 
+def ship_spawn_districts(city):
+    """The city's COMPLETE districts whose registry row has `ship_spawn` (the
+    Harbor, found by the column, never by name), in placement order -- the
+    one definition of "where this city touches the sea": a ship appears on
+    one (`City.ship_spawn_tiles`) and a sea trade route ends at one
+    (`trade.route_kind`, v0.9.0 Q6)."""
+    return [d for d in city.districts if d.complete and district_spec(d.type).ship_spawn]
+
+
 def specialty_districts(city):
     """The city's COMPLETE specialty districts, in placement order: registry
     entries with `kind == "district"` that take a population slot
