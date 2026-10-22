@@ -25,6 +25,7 @@ from ..unit_model import (
     CITY_RANGED_BUILDING,
     CITY_RANGED_RANGE,
     CITY_RANGED_STRENGTH,
+    FIGHTING_CLASSES,
     growth_percent,
 )
 from . import territory
@@ -75,6 +76,9 @@ class City:
         self.city_id = None
         self.health = CITY_HEALTH
         self.is_city = True
+        # The defender flag `Unit.attack` reads for the ranged penalty and the
+        # floor at 0 (v0.9.0 Q3): a city and a fortified district answer True.
+        self.is_fortification = True
         self.defense_strength = CITY_DEFENSE_STRENGTH
         self.buildings = []
         self.population = 1
@@ -350,6 +354,7 @@ class City:
         # worth the units it costs.
         if self.health < CITY_HEALTH and not game_env.is_city_under_siege(self):
             self.health = min(CITY_HEALTH, self.health + CITY_HEAL_PER_TURN)
+        self._repair_fortified_districts(game_env)
 
         # --- Food phase ---
         food_produced = self.calculate_food(game_env)
@@ -421,6 +426,29 @@ class City:
                     self.production -= district.cost
                     game_env.complete_district(self, district)
 
+    def fortified_districts(self):
+        """The city's fortified districts (v0.9.0 Q3): complete districts
+        whose type has `health` (`District.is_fortification`), in placement
+        order."""
+        return [d for d in self.districts if d.is_fortification]
+
+    def _repair_fortified_districts(self, game_env):
+        """The repair of a fortified district (v0.9.0 Q3, districts_religion_
+        design §4.2, "v2 fixes", "v3 fixes" L8), in the city's repair phase:
+        `[city] heal_per_turn` up to its maximum unless its tile is besieged
+        -- the same ring test as the centre, `is_city_under_siege` with the
+        district's tile -- or an enemy unit stands on it (a breached
+        Encampment does not mend under an occupier)."""
+        for district in self.fortified_districts():
+            if district.health >= district.max_health:
+                continue
+            if any(u.player is not self.player
+                   for u in game_env.get_units_at(district.coordinates)):
+                continue
+            if game_env.is_city_under_siege(self, district.coordinates):
+                continue
+            district.health = min(district.max_health, district.health + CITY_HEAL_PER_TURN)
+
     def _accrue_yields(self, game_env):
         """The yield phase (#116 P1, progression design §2.2): add this
         turn's science, culture, gold and faith (int tenths) to the owner's
@@ -467,9 +495,14 @@ class City:
     def complete_unit_production(self, unit_type, game_env):
         """Place a newly produced unit on the city tile or first empty adjacent tile.
 
-        Priority: city center > adjacent tiles. Every candidate goes through
-        the canonical terrain-domain check (§3.3, §9.10) — production may not
-        drop a land unit into a lake or onto a mountain.
+        Priority: city center > the city's complete fortified districts (an
+        Encampment; v0.9.0 Q3, districts_religion_design §4.1 -- for a land
+        military unit only -- a FIGHTING_CLASSES unit of the land domain: never a
+        civilian or siege support, never a water-domain unit) >
+        adjacent tiles. Every candidate goes through the canonical
+        terrain-domain check (§3.3, §9.10) — production may not drop a land
+        unit into a lake or onto a mountain — and a fortified-district tile,
+        like an adjacent one, must hold no unit at all.
         If none is available, returns False (unit deferred to next turn).
         """
         domain = movement_domain(unit_type)
@@ -483,6 +516,20 @@ class City:
             self.player.units.append(unit)
             game_env.add_unit_to_tile(unit, self.coordinates)
             return True
+
+        # The Encampment (v0.9.0 Q3): land military units only -- the
+        # fighting classes, the one "land military" definition (unit_model).
+        if domain == "land" and Unit.COMBAT_CLASS.get(unit_type) in FIGHTING_CLASSES:
+            for district in self.fortified_districts():
+                pos = district.coordinates
+                if not can_enter(domain, game_env.map.get_tile(pos)):
+                    continue
+                if game_env.is_occupied(pos):
+                    continue
+                unit = _create_unit(unit_type, self.player, pos)
+                self.player.units.append(unit)
+                game_env.add_unit_to_tile(unit, pos)
+                return True
 
         # Try adjacent tiles
         adj_coords = game_env.map.get_adjacent_coords(self.coordinates)
@@ -514,7 +561,8 @@ class City:
         changes hands, by force (`GameEnvironment._capture_city`) or by loyalty
         (`GameEnvironment._flip_city`, #116 P7). Either way its loyalty resets
         to `[loyalty] captured` (design §8.1, "v2 fixes": a conquest must be
-        consolidated).
+        consolidated), and every complete fortified district's health to its
+        `captured_health_percent` of the maximum (v0.9.0 Q3).
 
         Its districts and wonders go with it as they are (#86; #116 P6): a
         complete wonder's player-scoped effects serve the new owner from now
@@ -543,6 +591,12 @@ class City:
         new_player.cities.append(self)
         self.player = new_player
         self.loyalty = LOYALTY_CAPTURED
+        # Fortified districts go with the city at `captured_health_percent`
+        # of their maximum (v0.9.0 Q3, districts_religion_design §4.2),
+        # through either door -- capture or loyalty flip.
+        for district in self.fortified_districts():
+            spec = district_spec(district.type)
+            district.health = spec.health * spec.captured_health_percent // 100
         game_env = new_player.game_env
         game_env.map.city_changed_player(
             self, old_player.player_index if old_player else None

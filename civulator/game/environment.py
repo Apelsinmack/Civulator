@@ -64,7 +64,7 @@ from .trade import (
 from .unit import WarriorUnit, WorkerUnit, calculate_damage, movement_domain
 from .upgrades import can_upgrade, upgrade_cost, upgrade_target
 from ..config import CFG
-from ..unit_model import CAPITAL_BUILDING
+from ..unit_model import CAPITAL_BUILDING, CITY_RANGED_BUILDING
 
 logger = logging.getLogger(__name__)
 
@@ -308,6 +308,12 @@ class GameEnvironment:
                 # surplus below 0.
                 "amenity_surplus_mean": 0,
                 "cities_unhappy_rounds": 0,
+                # Fortified districts (v0.9.0 Q3): the times this player's
+                # attacks reduced an enemy fortified district (an Encampment)
+                # from above 0 to 0 health, and the strikes this player's
+                # fortified districts fired (`fortification_ranged_attack`).
+                "encampment_breaches": 0,
+                "encampment_strikes": 0,
                 # Summed adjacency score per yield, per city-round (#86 s5)
                 **{f"district_yield_{y}": 0 for y in DISTRICT_YIELD_NAMES},
             }
@@ -597,6 +603,18 @@ class GameEnvironment:
             self._check_game_end()
             return self, reward, self.done
 
+        # An order aimed at a standing enemy fortified district (an
+        # Encampment, v0.9.0 Q3) is an attack on it, exactly like a city:
+        # melee from an adjacent tile, ranged within range. A unit standing on
+        # it resolves first (the branch above). Breached (health 0) it is
+        # passable and the order falls through to movement.
+        fortification = self.enemy_fortification_at(order_pos, self.current_player)
+        if fortification is not None:
+            reward = self._execute_attack(selected_unit, fortification)
+            self.update_exploration(self.current_player.player_index)
+            self._check_game_end()
+            return self, reward, self.done
+
         # Otherwise → movement
         moved, final_pos = selected_unit.move(order_pos, self)
 
@@ -620,6 +638,23 @@ class GameEnvironment:
         if tile is None or tile.city is None:
             return None
         return tile.city if tile.city.player != self.current_player else None
+
+    def enemy_fortification_at(self, coordinates, player):
+        """The standing enemy fortified district on `coordinates`, or None
+        (v0.9.0 Q3, districts_religion_design "v2 fixes" B4): a COMPLETE
+        district whose type has `health` (`District.is_fortification`), of a
+        city not `player`'s, with health above 0. The one lookup behind every
+        reader -- the order dispatcher (`_step_inner`: an order there is an
+        attack), both loops of the action mask (`agents/networks.py`), both
+        branches of `Unit.move` and the melee move-in (through
+        `Unit.enemy_fortification_blocks`) and `defaults.step_toward`."""
+        tile = self.map.get_tile(coordinates)
+        district = getattr(tile, "district", None)
+        if district is None or not district.is_fortification:
+            return None
+        if district.player is player or district.health <= 0:
+            return None
+        return district
 
     def _capture_city(self, unit, city):
         """Take `city` for `unit`'s player if the rules allow. Returns reward.
@@ -649,8 +684,9 @@ class GameEnvironment:
     def _execute_attack(self, attacker, defender):
         """Execute combat between attacker and defender. Returns reward.
 
-        `defender` is a Unit or a City (issue #84) — the one path all damage
-        flows through, cities included. Ranged units (Slinger, Archer,
+        `defender` is a Unit, a City (issue #84) or a fortified District
+        (v0.9.0 Q3: an Encampment, defending with its city's strength) — the
+        one path all damage flows through, fortifications included. Ranged units (Slinger, Archer,
         Catapult) attack at range; their own attack() validates distance and
         line of sight. Melee units must be adjacent.
 
@@ -672,9 +708,15 @@ class GameEnvironment:
         # (civilian capture reassigns defender.player below).
         atk_idx = attacker.player.player_index
         def_idx = defender.player.player_index
+        # A fortified district standing before the blow (v0.9.0 Q3): its
+        # reaching 0 is a breach (`episode_stats["encampment_breaches"]`).
+        standing_fortification = isinstance(defender, District) and defender.health > 0
 
         damage_dealt, damage_received, target_killed, attacker_killed = \
             attacker.attack(defender, self)
+
+        if standing_fortification and defender.health <= 0:
+            self.episode_stats[atk_idx]["encampment_breaches"] += 1
 
         # attack() returns (0,0,False,False) if out of range — treat as invalid
         if damage_dealt == 0 and not target_killed:
@@ -703,13 +745,15 @@ class GameEnvironment:
             else:
                 self.delete_unit(defender)
             # Only melee attackers move into the vacated tile — and not into
-            # a city that is still standing (issue #84). Killing the garrison
-            # of a healthy city leaves the attacker where it is; the city
+            # a city that is still standing (issue #84), nor onto a standing
+            # enemy fortified district (v0.9.0 Q3). Killing the garrison of
+            # either leaves the attacker where it is; the fortification
             # itself must be beaten down first.
             if (
                 not is_ranged
                 and not attacker_killed
                 and not attacker.enemy_city_blocks(defender.coordinates, self)
+                and not attacker.enemy_fortification_blocks(defender.coordinates, self)
             ):
                 self.move_unit(attacker, defender.coordinates)
                 # Check city capture
@@ -753,22 +797,31 @@ class GameEnvironment:
                 return True
         return False
 
-    def is_city_under_siege(self, city):
+    def is_city_under_siege(self, city, coordinates=None):
         """Whether `city` is besieged, and so does not repair (issue #84).
+
+        Tile-general since v0.9.0 Q3: `coordinates` is the tile tested -- the
+        city's centre by default (the city's own repair), or the tile of one
+        of its fortified districts (an Encampment's repair,
+        `City.process_turn`). The defending player is always `city.player`.
+        One function, one ring test, whichever tile.
 
         Civ 6: the city centre is under siege when all 6 tiles around it are
         occupied by enemy units, under enemy zone of control, or impassable.
         "Impassable" here means no land unit could stand there -- mountains
-        and, since there are no naval units, water. That makes a coastal city
-        besiegeable from land alone, which diverges from Civ 6 (where a
-        blockade needs ships) and is named in the CHANGELOG.
+        and water. Premise: a water tile counts as held because no land unit
+        can stand on it, so ships never count toward a blockade (once ships
+        exist, Q5, the premise is a declared gap in the CHANGELOG). That
+        makes a coastal city or Encampment besiegeable from land alone, which
+        diverges from Civ 6 (where a blockade needs ships).
 
         One guard the wording alone does not give: at least one ring tile
         must actually be held or controlled by an enemy. Without it a city
         ringed by mountains would be permanently besieged by nobody and would
         never heal.
         """
-        ring = self.map.get_adjacent_coords(city.coordinates)
+        centre = city.coordinates if coordinates is None else tuple(coordinates)
+        ring = self.map.get_adjacent_coords(centre)
         if not ring:
             return False
 
@@ -807,8 +860,37 @@ class GameEnvironment:
         """
         if not city.can_make_ranged_attack():
             return None
+        return self._ranged_strike(city, city.coordinates)
 
-        target = self._bombard_target(city)
+    def fortification_ranged_attack(self, district):
+        """Fire a fortified district's strike (v0.9.0 Q3, districts_religion_
+        design §4.2, "v3 fixes" L8): an Encampment shoots iff its own health
+        is above 0, its city holds `[city] ranged_building` (Walls), and no
+        enemy unit stands on its tile -- with its city's ranged strength and
+        range, from its own tile, at the target `city_ranged_attack` would
+        choose from there. `Player.start_turn` calls it after its city's own
+        strike, so a walled city with an Encampment fires twice a turn.
+        Counts `episode_stats["encampment_strikes"]`. Returns the unit shot,
+        or None."""
+        city = district.city
+        if not district.is_fortification or district.health <= 0:
+            return None
+        if CITY_RANGED_BUILDING not in city.buildings:
+            return None
+        if any(u.player is not city.player for u in self.get_units_at(district.coordinates)):
+            return None
+        target = self._ranged_strike(city, district.coordinates)
+        if target is not None:
+            self.episode_stats[city.player.player_index]["encampment_strikes"] += 1
+        return target
+
+    def _ranged_strike(self, city, origin):
+        """The one automatic strike (#84; origin tile v0.9.0 Q3): `city`'s
+        ranged strength and range, fired from `origin` -- its centre or one
+        of its fortified districts -- at `_bombard_target`'s choice. The
+        callers own the gates. Damage through `calculate_damage` with the
+        engine RNG; a unit at 0 health dies."""
+        target = self._bombard_target(origin, city.player, city.get_range())
         if target is None:
             return None
 
@@ -828,18 +910,24 @@ class GameEnvironment:
 
         return target
 
-    def _bombard_target(self, city):
-        """The enemy unit a city shoots at: the weakest one in range and in
-        sight, ties broken by coordinates so the choice is reproducible."""
+    def _bombard_target(self, origin, owner, attack_range):
+        """The enemy unit an automatic strike from `origin` shoots at: the
+        weakest unit of a player other than `owner` within `attack_range` of
+        `origin` and in sight of it, ties broken by coordinates so the choice
+        is reproducible. A unit on `origin` itself is never the target (v0.9.0
+        Q3, "v3 fixes" L8)."""
+        origin = tuple(origin)
         best = None
         best_key = None
         for player in self.players:
-            if player is city.player:
+            if player is owner:
                 continue
             for unit in player.units:
-                if self.map.distance_function(city.coordinates, unit.coordinates) > city.get_range():
+                if tuple(unit.coordinates) == origin:
                     continue
-                if not self.check_line_of_sight(city.coordinates, unit.coordinates):
+                if self.map.distance_function(origin, unit.coordinates) > attack_range:
+                    continue
+                if not self.check_line_of_sight(origin, unit.coordinates):
                     continue
                 key = (unit.health, unit.coordinates[0], unit.coordinates[1], unit.slot)
                 if best_key is None or key < best_key:
@@ -1280,6 +1368,7 @@ class GameEnvironment:
             coordinates=tile.coordinates,
             complete=False,
             cost=district_cost(city.player, district_type),
+            city=city,
         )
         tile.district = district
         city.districts.append(district)
@@ -1340,6 +1429,9 @@ class GameEnvironment:
         player = city.player
         slots_before = slot_counts(player)
         district.complete = True
+        if district.max_health is not None:
+            # A fortified district enters the game at full health (v0.9.0 Q3).
+            district.health = district.max_health
         city.current_production = None
         if is_wonder(district.type):
             self._settle_wonder_race(city, district)

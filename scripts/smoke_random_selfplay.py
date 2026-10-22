@@ -235,7 +235,9 @@ def main():
           f"luxuries_accessible={[env.episode_stats[i]['luxuries_accessible'] for i in range(num_players)]} "
           f"amenity_surplus_mean_tenths={[env.episode_stats[i]['amenity_surplus_mean'] for i in range(num_players)]} "
           f"cities_unhappy_rounds={[env.episode_stats[i]['cities_unhappy_rounds'] for i in range(num_players)]} "
-          f"units_refused_resource={[env.episode_stats[i]['units_refused_resource'] for i in range(num_players)]}")
+          f"units_refused_resource={[env.episode_stats[i]['units_refused_resource'] for i in range(num_players)]} "
+          f"encampment_breaches={[env.episode_stats[i]['encampment_breaches'] for i in range(num_players)]} "
+          f"encampment_strikes={[env.episode_stats[i]['encampment_strikes'] for i in range(num_players)]}")
 
 
 if __name__ == "__main__":
