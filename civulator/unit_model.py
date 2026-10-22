@@ -307,6 +307,7 @@ UNIT_KEYS = frozenset({
     "production_cost", "requires_tech", "requires_civic",
     "combat_class", "era", "maintenance", "purchasable", "upgrades_to",
     "build_charges",  # #127
+    "requires_resource",  # v0.9.0 Q1: a strategic resource name, checked by terrain_model
 })
 BUILDING_KEYS = frozenset({
     "production_cost", "defense_bonus", "housing", *YIELD_COLUMNS,
@@ -656,6 +657,11 @@ def base_upgrade_cost(unit_type):
     return UPGRADE_PER_PRODUCTION * gap + UPGRADE_BASE
 
 UNIT_REQUIRES_TECH, UNIT_REQUIRES_CIVIC = parse_unit_gates(_UNITS_CFG)
+# unit -> the strategic resource it needs (v0.9.0 Q1, docs/districts_religion_
+# design.md §2.2), for the units declaring one. A name here; terrain_model (which
+# loads after this module and owns [terrain.resource.*]) validates it names a
+# strategic resource. Read by game/availability.player_can_build only.
+UNIT_REQUIRES_RESOURCE = _name_column(_UNITS_CFG, "requires_resource", "units")
 _BUILDING_GATES = parse_building_gates(_BUILDINGS_CFG)
 BUILDING_REQUIRES_TECH = _BUILDING_GATES["requires_tech"]
 BUILDING_REQUIRES_DISTRICT = _BUILDING_GATES["requires_district"]

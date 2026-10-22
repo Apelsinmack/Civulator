@@ -78,6 +78,16 @@ river_min_length = 2               # rivers (connected junction-edge components)
 river_pd_epsilon = 0.0001          # ε: Planchon-Darboux sink-fill step (design doc §4.2 rule 5) — ε >> jitter
 river_altitude_jitter = 0.0000001  # δ: per-junction altitude jitter magnitude, δ << ε (breaks exact ties)
 
+# --- Tiered resources (v0.9.0 Q1, docs/districts_religion_design.md §2.4 and
+# "v2 fixes" B3) — civulator/mapgen/tiered_resources.py, the third sequential
+# mapgen stage (after starts). Counts are dials, not Civ 6 numbers.
+tiered_luxury_per_region = 2        # luxury tiles per start region (one type per region where possible)
+tiered_strategic_per_region = 1     # fairness minimum of EACH guaranteed strategic per region
+tiered_guaranteed = ["Horses", "Iron"]  # strategics every region must reach (fairness rule, design §2.4)
+tiered_fair_radius = 3              # "within distance 3 of a settleable tile of the region" (Civ 6 work radius)
+tiered_strategic_per_100_land = 2   # extra strategic tiles per 100 land tiles, split by `frequency` (Niter's only source)
+tiered_founding_ring = 1            # no tiered resource within this distance of a start; tracks [territory] founding_ring
+
 [map.earthlike.feature_chance]
 # Per-tile hash-roll probability (design doc §4.2 rule 3), applied only to
 # tiles that already pass BOTH the structural `on` gate and this stage's
@@ -428,6 +438,121 @@ yields = [1, 0]
 chance = 0.008
 on = { bases = ["Coast", "Lake"] }
 
+# --- Strategic and luxury tiers (v0.9.0 Q1, docs/districts_religion_design.md
+# §2 and "v2 fixes" B1-B3) ---
+# Columns (read only by civulator/terrain_model.py; an unknown key raises):
+#   class        "strategic" | "luxury" (a resource may not be named like a class)
+#   on           placement, terrain_model's `on` form (design §2.1, verbatim)
+#   improved_by  the improvements that grant ACCESS to the resource
+#                (civulator/game/resources.py player_has_access, B2): a tile
+#                is accessed when it holds one of these, a district or wonder,
+#                or a city centre. An improvement whose own `on` cannot stand
+#                on the tile does not help there (a Niter on Grassland is
+#                reached by a district or a centre only -- design §2.1).
+#   reveals      a [techs.*] name; informational only (the engine never hides
+#                state, the encoder decides what is "revealed").
+#   frequency    positive int weight in the tiered placement stage
+#                (civulator/mapgen/tiered_resources.py): luxury type choice
+#                per region; the share of the extra strategic tiles.
+#   yields       none of these declares one. The source rule is "Civ 6 GS tile
+#                yields where the digest (docs/civ6_progression_reference.md)
+#                has them, else 0"; the digest lists no resource tile yields,
+#                so every new resource yields 0 food / 0 production. For the
+#                record, Civ 6 GS gives Horses +1F +1P, Iron +1 science,
+#                Niter +1F +1P, Wine +1F +1G, Silk +1 culture, Dyes +1 faith,
+#                Cotton +3G, Salt +1F +1G, Silver +3G, Furs +1F +1G, Pearls
+#                +1 faith, Whales +1F +1P -- not modelled here.
+# Luxuries have no consumer yet (amenities are Q2).
+
+[terrain.resource.Horses]
+class = "strategic"
+on = { bases = ["Grassland", "Plains"], relief = ["flat"] }
+improved_by = ["Pasture"]
+reveals = "Animal Husbandry"
+frequency = 1
+
+[terrain.resource.Iron]
+class = "strategic"
+on = [
+    { relief = ["hills"] },
+    { bases = ["Desert", "Tundra"], relief = ["flat"] },
+]
+improved_by = ["Mine"]
+reveals = "Bronze Working"
+frequency = 1
+
+# A Farm on Niter never grants it (design §2.1, B2): Mine only.
+[terrain.resource.Niter]
+class = "strategic"
+on = { bases = ["Grassland", "Plains", "Desert", "Tundra"], relief = ["flat"] }
+improved_by = ["Mine"]
+reveals = "Military Engineering"
+frequency = 2   # the extra-strategic pool is Niter's only source (no guarantee): weighted 2:1:1
+
+[terrain.resource.Wine]
+class = "luxury"
+on = { bases = ["Grassland", "Plains"], relief = ["flat"] }
+improved_by = ["Plantation"]
+frequency = 1
+
+[terrain.resource.Silk]
+class = "luxury"
+on = { bases = ["Grassland", "Plains"], relief = ["flat"] }
+improved_by = ["Plantation"]
+frequency = 1
+
+[terrain.resource.Dyes]
+class = "luxury"
+on = [
+    { bases = ["Grassland", "Plains"], relief = ["flat"] },
+    { features = ["Woods"] },
+    { features = ["Rainforest"] },
+]
+improved_by = ["Plantation"]
+frequency = 1
+
+[terrain.resource.Cotton]
+class = "luxury"
+on = { bases = ["Grassland", "Plains"], relief = ["flat"] }
+improved_by = ["Plantation"]
+frequency = 1
+
+[terrain.resource.Salt]
+class = "luxury"
+on = { bases = ["Desert", "Tundra"], relief = ["flat"] }
+improved_by = ["Mine"]
+frequency = 1
+
+[terrain.resource.Silver]
+class = "luxury"
+on = [
+    { relief = ["hills"] },
+    { bases = ["Tundra"], relief = ["flat"] },
+]
+improved_by = ["Mine"]
+frequency = 1
+
+[terrain.resource.Furs]
+class = "luxury"
+on = [
+    { bases = ["Tundra"], relief = ["flat"] },
+    { features = ["Woods"] },
+]
+improved_by = ["Camp"]
+frequency = 1
+
+[terrain.resource.Pearls]
+class = "luxury"
+on = { bases = ["Coast"] }
+improved_by = ["Fishing Boats"]
+frequency = 1
+
+[terrain.resource.Whales]
+class = "luxury"
+on = { bases = ["Coast"] }
+improved_by = ["Fishing Boats"]
+frequency = 1
+
 [terrain.river]
 crossing_cost = 1
 
@@ -607,6 +732,7 @@ production_cost = 60
 
 [units.Swordsman]
 requires_tech = "Iron Working"
+requires_resource = "Iron"   # v0.9.0 Q1: honoured on worlds with strategic resources (design §2.2)
 combat_class = "melee"
 era = "Classical"
 maintenance = 2
@@ -633,6 +759,7 @@ production_cost = 65
 
 [units.Horseman]
 requires_tech = "Horseback Riding"
+requires_resource = "Horses"   # v0.9.0 Q1: honoured on worlds with strategic resources (design §2.2)
 combat_class = "light_cavalry"
 era = "Classical"
 maintenance = 2
@@ -727,6 +854,7 @@ production_cost = 100
 # (Horseman 35, Catapult 23) and are not retuned toward Civ 6.
 [units."Man-At-Arms"]
 requires_tech = "Apprenticeship"
+requires_resource = "Iron"   # v0.9.0 Q1: honoured on worlds with strategic resources (design §2.2)
 combat_class = "melee"
 era = "Medieval"
 maintenance = 3
@@ -764,6 +892,7 @@ production_cost = 180
 
 [units.Knight]
 requires_tech = "Stirrups"
+requires_resource = "Horses"   # v0.9.0 Q1: honoured on worlds with strategic resources (design §2.2)
 combat_class = "heavy_cavalry"
 era = "Medieval"
 maintenance = 4
@@ -788,6 +917,7 @@ production_cost = 200
 
 [units.Musketman]
 requires_tech = "Gunpowder"
+requires_resource = "Niter"   # v0.9.0 Q1: honoured on worlds with strategic resources (design §2.2)
 combat_class = "melee"
 era = "Renaissance"
 maintenance = 4

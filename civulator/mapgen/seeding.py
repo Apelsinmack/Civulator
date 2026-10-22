@@ -105,7 +105,8 @@ STAGE_BASIC_FEATURES = 8      # the "basic" generator's own feature rolls
 STAGE_RIVERS = 9              # P4: corner-junction altitude jitter (design doc §5)
 STAGE_RESOURCES = 10          # P4: bonus resource placement (design doc §3.2, §11 P4)
 STAGE_STARTS = 11             # P5: RESERVED, not consumed -- see below.
-# Next free id for a future stage: 12. Floodplains carries no randomness at
+STAGE_TIERED_RESOURCES = 12   # v0.9.0 Q1: strategic/luxury placement, after starts (tiered_resources.py)
+# Next free id for a future stage: 13. Floodplains carries no randomness at
 # all (design doc §5: "deterministic, no RNG") so it never needed a stage
 # id; Oasis reuses STAGE_FEATURES (see PURPOSE_OASIS below) rather than
 # taking a stage id of its own, per this table's own pre-existing
@@ -150,3 +151,23 @@ PURPOSE_RESOURCE_FISH = 7
 # Purpose ids for tile_roll01 within STAGE_BASIC_FEATURES.
 PURPOSE_BASIC_WOODS = 0
 PURPOSE_BASIC_RAINFOREST = 1
+
+# Purpose ids for tile_roll01 within STAGE_TIERED_RESOURCES (v0.9.0 Q1) --
+# permanent, same rule: one per strategic/luxury resource (its candidate
+# ranking roll, mapgen/tiered_resources.py TIERED_PURPOSE), plus the roll
+# that picks a region's luxury type. Append-only; a new tiered resource takes
+# the next free id here and an entry in TIERED_PURPOSE.
+PURPOSE_TIERED_HORSES = 0
+PURPOSE_TIERED_IRON = 1
+PURPOSE_TIERED_NITER = 2
+PURPOSE_TIERED_WINE = 3
+PURPOSE_TIERED_SILK = 4
+PURPOSE_TIERED_DYES = 5
+PURPOSE_TIERED_COTTON = 6
+PURPOSE_TIERED_SALT = 7
+PURPOSE_TIERED_SILVER = 8
+PURPOSE_TIERED_FURS = 9
+PURPOSE_TIERED_PEARLS = 10
+PURPOSE_TIERED_WHALES = 11
+PURPOSE_TIERED_LUXURY_TYPE = 12
+# Next free id within STAGE_TIERED_RESOURCES: 13

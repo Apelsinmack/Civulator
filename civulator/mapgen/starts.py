@@ -187,10 +187,16 @@ def tile_fertility(coords, yield_sum, fresh_water, base_terrain, rows, cols, p):
     return score
 
 
-def _is_settleable(coords, base_terrain, relief, feature, resource):
+def is_settleable(coords, base_terrain, relief, feature, resource):
+    """Land domain and not impassable: the tile a start (or a city) could
+    stand on, as mapgen knows it. Public for the tiered-resource stage's
+    fairness rule (v0.9.0 Q1), which must use this definition, not a copy."""
     r, c = coords
     composed = compose(base_terrain[r, c], relief[r, c], feature[r, c], resource[r, c])
     return composed.domain == "land" and not composed.impassable
+
+
+_is_settleable = is_settleable
 
 
 def _passable_ring1_count(coords, base_terrain, relief, feature, resource, rows, cols):
@@ -799,7 +805,7 @@ def normalize_starts(starts, base_terrain, relief, feature, resource, rows, cols
 
 
 def generate_starts(base_terrain, relief, feature, resource, fresh_water,
-                     num_players, rows, cols, params=None):
+                     num_players, rows, cols, params=None, return_regions=False):
     """`MapData.starts` (design doc §6, D13, §11 P5): fertility -> regions ->
     d_min placement -> additive normalization, run against the FINAL
     generated grids (after every other stage, resources included -- design
@@ -813,6 +819,12 @@ def generate_starts(base_terrain, relief, feature, resource, fresh_water,
     §6.5). `resource` is a NEW grid (normalization's additive bonus
     resources folded in) that callers must use in place of their own
     pre-starts resource grid.
+
+    With `return_regions` (v0.9.0 Q1, districts_religion_design "v2 fixes"
+    B3) a third value follows: the start regions, `regions[i]` the sorted
+    tiles of the region `starts[i]` was placed in -- what the tiered-resource
+    stage (`tiered_resources.place_tiered_resources`) distributes over.
+    Additive: the default return is unchanged, and so is every value above.
     """
     p = merge_params(params)
     yield_sum = _yield_sum_grid(base_terrain, relief, feature, resource, rows, cols)
@@ -825,4 +837,6 @@ def generate_starts(base_terrain, relief, feature, resource, fresh_water,
         regions, fertility, base_terrain, relief, feature, resource, num_players, rows, cols, p,
     )
     resource = normalize_starts(starts, base_terrain, relief, feature, resource, rows, cols, p)
+    if return_regions:
+        return starts, resource, [sorted(region) for region in regions]
     return starts, resource

@@ -7,7 +7,9 @@ Pinned DAG order (design doc §4.2 rule 2): elevation -> water/coast/lake ->
 relief -> raw moisture -> rivers (flux from RAW moisture) -> moisture +
 river bonus -> temperature -> biomes -> features -> floodplains/oasis ->
 resources -> starts (design doc §6, §11 P5: fertility -> regions -> d_min
-placement -> additive normalization; see mapgen/starts.py). Relief is produced alongside
+placement -> additive normalization; see mapgen/starts.py) -> tiered
+resources (v0.9.0 Q1: strategic and luxury, over the start regions; see
+mapgen/tiered_resources.py). Relief is produced alongside
 elevation's land classification here (both come from the same nearest-rank
 pass over the smoothed elevation field, design doc §4.3) rather than as a
 separate DAG node.
@@ -37,7 +39,7 @@ import math
 
 import numpy as np
 
-from . import climate, elevation, features, resources, rivers, starts
+from . import climate, elevation, features, resources, rivers, starts, tiered_resources
 from .data import MapData
 
 # Design doc E5: "minimum earthlike size is Duel (24x12) -- below it
@@ -110,6 +112,14 @@ DEFAULT_PARAMS = {
     "river_min_length": 2,           # rivers (connected junction-edge components) shorter than this are dropped
     "river_pd_epsilon": rivers.DEFAULT_PD_EPSILON,        # ε: Planchon-Darboux sink-fill step
     "river_altitude_jitter": rivers.DEFAULT_ALTITUDE_JITTER,  # δ: per-junction altitude jitter, δ << ε
+    # Tiered resources (v0.9.0 Q1, tiered_resources.py; config.toml
+    # [map.earthlike] tiered_* documents each). Dials, not Civ 6 numbers.
+    "tiered_luxury_per_region": 2,
+    "tiered_strategic_per_region": 1,
+    "tiered_guaranteed": ["Horses", "Iron"],
+    "tiered_fair_radius": 3,
+    "tiered_strategic_per_100_land": 2,
+    "tiered_founding_ring": 1,
     "feature_chance": {
         "woods": 0.35,
         "rainforest": 0.50,
@@ -131,6 +141,7 @@ def _merge_params(params):
                 merged["feature_chance"] = {**DEFAULT_PARAMS["feature_chance"], **v}
             else:
                 merged[k] = v
+    merged["tiered_guaranteed"] = list(merged["tiered_guaranteed"])
     return merged
 
 
@@ -263,9 +274,9 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
     # from earthlike's §4.3/§4.4), so keeping it out of `p` avoids it
     # echoing twice inside gen_params["earthlike"] below.
     starts_params = (params or {}).get("starts")
-    start_list, resource = starts.generate_starts(
+    start_list, resource, regions = starts.generate_starts(
         base_terrain, relief, feature, resource, fresh_water,
-        int(num_players), rows, cols, params=starts_params,
+        int(num_players), rows, cols, params=starts_params, return_regions=True,
     )
 
     gen_params = {
@@ -278,7 +289,7 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
         "starts": starts.merge_params(starts_params),
     }
 
-    return MapData(
+    map_data = MapData(
         base_terrain=base_terrain,
         relief=relief,
         feature=feature,
@@ -288,3 +299,10 @@ def generate(seed: int, size, num_players: int = 2, params: dict = None) -> MapD
         starts=start_list,
         params=gen_params,
     )
+    # --- strategic and luxury resources (v0.9.0 Q1, districts_religion_design
+    # §2.4, "v2 fixes" B3): the THIRD sequential stage (§4.2 rule 3), after
+    # starts, over the start regions in start order. Writes only
+    # `map_data.resource` (new tiles, never an existing resource), so
+    # fertility, regions and starts above are untouched by construction.
+    tiered_resources.place_tiered_resources(map_data, regions, master_seed, p)
+    return map_data
