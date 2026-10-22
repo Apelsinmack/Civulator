@@ -215,10 +215,10 @@ def test_move_then_kill_writes_a_demonstration(tmp_path):
         demo = json.load(f)
 
     assert demo["scenario_file"] == "scenario_042.json"
-    # `git_dirty` added in #75, `civulator_core_commit` in #47 — see
-    # tests/test_meta.py for why the shape changed.
+    # `git_dirty` added in #75, `civulator_core_commit` in #47, `rng` in #128
+    # (Q0) — see tests/test_meta.py for why the shape changed.
     assert set(demo["manifest"]) == {
-        "game_version", "git_commit", "git_dirty", "civulator_core_commit",
+        "game_version", "rng", "git_commit", "git_dirty", "civulator_core_commit",
         "config", "date",
     }
     assert len(demo["actions"]) == 2

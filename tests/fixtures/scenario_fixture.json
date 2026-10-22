@@ -24,8 +24,12 @@
   ],
   "cities": [],
   "manifest": {
-    "game_version": "0.8.0",
-    "git_commit": "a03bbbd",
+    "game_version": "0.9.0",
+    "rng": {
+      "kind": "philox32",
+      "version": "0.1.0"
+    },
+    "git_commit": "fb31440",
     "git_dirty": false,
     "civulator_core_commit": null,
     "config": {
@@ -594,6 +598,7 @@
       "improvements": {
         "Farm": {
           "housing": 0.5,
+          "food": 1,
           "on": [
             {
               "bases": [
@@ -613,6 +618,8 @@
           ]
         },
         "Mine": {
+          "requires_tech": "Mining",
+          "production": 1,
           "on": [
             {
               "relief": [
@@ -632,7 +639,9 @@
           ]
         },
         "Plantation": {
+          "requires_tech": "Irrigation",
           "housing": 0.5,
+          "gold": 2,
           "on": {
             "bases": [
               "Plains",
@@ -645,7 +654,9 @@
           }
         },
         "Camp": {
+          "requires_tech": "Animal Husbandry",
           "housing": 0.5,
+          "gold": 2,
           "on": {
             "bases": [
               "Plains",
@@ -659,7 +670,9 @@
           }
         },
         "Pasture": {
+          "requires_tech": "Animal Husbandry",
           "housing": 0.5,
+          "production": 1,
           "on": {
             "bases": [
               "Plains",
@@ -673,6 +686,8 @@
           }
         },
         "Quarry": {
+          "requires_tech": "Mining",
+          "production": 1,
           "on": {
             "bases": [
               "Plains",
@@ -686,33 +701,15 @@
           }
         },
         "Fishing Boats": {
+          "requires_tech": "Celestial Navigation",
           "housing": 0.5,
+          "food": 1,
           "on": {
             "bases": [
               "Coast",
               "Lake"
             ]
           }
-        },
-        "Oil Well": {
-          "on": [
-            {
-              "bases": [
-                "Desert",
-                "Tundra",
-                "Snow"
-              ],
-              "relief": [
-                "flat"
-              ]
-            },
-            {
-              "bases": [
-                "Coast",
-                "Ocean"
-              ]
-            }
-          ]
         }
       },
       "game": {
@@ -720,10 +717,25 @@
         "max_turns": 1000,
         "starting_warriors": 3,
         "min_city_distance": 4,
-        "city_score_weight": 10
+        "city_score_weight": 10,
+        "domination_victory": false,
+        "score": {
+          "unit_weight": 1,
+          "population_weight": 1,
+          "tech_weight": 2,
+          "civic_weight": 2,
+          "wonder_weight": 10
+        }
       },
       "units": {
         "Warrior": {
+          "combat_class": "melee",
+          "era": "Ancient",
+          "maintenance": 0,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Swordsman",
           "max_movement": 2,
           "combat_strength": 20,
           "ranged_strength": 0,
@@ -731,6 +743,13 @@
           "production_cost": 40
         },
         "Slinger": {
+          "combat_class": "ranged",
+          "era": "Ancient",
+          "maintenance": 0,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Archer",
           "max_movement": 2,
           "combat_strength": 5,
           "ranged_strength": 15,
@@ -738,6 +757,14 @@
           "production_cost": 35
         },
         "Archer": {
+          "requires_tech": "Archery",
+          "combat_class": "ranged",
+          "era": "Ancient",
+          "maintenance": 1,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Crossbowman",
           "max_movement": 2,
           "combat_strength": 15,
           "ranged_strength": 25,
@@ -745,6 +772,14 @@
           "production_cost": 60
         },
         "Swordsman": {
+          "requires_tech": "Iron Working",
+          "combat_class": "melee",
+          "era": "Classical",
+          "maintenance": 2,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Man-At-Arms",
           "max_movement": 2,
           "combat_strength": 35,
           "ranged_strength": 0,
@@ -752,6 +787,14 @@
           "production_cost": 90
         },
         "Spearman": {
+          "requires_tech": "Bronze Working",
+          "combat_class": "anti_cavalry",
+          "era": "Ancient",
+          "maintenance": 1,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Pikeman",
           "max_movement": 2,
           "combat_strength": 25,
           "ranged_strength": 0,
@@ -759,6 +802,14 @@
           "production_cost": 65
         },
         "Horseman": {
+          "requires_tech": "Horseback Riding",
+          "combat_class": "light_cavalry",
+          "era": "Classical",
+          "maintenance": 2,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Knight",
           "max_movement": 4,
           "combat_strength": 35,
           "ranged_strength": 0,
@@ -766,6 +817,12 @@
           "production_cost": 80
         },
         "Settler": {
+          "combat_class": "civilian",
+          "era": "Ancient",
+          "maintenance": 0,
+          "purchasable": [
+            "gold"
+          ],
           "max_movement": 2,
           "combat_strength": 0,
           "ranged_strength": 0,
@@ -773,6 +830,13 @@
           "production_cost": 120
         },
         "Worker": {
+          "combat_class": "civilian",
+          "era": "Ancient",
+          "maintenance": 0,
+          "purchasable": [
+            "gold"
+          ],
+          "build_charges": 3,
           "max_movement": 2,
           "combat_strength": 0,
           "ranged_strength": 0,
@@ -780,14 +844,28 @@
           "production_cost": 50
         },
         "Catapult": {
+          "requires_tech": "Engineering",
+          "combat_class": "siege",
+          "era": "Classical",
+          "maintenance": 2,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Trebuchet",
           "max_movement": 2,
           "combat_strength": 23,
           "ranged_strength": 35,
           "range": 2,
-          "production_cost": 120,
-          "siege_class": true
+          "production_cost": 120
         },
         "BatteringRam": {
+          "requires_tech": "Masonry",
+          "combat_class": "support",
+          "era": "Ancient",
+          "maintenance": 1,
+          "purchasable": [
+            "gold"
+          ],
           "max_movement": 2,
           "combat_strength": 0,
           "ranged_strength": 0,
@@ -795,18 +873,165 @@
           "production_cost": 65
         },
         "SiegeTower": {
+          "requires_tech": "Machinery",
+          "combat_class": "support",
+          "era": "Classical",
+          "maintenance": 2,
+          "purchasable": [
+            "gold"
+          ],
           "max_movement": 2,
           "combat_strength": 0,
           "ranged_strength": 0,
           "range": 0,
           "production_cost": 100
+        },
+        "Man-At-Arms": {
+          "requires_tech": "Apprenticeship",
+          "combat_class": "melee",
+          "era": "Medieval",
+          "maintenance": 3,
+          "purchasable": [
+            "gold"
+          ],
+          "upgrades_to": "Musketman",
+          "max_movement": 2,
+          "combat_strength": 45,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 160
+        },
+        "Pikeman": {
+          "requires_tech": "Military Tactics",
+          "combat_class": "anti_cavalry",
+          "era": "Medieval",
+          "maintenance": 2,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 2,
+          "combat_strength": 45,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 180
+        },
+        "Crossbowman": {
+          "requires_tech": "Machinery",
+          "combat_class": "ranged",
+          "era": "Medieval",
+          "maintenance": 3,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 2,
+          "combat_strength": 30,
+          "ranged_strength": 40,
+          "range": 2,
+          "production_cost": 180
+        },
+        "Knight": {
+          "requires_tech": "Stirrups",
+          "combat_class": "heavy_cavalry",
+          "era": "Medieval",
+          "maintenance": 4,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 4,
+          "combat_strength": 50,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 220
+        },
+        "Trebuchet": {
+          "requires_tech": "Military Engineering",
+          "combat_class": "siege",
+          "era": "Medieval",
+          "maintenance": 3,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 2,
+          "combat_strength": 35,
+          "ranged_strength": 45,
+          "range": 2,
+          "production_cost": 200
+        },
+        "Musketman": {
+          "requires_tech": "Gunpowder",
+          "combat_class": "melee",
+          "era": "Renaissance",
+          "maintenance": 4,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 2,
+          "combat_strength": 55,
+          "ranged_strength": 0,
+          "range": 1,
+          "production_cost": 240
+        },
+        "Trader": {
+          "requires_civic": "Foreign Trade",
+          "combat_class": "civilian",
+          "era": "Ancient",
+          "maintenance": 0,
+          "purchasable": [
+            "gold"
+          ],
+          "max_movement": 2,
+          "combat_strength": 0,
+          "ranged_strength": 0,
+          "range": 0,
+          "production_cost": 40
         }
       },
       "combat": {
-        "anti_cavalry_bonus": 10,
-        "melee_vs_spearman_bonus": 5,
+        "class_bonuses": [
+          {
+            "unit": "anti_cavalry",
+            "target": "light_cavalry",
+            "amount": 10,
+            "strength": "combat"
+          },
+          {
+            "unit": "melee",
+            "target": "anti_cavalry",
+            "amount": 5,
+            "strength": "combat"
+          },
+          {
+            "unit": "Archer",
+            "target": "light_cavalry",
+            "amount": -5,
+            "strength": "ranged"
+          },
+          {
+            "unit": "anti_cavalry",
+            "target": "heavy_cavalry",
+            "amount": 10,
+            "strength": "combat"
+          },
+          {
+            "unit": "Archer",
+            "target": "heavy_cavalry",
+            "amount": -5,
+            "strength": "ranged"
+          },
+          {
+            "unit": "Crossbowman",
+            "target": "light_cavalry",
+            "amount": -5,
+            "strength": "ranged"
+          },
+          {
+            "unit": "Crossbowman",
+            "target": "heavy_cavalry",
+            "amount": -5,
+            "strength": "ranged"
+          }
+        ],
         "ranged_city_penalty": 17,
-        "archer_vs_horseman_penalty": 5,
         "fortification_bonus": [
           3,
           6
@@ -825,6 +1050,7 @@
         "health": 200,
         "defense_strength": 20,
         "ranged_building": "Walls",
+        "capital_building": "Palace",
         "ranged_strength": 25,
         "ranged_range": 2,
         "heal_per_turn": 20
@@ -839,11 +1065,86 @@
       },
       "gold": {
         "base": 0.0,
-        "per_pop": 0.0
+        "per_pop": 0.0,
+        "upgrade_per_production": 2,
+        "upgrade_base": 10,
+        "purchase_multiplier": 4
       },
       "faith": {
         "base": 0.0,
-        "per_pop": 0.0
+        "per_pop": 0.0,
+        "purchase_multiplier": 2
+      },
+      "trade": {
+        "unit": "Trader",
+        "range": 15,
+        "duration_turns": 21,
+        "domestic": {
+          "City Center": {
+            "food": 1,
+            "production": 1
+          },
+          "Campus": {
+            "food": 1
+          },
+          "Holy Site": {
+            "food": 1
+          },
+          "Theater Square": {
+            "food": 1
+          },
+          "Entertainment Complex": {
+            "food": 1
+          },
+          "Encampment": {
+            "production": 1
+          },
+          "Industrial Zone": {
+            "production": 1
+          },
+          "Commercial Hub": {
+            "production": 1
+          },
+          "Harbor": {
+            "production": 1
+          },
+          "Government Plaza": {
+            "food": 1,
+            "production": 1
+          }
+        },
+        "international": {
+          "City Center": {
+            "gold": 3
+          },
+          "Campus": {
+            "science": 1
+          },
+          "Holy Site": {
+            "faith": 1
+          },
+          "Theater Square": {
+            "culture": 1
+          },
+          "Entertainment Complex": {
+            "food": 1
+          },
+          "Encampment": {
+            "production": 1
+          },
+          "Industrial Zone": {
+            "production": 1
+          },
+          "Commercial Hub": {
+            "gold": 3
+          },
+          "Harbor": {
+            "gold": 3
+          },
+          "Government Plaza": {
+            "gold": 2
+          }
+        }
       },
       "housing": {
         "water_fresh": 5,
@@ -876,31 +1177,1018 @@
           "p": 1.3
         }
       },
+      "loyalty": {
+        "maximum": 100,
+        "founded": 100,
+        "captured": 50,
+        "range": 9,
+        "citizen_weight": 10,
+        "drift_gain": 10,
+        "drift_cap": 20,
+        "garrison": 2,
+        "bands": [
+          [
+            76,
+            100,
+            100
+          ],
+          [
+            51,
+            75,
+            75
+          ],
+          [
+            26,
+            50,
+            25
+          ],
+          [
+            1,
+            0,
+            0
+          ]
+        ]
+      },
+      "research": {
+        "tech_cost_percent": 75,
+        "civic_cost_percent": 75
+      },
+      "techs": {
+        "Pottery": {
+          "cost": 25,
+          "era": "Ancient"
+        },
+        "Animal Husbandry": {
+          "cost": 25,
+          "era": "Ancient"
+        },
+        "Mining": {
+          "cost": 25,
+          "era": "Ancient"
+        },
+        "Astrology": {
+          "cost": 50,
+          "era": "Ancient"
+        },
+        "Irrigation": {
+          "cost": 50,
+          "era": "Ancient",
+          "requires": [
+            "Pottery"
+          ]
+        },
+        "Writing": {
+          "cost": 50,
+          "era": "Ancient",
+          "requires": [
+            "Pottery"
+          ]
+        },
+        "Archery": {
+          "cost": 50,
+          "era": "Ancient",
+          "requires": [
+            "Animal Husbandry"
+          ]
+        },
+        "Masonry": {
+          "cost": 80,
+          "era": "Ancient",
+          "requires": [
+            "Mining"
+          ]
+        },
+        "Bronze Working": {
+          "cost": 80,
+          "era": "Ancient",
+          "requires": [
+            "Mining"
+          ]
+        },
+        "Celestial Navigation": {
+          "cost": 120,
+          "era": "Classical",
+          "requires": [
+            "Astrology"
+          ]
+        },
+        "Currency": {
+          "cost": 120,
+          "era": "Classical",
+          "requires": [
+            "Writing"
+          ]
+        },
+        "Horseback Riding": {
+          "cost": 120,
+          "era": "Classical",
+          "requires": [
+            "Archery"
+          ]
+        },
+        "Iron Working": {
+          "cost": 120,
+          "era": "Classical",
+          "requires": [
+            "Bronze Working"
+          ]
+        },
+        "Engineering": {
+          "cost": 200,
+          "era": "Classical",
+          "requires": [
+            "Masonry"
+          ]
+        },
+        "Military Tactics": {
+          "cost": 300,
+          "era": "Medieval",
+          "requires": [
+            "Bronze Working",
+            "Currency"
+          ]
+        },
+        "Apprenticeship": {
+          "cost": 300,
+          "era": "Medieval",
+          "requires": [
+            "Currency",
+            "Horseback Riding"
+          ]
+        },
+        "Machinery": {
+          "cost": 300,
+          "era": "Medieval",
+          "requires": [
+            "Iron Working",
+            "Engineering"
+          ]
+        },
+        "Education": {
+          "cost": 335,
+          "era": "Medieval",
+          "requires": [
+            "Apprenticeship"
+          ]
+        },
+        "Military Engineering": {
+          "cost": 335,
+          "era": "Medieval",
+          "requires": [
+            "Engineering"
+          ]
+        },
+        "Stirrups": {
+          "cost": 390,
+          "era": "Medieval",
+          "requires": [
+            "Horseback Riding",
+            "Apprenticeship"
+          ]
+        },
+        "Castles": {
+          "cost": 390,
+          "era": "Medieval",
+          "requires": [
+            "Military Engineering"
+          ]
+        },
+        "Gunpowder": {
+          "cost": 600,
+          "era": "Renaissance",
+          "requires": [
+            "Apprenticeship",
+            "Stirrups",
+            "Military Engineering"
+          ]
+        }
+      },
+      "civics": {
+        "Code of Laws": {
+          "cost": 20,
+          "era": "Ancient"
+        },
+        "Craftsmanship": {
+          "cost": 40,
+          "era": "Ancient",
+          "requires": [
+            "Code of Laws"
+          ]
+        },
+        "Foreign Trade": {
+          "cost": 40,
+          "era": "Ancient",
+          "requires": [
+            "Code of Laws"
+          ],
+          "effects": [
+            {
+              "kind": "trade_route_capacity",
+              "amount": 1
+            }
+          ]
+        },
+        "Military Tradition": {
+          "cost": 50,
+          "era": "Ancient",
+          "requires": [
+            "Craftsmanship"
+          ],
+          "effects": [
+            {
+              "kind": "enables",
+              "rules": [
+                "flanking"
+              ]
+            }
+          ]
+        },
+        "State Workforce": {
+          "cost": 70,
+          "era": "Ancient",
+          "requires": [
+            "Craftsmanship"
+          ]
+        },
+        "Early Empire": {
+          "cost": 70,
+          "era": "Ancient",
+          "requires": [
+            "Foreign Trade"
+          ]
+        },
+        "Games and Recreation": {
+          "cost": 110,
+          "era": "Classical",
+          "requires": [
+            "State Workforce"
+          ]
+        },
+        "Political Philosophy": {
+          "cost": 110,
+          "era": "Classical",
+          "requires": [
+            "State Workforce",
+            "Early Empire"
+          ]
+        },
+        "Drama and Poetry": {
+          "cost": 110,
+          "era": "Classical",
+          "requires": [
+            "Early Empire"
+          ]
+        },
+        "Military Training": {
+          "cost": 120,
+          "era": "Classical",
+          "requires": [
+            "Military Tradition"
+          ]
+        },
+        "Theology": {
+          "cost": 120,
+          "era": "Classical",
+          "requires": [
+            "Drama and Poetry"
+          ]
+        },
+        "Defensive Tactics": {
+          "cost": 175,
+          "era": "Classical",
+          "requires": [
+            "Games and Recreation",
+            "Political Philosophy"
+          ]
+        },
+        "Recorded History": {
+          "cost": 175,
+          "era": "Classical",
+          "requires": [
+            "Drama and Poetry",
+            "Political Philosophy"
+          ]
+        },
+        "Feudalism": {
+          "cost": 300,
+          "era": "Medieval",
+          "requires": [
+            "Defensive Tactics"
+          ]
+        },
+        "Civil Service": {
+          "cost": 300,
+          "era": "Medieval",
+          "requires": [
+            "Defensive Tactics",
+            "Recorded History"
+          ]
+        },
+        "Mercenaries": {
+          "cost": 340,
+          "era": "Medieval",
+          "requires": [
+            "Feudalism",
+            "Military Training"
+          ]
+        },
+        "Divine Right": {
+          "cost": 340,
+          "era": "Medieval",
+          "requires": [
+            "Civil Service",
+            "Theology"
+          ]
+        },
+        "Medieval Faires": {
+          "cost": 420,
+          "era": "Medieval",
+          "requires": [
+            "Feudalism"
+          ]
+        },
+        "Guilds": {
+          "cost": 420,
+          "era": "Medieval",
+          "requires": [
+            "Feudalism",
+            "Civil Service"
+          ]
+        }
+      },
+      "governments": {
+        "Chiefdom": {
+          "requires_civic": "Code of Laws",
+          "tier": 0,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "military": 1,
+              "economic": 1
+            }
+          ]
+        },
+        "Autocracy": {
+          "requires_civic": "Political Philosophy",
+          "tier": 1,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "military": 1,
+              "economic": 1,
+              "wildcard": 2
+            },
+            {
+              "kind": "city_yield",
+              "food": 1,
+              "production": 1,
+              "science": 1,
+              "culture": 1,
+              "gold": 1,
+              "faith": 1,
+              "capital_only": true
+            },
+            {
+              "kind": "production_percent",
+              "target": {
+                "kind": "wonder"
+              },
+              "percent": 10
+            }
+          ]
+        },
+        "Classical Republic": {
+          "requires_civic": "Political Philosophy",
+          "tier": 1,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "economic": 2,
+              "wildcard": 2
+            },
+            {
+              "kind": "housing_if_districts",
+              "amount": 1,
+              "min_districts": 1
+            }
+          ]
+        },
+        "Oligarchy": {
+          "requires_civic": "Political Philosophy",
+          "tier": 1,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "military": 2,
+              "economic": 1,
+              "wildcard": 1
+            },
+            {
+              "kind": "combat_strength",
+              "applies_to": [
+                "melee",
+                "anti_cavalry"
+              ],
+              "amount": 4
+            }
+          ]
+        },
+        "Monarchy": {
+          "requires_civic": "Divine Right",
+          "tier": 2,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "military": 2,
+              "economic": 1,
+              "wildcard": 3
+            },
+            {
+              "kind": "housing_with_building",
+              "building": "Walls",
+              "amount": 1
+            },
+            {
+              "kind": "housing_with_building",
+              "building": "Medieval Walls",
+              "amount": 1
+            },
+            {
+              "kind": "production_percent",
+              "target": {
+                "building": [
+                  "Walls",
+                  "Medieval Walls"
+                ]
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Theocracy": {
+          "requires_civic": "Divine Right",
+          "tier": 2,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "military": 2,
+              "economic": 2,
+              "wildcard": 2
+            },
+            {
+              "kind": "faith_purchase",
+              "categories": [
+                "land_military"
+              ]
+            },
+            {
+              "kind": "purchase_percent",
+              "resource": "faith",
+              "percent": -15
+            }
+          ]
+        }
+      },
+      "policies": {
+        "God King": {
+          "type": "economic",
+          "requires_civic": "Code of Laws",
+          "obsolete_with": "Theology",
+          "effects": [
+            {
+              "kind": "city_yield",
+              "faith": 1,
+              "gold": 1,
+              "capital_only": true
+            }
+          ]
+        },
+        "Urban Planning": {
+          "type": "economic",
+          "requires_civic": "Code of Laws",
+          "effects": [
+            {
+              "kind": "city_yield",
+              "production": 1
+            }
+          ]
+        },
+        "Ilkum": {
+          "type": "economic",
+          "requires_civic": "Craftsmanship",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit": "Worker"
+              },
+              "percent": 30
+            }
+          ]
+        },
+        "Agoge": {
+          "type": "military",
+          "requires_civic": "Craftsmanship",
+          "obsolete_with": "Feudalism",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit_class": [
+                  "melee",
+                  "ranged",
+                  "anti_cavalry"
+                ],
+                "unit_era": [
+                  "Ancient",
+                  "Classical"
+                ]
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Caravansaries": {
+          "type": "economic",
+          "requires_civic": "Foreign Trade",
+          "effects": [
+            {
+              "kind": "route_yield",
+              "gold": 2
+            }
+          ]
+        },
+        "Maneuver": {
+          "type": "military",
+          "requires_civic": "Military Tradition",
+          "obsolete_with": "Divine Right",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit_class": [
+                  "light_cavalry",
+                  "heavy_cavalry"
+                ],
+                "unit_era": [
+                  "Ancient",
+                  "Classical"
+                ]
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Conscription": {
+          "type": "military",
+          "requires_civic": "State Workforce",
+          "effects": [
+            {
+              "kind": "unit_maintenance_delta",
+              "amount": -1
+            }
+          ]
+        },
+        "Corvee": {
+          "type": "economic",
+          "requires_civic": "State Workforce",
+          "obsolete_with": "Divine Right",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "kind": "wonder",
+                "wonder_era": [
+                  "Ancient",
+                  "Classical"
+                ]
+              },
+              "percent": 15
+            }
+          ]
+        },
+        "Colonization": {
+          "type": "economic",
+          "requires_civic": "Early Empire",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit": "Settler"
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Limitanei": {
+          "type": "military",
+          "requires_civic": "Early Empire",
+          "effects": [
+            {
+              "kind": "loyalty",
+              "amount": 2,
+              "requires_garrison": true
+            }
+          ]
+        },
+        "Insulae": {
+          "type": "economic",
+          "requires_civic": "Games and Recreation",
+          "obsolete_with": "Medieval Faires",
+          "effects": [
+            {
+              "kind": "housing_if_districts",
+              "amount": 1,
+              "min_districts": 2
+            }
+          ]
+        },
+        "Veterancy": {
+          "type": "military",
+          "requires_civic": "Military Training",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "district": [
+                  "Encampment",
+                  "Harbor"
+                ]
+              },
+              "percent": 30
+            },
+            {
+              "kind": "production_percent",
+              "target": {
+                "in_district": [
+                  "Encampment",
+                  "Harbor"
+                ]
+              },
+              "percent": 30
+            }
+          ]
+        },
+        "Scripture": {
+          "type": "economic",
+          "requires_civic": "Theology",
+          "effects": [
+            {
+              "kind": "adjacency_percent",
+              "district": "Holy Site",
+              "percent": 100
+            }
+          ]
+        },
+        "Bastions": {
+          "type": "military",
+          "requires_civic": "Defensive Tactics",
+          "effects": [
+            {
+              "kind": "combat_strength",
+              "applies_to": "city",
+              "amount": 6
+            },
+            {
+              "kind": "city_ranged_strength",
+              "amount": 5
+            }
+          ]
+        },
+        "Limes": {
+          "type": "military",
+          "requires_civic": "Defensive Tactics",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "building": [
+                  "Walls",
+                  "Medieval Walls"
+                ]
+              },
+              "percent": 100
+            }
+          ]
+        },
+        "Natural Philosophy": {
+          "type": "economic",
+          "requires_civic": "Recorded History",
+          "effects": [
+            {
+              "kind": "adjacency_percent",
+              "district": "Campus",
+              "percent": 100
+            }
+          ]
+        },
+        "Feudal Contract": {
+          "type": "military",
+          "requires_civic": "Feudalism",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit_class": [
+                  "melee",
+                  "ranged",
+                  "anti_cavalry"
+                ],
+                "unit_era": [
+                  "Ancient",
+                  "Classical",
+                  "Medieval",
+                  "Renaissance"
+                ]
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Serfdom": {
+          "type": "economic",
+          "requires_civic": "Feudalism",
+          "effects": [
+            {
+              "kind": "build_charges_trained",
+              "amount": 2
+            }
+          ]
+        },
+        "Meritocracy": {
+          "type": "economic",
+          "requires_civic": "Civil Service",
+          "effects": [
+            {
+              "kind": "city_yield",
+              "culture": 1,
+              "per_district": true
+            }
+          ]
+        },
+        "Professional Army": {
+          "type": "military",
+          "requires_civic": "Mercenaries",
+          "effects": [
+            {
+              "kind": "upgrade_cost_percent",
+              "percent": -50
+            }
+          ]
+        },
+        "Trade Confederation": {
+          "type": "economic",
+          "requires_civic": "Mercenaries",
+          "effects": [
+            {
+              "kind": "route_yield",
+              "culture": 1,
+              "science": 1,
+              "international_only": true
+            }
+          ]
+        },
+        "Aesthetics": {
+          "type": "economic",
+          "requires_civic": "Medieval Faires",
+          "effects": [
+            {
+              "kind": "adjacency_percent",
+              "district": "Theater Square",
+              "percent": 100
+            }
+          ]
+        },
+        "Medina Quarter": {
+          "type": "economic",
+          "requires_civic": "Medieval Faires",
+          "effects": [
+            {
+              "kind": "housing_if_districts",
+              "amount": 2,
+              "min_districts": 3
+            }
+          ]
+        },
+        "Craftsmen": {
+          "type": "economic",
+          "requires_civic": "Guilds",
+          "effects": [
+            {
+              "kind": "adjacency_percent",
+              "district": "Industrial Zone",
+              "percent": 100
+            }
+          ]
+        },
+        "Town Charters": {
+          "type": "economic",
+          "requires_civic": "Guilds",
+          "effects": [
+            {
+              "kind": "adjacency_percent",
+              "district": "Commercial Hub",
+              "percent": 100
+            }
+          ]
+        },
+        "Chivalry": {
+          "type": "military",
+          "requires_civic": "Divine Right",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit_class": [
+                  "light_cavalry",
+                  "heavy_cavalry"
+                ]
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Gothic Architecture": {
+          "type": "economic",
+          "requires_civic": "Divine Right",
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "kind": "wonder",
+                "wonder_era": [
+                  "Ancient",
+                  "Classical",
+                  "Medieval",
+                  "Renaissance"
+                ]
+              },
+              "percent": 15
+            }
+          ]
+        }
+      },
       "buildings": {
         "Granary": {
           "production_cost": 60,
+          "requires_tech": "Pottery",
           "housing": 2,
           "food": 1
         },
         "Monument": {
           "production_cost": 50,
-          "culture": 2
+          "culture": 2,
+          "loyalty": 1
         },
         "Walls": {
           "production_cost": 100,
-          "defense_bonus": 30
+          "requires_tech": "Masonry",
+          "defense_bonus": 30,
+          "purchasable": []
         },
         "Workshop": {
-          "production_cost": 120
+          "production_cost": 195,
+          "requires_tech": "Apprenticeship",
+          "requires_district": "Industrial Zone",
+          "production": 3,
+          "maintenance": 1
         },
-        "Factory": {
-          "production_cost": 240
+        "Library": {
+          "production_cost": 90,
+          "requires_tech": "Writing",
+          "requires_district": "Campus",
+          "science": 2,
+          "maintenance": 1
+        },
+        "University": {
+          "production_cost": 250,
+          "requires_tech": "Education",
+          "requires_district": "Campus",
+          "requires_building": "Library",
+          "science": 4,
+          "housing": 1,
+          "maintenance": 2
+        },
+        "Shrine": {
+          "production_cost": 70,
+          "requires_tech": "Astrology",
+          "requires_district": "Holy Site",
+          "faith": 2,
+          "maintenance": 1,
+          "purchasable": [
+            "gold",
+            "faith"
+          ]
+        },
+        "Temple": {
+          "production_cost": 120,
+          "requires_civic": "Theology",
+          "requires_district": "Holy Site",
+          "requires_building": "Shrine",
+          "faith": 4,
+          "maintenance": 2,
+          "purchasable": [
+            "gold",
+            "faith"
+          ]
+        },
+        "Amphitheater": {
+          "production_cost": 150,
+          "requires_civic": "Drama and Poetry",
+          "requires_district": "Theater Square",
+          "culture": 2,
+          "maintenance": 1
+        },
+        "Ancestral Hall": {
+          "production_cost": 150,
+          "requires_government_tier": 1,
+          "requires_district": "Government Plaza",
+          "maintenance": 1,
+          "purchasable": [],
+          "effects": [
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit": "Settler"
+              },
+              "percent": 50
+            }
+          ]
+        },
+        "Grand Master's Chapel": {
+          "production_cost": 290,
+          "requires_government_tier": 2,
+          "requires_district": "Government Plaza",
+          "requires_building": "Ancestral Hall",
+          "faith": 5,
+          "maintenance": 2,
+          "purchasable": [],
+          "effects": [
+            {
+              "kind": "faith_purchase",
+              "categories": [
+                "land_military"
+              ],
+              "scope": "player"
+            }
+          ]
+        },
+        "Barracks": {
+          "production_cost": 90,
+          "requires_tech": "Bronze Working",
+          "requires_district": "Encampment",
+          "production": 1,
+          "housing": 1,
+          "maintenance": 1
+        },
+        "Market": {
+          "production_cost": 120,
+          "requires_tech": "Currency",
+          "requires_district": "Commercial Hub",
+          "gold": 3,
+          "maintenance": 0,
+          "effects": [
+            {
+              "kind": "trade_route_capacity",
+              "amount": 1
+            }
+          ]
+        },
+        "Lighthouse": {
+          "production_cost": 120,
+          "requires_tech": "Celestial Navigation",
+          "requires_district": "Harbor",
+          "food": 1,
+          "gold": 1,
+          "housing": 1,
+          "maintenance": 0,
+          "effects": [
+            {
+              "kind": "trade_route_capacity",
+              "amount": 1
+            }
+          ]
+        },
+        "Medieval Walls": {
+          "production_cost": 220,
+          "requires_tech": "Castles",
+          "requires_building": "Walls",
+          "defense_bonus": 30,
+          "purchasable": []
         },
         "Palace": {
           "housing": 1,
+          "purchasable": [],
           "science": 2,
           "gold": 5,
-          "production": 2
+          "production": 2,
+          "effects": [
+            {
+              "kind": "loyalty",
+              "amount": 1,
+              "per_population": true
+            }
+          ]
         }
       },
       "districts": {
@@ -916,6 +2204,8 @@
         ],
         "Campus": {
           "production_cost": 54,
+          "requires_tech": "Writing",
+          "maintenance": 1,
           "cost_model": "discounted",
           "discount_percent": 40,
           "adjacency_yield": "science",
@@ -960,6 +2250,7 @@
         },
         "Commercial Hub": {
           "production_cost": 54,
+          "requires_tech": "Currency",
           "cost_model": "discounted",
           "discount_percent": 40,
           "adjacency_yield": "gold",
@@ -989,10 +2280,16 @@
         },
         "Theater Square": {
           "production_cost": 54,
+          "requires_civic": "Drama and Poetry",
+          "maintenance": 1,
           "cost_model": "discounted",
           "discount_percent": 40,
           "adjacency_yield": "culture",
           "adjacency": [
+            {
+              "amount": 2,
+              "wonder": "any"
+            },
             {
               "amount": 2,
               "district": [
@@ -1014,6 +2311,8 @@
         },
         "Holy Site": {
           "production_cost": 54,
+          "requires_tech": "Astrology",
+          "maintenance": 1,
           "cost_model": "discounted",
           "discount_percent": 40,
           "adjacency_yield": "faith",
@@ -1050,6 +2349,8 @@
         },
         "Industrial Zone": {
           "production_cost": 54,
+          "requires_tech": "Apprenticeship",
+          "maintenance": 1,
           "cost_model": "discounted",
           "discount_percent": 40,
           "adjacency_yield": "production",
@@ -1088,6 +2389,7 @@
         },
         "Harbor": {
           "production_cost": 54,
+          "requires_tech": "Celestial Navigation",
           "cost_model": "discounted",
           "discount_percent": 40,
           "adjacency_yield": "gold",
@@ -1145,23 +2447,30 @@
         },
         "Encampment": {
           "production_cost": 54,
+          "requires_tech": "Bronze Working",
+          "maintenance": 1,
           "cost_model": "discounted",
           "discount_percent": 40,
           "adjacent_to_city_center": false
         },
         "Entertainment Complex": {
           "production_cost": 54,
+          "requires_civic": "Games and Recreation",
+          "maintenance": 1,
           "cost_model": "discounted",
           "discount_percent": 40
         },
         "Government Plaza": {
           "production_cost": 30,
+          "requires_civic": "State Workforce",
+          "loyalty": 8,
           "cost_model": "discounted",
           "discount_percent": 25,
           "max_per_player": 1
         },
         "Aqueduct": {
           "production_cost": 36,
+          "requires_tech": "Engineering",
           "cost_model": "progress",
           "counts_toward_limit": false,
           "adjacent_to_city_center": true,
@@ -1193,7 +2502,425 @@
           ],
           "water_housing_min": 6,
           "water_housing_boost": 2
+        },
+        "Pyramids": {
+          "kind": "wonder",
+          "era": "Ancient",
+          "production_cost": 220,
+          "requires_tech": "Masonry",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "flat"
+            ],
+            "bases": [
+              "Desert",
+              "Plains"
+            ]
+          },
+          "culture": 2,
+          "effects": [
+            {
+              "kind": "free_units",
+              "units": [
+                {
+                  "unit": "Worker",
+                  "count": 1
+                }
+              ]
+            },
+            {
+              "kind": "build_charges",
+              "amount": 1,
+              "scope": "player"
+            }
+          ]
+        },
+        "Stonehenge": {
+          "kind": "wonder",
+          "era": "Ancient",
+          "production_cost": 180,
+          "requires_tech": "Astrology",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "flat"
+            ],
+            "bases": [
+              "Grassland",
+              "Plains",
+              "Desert",
+              "Tundra",
+              "Snow"
+            ]
+          },
+          "requires_adjacent": [
+            {
+              "terrain": {
+                "resources": [
+                  "Stone"
+                ]
+              }
+            }
+          ],
+          "faith": 4
+        },
+        "Hanging Gardens": {
+          "kind": "wonder",
+          "era": "Ancient",
+          "production_cost": 180,
+          "requires_tech": "Irrigation",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "requires_adjacent": [
+            {
+              "river_on_tile": true
+            }
+          ],
+          "housing": 2,
+          "effects": [
+            {
+              "kind": "growth_percent",
+              "percent": 15,
+              "scope": "player"
+            }
+          ]
+        },
+        "Temple of Artemis": {
+          "kind": "wonder",
+          "era": "Ancient",
+          "production_cost": 180,
+          "requires_tech": "Archery",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "requires_adjacent": [
+            {
+              "terrain": {
+                "resources": [
+                  "Cattle",
+                  "Sheep",
+                  "Deer"
+                ]
+              }
+            }
+          ],
+          "food": 4,
+          "housing": 3
+        },
+        "Oracle": {
+          "kind": "wonder",
+          "era": "Ancient",
+          "production_cost": 290,
+          "requires_civic": "State Workforce",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "hills"
+            ]
+          },
+          "culture": 2,
+          "faith": 2,
+          "effects": [
+            {
+              "kind": "free_civic",
+              "count": 1
+            }
+          ]
+        },
+        "Statue of Zeus": {
+          "kind": "wonder",
+          "era": "Classical",
+          "production_cost": 400,
+          "requires_civic": "Military Training",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "flat"
+            ],
+            "bases": [
+              "Grassland",
+              "Plains",
+              "Desert",
+              "Tundra",
+              "Snow"
+            ]
+          },
+          "requires_adjacent": [
+            {
+              "district": [
+                "Encampment"
+              ]
+            }
+          ],
+          "gold": 3,
+          "effects": [
+            {
+              "kind": "free_units",
+              "units": [
+                {
+                  "unit": "Spearman",
+                  "count": 3
+                },
+                {
+                  "unit": "Archer",
+                  "count": 3
+                }
+              ]
+            },
+            {
+              "kind": "production_percent",
+              "target": {
+                "unit_class": [
+                  "anti_cavalry"
+                ]
+              },
+              "percent": 50,
+              "scope": "player"
+            }
+          ]
+        },
+        "Great Library": {
+          "kind": "wonder",
+          "era": "Classical",
+          "production_cost": 400,
+          "requires_civic": "Recorded History",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "flat"
+            ],
+            "bases": [
+              "Grassland",
+              "Plains",
+              "Desert",
+              "Tundra",
+              "Snow"
+            ]
+          },
+          "requires_adjacent": [
+            {
+              "district": [
+                "Campus"
+              ]
+            }
+          ],
+          "science": 3,
+          "effects": [
+            {
+              "kind": "free_tech",
+              "count": 1
+            }
+          ]
+        },
+        "Colossus": {
+          "kind": "wonder",
+          "era": "Classical",
+          "production_cost": 400,
+          "requires_tech": "Celestial Navigation",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "bases": [
+              "Coast"
+            ]
+          },
+          "requires_adjacent_all": [
+            {
+              "terrain": {
+                "bases": [
+                  "Grassland",
+                  "Plains",
+                  "Desert",
+                  "Tundra",
+                  "Snow"
+                ]
+              }
+            },
+            {
+              "district": [
+                "Harbor"
+              ]
+            }
+          ],
+          "gold": 3,
+          "effects": [
+            {
+              "kind": "trade_route_capacity",
+              "amount": 1,
+              "scope": "player"
+            },
+            {
+              "kind": "free_units",
+              "units": [
+                {
+                  "unit": "Trader",
+                  "count": 1
+                }
+              ]
+            }
+          ]
+        },
+        "Colosseum": {
+          "kind": "wonder",
+          "era": "Classical",
+          "production_cost": 400,
+          "requires_civic": "Games and Recreation",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "flat"
+            ],
+            "bases": [
+              "Grassland",
+              "Plains",
+              "Desert",
+              "Tundra",
+              "Snow"
+            ]
+          },
+          "requires_adjacent": [
+            {
+              "district": [
+                "Entertainment Complex"
+              ]
+            }
+          ],
+          "culture": 2,
+          "effects": [
+            {
+              "kind": "loyalty",
+              "amount": 2,
+              "range": 6,
+              "scope": "player"
+            }
+          ]
+        },
+        "Alhambra": {
+          "kind": "wonder",
+          "era": "Medieval",
+          "production_cost": 710,
+          "requires_tech": "Castles",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "hills"
+            ]
+          },
+          "requires_adjacent": [
+            {
+              "district": [
+                "Encampment"
+              ]
+            }
+          ],
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "military": 1,
+              "scope": "player"
+            },
+            {
+              "kind": "combat_strength",
+              "applies_to": [
+                "city"
+              ],
+              "amount": 6,
+              "scope": "city"
+            }
+          ]
+        },
+        "Angkor Wat": {
+          "kind": "wonder",
+          "era": "Medieval",
+          "production_cost": 710,
+          "requires_civic": "Medieval Faires",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "requires_adjacent": [
+            {
+              "district": [
+                "Aqueduct"
+              ]
+            }
+          ],
+          "faith": 2,
+          "effects": [
+            {
+              "kind": "free_population",
+              "amount": 1,
+              "all_cities": true
+            },
+            {
+              "kind": "housing_if_districts",
+              "amount": 1,
+              "min_districts": 0,
+              "scope": "player"
+            }
+          ]
+        },
+        "Forbidden City": {
+          "kind": "wonder",
+          "era": "Renaissance",
+          "production_cost": 920,
+          "requires_civic": "Divine Right",
+          "cost_model": "fixed",
+          "counts_toward_limit": false,
+          "max_per_city": 1,
+          "max_per_player": 1,
+          "on": {
+            "relief": [
+              "flat"
+            ],
+            "bases": [
+              "Grassland",
+              "Plains",
+              "Desert",
+              "Tundra",
+              "Snow"
+            ]
+          },
+          "adjacent_to_city_center": true,
+          "culture": 5,
+          "effects": [
+            {
+              "kind": "policy_slots",
+              "wildcard": 1,
+              "scope": "player"
+            }
+          ]
         }
+      },
+      "wonders": {
+        "consolation_percent": 0
       },
       "training": {
         "episodes": 64,
@@ -1225,9 +2952,9 @@
         }
       }
     },
-    "date": "2026-10-21T15:46:03.162521+00:00",
+    "date": "2026-10-22T18:51:03.566654+00:00",
     "mapgen_params": {
-      "seed": 11986318432899689386,
+      "seed": 9144312010889105154,
       "rows": 10,
       "cols": 10,
       "num_players": 2,

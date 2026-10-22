@@ -263,3 +263,21 @@ here.
 ## Weights — v0.8.0 epoch
 
 (none yet)
+
+---
+
+## Epoch marker — 2026-10-22: v0.9.0 engine RNG stream change (#128, CHANGELOG v0.9.0)
+
+Everything **above** this line was trained under **v0.8.x rules** or earlier.
+Game version 0.9.0 opens a new epoch (#78 convention) with the engine RNG
+replaced (PCG32 -> `philox32`, Q0): every seeded world, damage roll and
+shuffle is a different draw than under 0.8, so no win rate, seed schedule
+(#39 skip set) or "N games" claim measured above this line is comparable to
+one measured below it, even where the rules text is unchanged. Weights listed
+above stay loadable but are evaluated under the new stream. Manifests saved
+from 0.9.0 on carry `rng = {"kind": "philox32", "version": ...}`. No weights
+have been trained under 0.9.
+
+## Weights — v0.9.0 epoch
+
+(none yet)

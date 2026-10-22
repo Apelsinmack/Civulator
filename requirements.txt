@@ -1,0 +1,10 @@
+# Runtime dependencies. Python 3.11. Machine setup notes: environment.md (ClaudeSync).
+numpy
+torch
+# Engine RNG kit (civulator/rng.py). Pinned to a commit: the repo has no tags
+# yet -- when v0.1.0 is tagged, the pin becomes the tag.
+philox32 @ git+https://github.com/eriiiko/philox32@6c33a3d
+# Optional: visual tools (viewer, painter, recorder, mapgen preview CLI)
+# pyray
+# Optional: C++ module cpp/ (civulator_core) build
+# pybind11
