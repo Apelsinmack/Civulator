@@ -31,8 +31,10 @@ from test_districts import board, make_city, neighbours, own, ring
 OCEAN_TECHS = [name for name in research_model.TECH_ORDER
                if any(e.kind == "enables" and RULE_OCEAN_NAVIGATION in e["rules"]
                       for e in effects_of("tech", name))]
-SHIPS = [u for u in unit_model.UNIT_NAMES if MOVEMENT_DOMAIN[u] == "water"]
-LAND_UNITS = [u for u in unit_model.UNIT_NAMES if MOVEMENT_DOMAIN[u] == "land"]
+# Config order: `COMBAT_CLASS` is a dict in table order (`UNIT_NAMES` is a
+# set, whose order follows the hash seed).
+SHIPS = [u for u in unit_model.COMBAT_CLASS if MOVEMENT_DOMAIN[u] == "water"]
+LAND_UNITS = [u for u in unit_model.COMBAT_CLASS if MOVEMENT_DOMAIN[u] == "land"]
 NAVAL_MELEE = [u for u in SHIPS if unit_model.BASE_RANGED_STRENGTH[u] == 0]
 CENTRE = (3, 3)
 
@@ -63,8 +65,10 @@ def order(env, unit, target):
 
 
 def galley():
-    """The first naval melee unit in config order (the Galley today)."""
-    return NAVAL_MELEE[0]
+    """A naval melee unit not gated on the ocean rule's tech (the Galley
+    today), so a board without ocean navigation can build it."""
+    return next(u for u in NAVAL_MELEE
+                if unit_model.UNIT_REQUIRES_TECH.get(u) not in OCEAN_TECHS)
 
 
 def test_the_fixture_has_ships_and_one_ocean_tech():
@@ -418,7 +422,7 @@ def test_land_ranged_units_take_minus_17_against_every_naval_class_as_shooters_o
     Breaks if the rows name a unit, miss a naval class, or apply to the
     defender."""
     shooters = [u for u in LAND_UNITS if unit_model.COMBAT_CLASS[u] == "ranged"]
-    others = [u for u in unit_model.UNIT_NAMES
+    others = [u for u in unit_model.COMBAT_CLASS
               if unit_model.BASE_RANGED_STRENGTH[u] > 0 and u not in shooters]
     assert shooters and others
     for ship in SHIPS:

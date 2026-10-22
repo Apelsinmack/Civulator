@@ -23,6 +23,11 @@ labelled with its issue. That has happened once:
     state (own tile for a Settler that cannot found there; a neighbour the
     unit cannot pay the movement cost for; a Settler with no valid order at
     all is not selectable). Marked "#51" in the reference bodies below.
+
+And v0.9.0 Q5 ("v2 fixes" B5, cross-domain melee): an enemy unit or city on
+a neighbour is tested BEFORE the terrain gate, which now gates only moves
+and the capture walk-in. Marked "Q5" below. The random states here stand
+units on Ocean and mountain tiles, so the reorder is visible to this test.
 """
 
 import random
@@ -152,8 +157,8 @@ def _reference_get_valid_moves_mask(state, selected_pos, game_env):
             continue
 
         dest_tile = game_env.map.get_tile((new_row, new_col))
-        if not selected_unit.can_enter(dest_tile):
-            continue
+        # Q5: the terrain gate moved below the enemy tests (cross-domain melee).
+        can_enter = selected_unit.can_enter(dest_tile)
 
         enemy_there = any(
             u.player != game_env.current_player
@@ -175,14 +180,15 @@ def _reference_get_valid_moves_mask(state, selected_pos, game_env):
             if enemy_city.health > 0:
                 valid_move_mask[new_row, new_col] = 1
             elif (
-                selected_unit.can_capture_city()
+                can_enter  # Q5
+                and selected_unit.can_capture_city()
                 and not friendly_in_slot
                 and selected_unit.movement_points >= selected_unit.step_cost(
                     (row, col), (new_row, new_col), game_env
                 )
             ):
                 valid_move_mask[new_row, new_col] = 1
-        elif not friendly_in_slot:
+        elif can_enter and not friendly_in_slot:  # Q5: can_enter gates the move
             # #51: a move the unit cannot pay for silently fails -> not offered.
             step = selected_unit.step_cost(
                 (row, col), (new_row, new_col), game_env

@@ -28,7 +28,7 @@ from civulator.game.availability import (
 from civulator.game.city import City
 from civulator.game.districts import District
 from civulator.game.territory import NEUTRAL
-from civulator.game.unit import WorkerUnit
+from civulator.game.unit import MOVEMENT_DOMAIN, WorkerUnit
 from civulator.research_model import CIVIC_ORDER, CIVICS, GOVERNMENTS, TECH_ORDER, TECHS
 
 from conftest import grant, grant_all, grant_civic
@@ -44,6 +44,16 @@ def _env_and_city():
     city = env.create_city(env.players[0], CENTRE, "C")
     city.population = 3  # the Settler's population gate is not under test
     return env, city
+
+
+def _give_water_if_a_ship(env, city, option):
+    """A ship (v0.9.0 Q5, §6.4) is offered only to a city with a spawn water
+    tile: for a water-domain option one tile beside the centre becomes a
+    Lake -- the declared rule, satisfied like a building's district, not an
+    exemption from the tech gate under test."""
+    if MOVEMENT_DOMAIN.get(option) == "water":
+        lake = env.map.get_adjacent_coords(city.coordinates)[0]
+        env.map.get_tile(lake).set_layers("Lake", map_ref=env.map)
 
 
 def _kind(option):
@@ -119,6 +129,7 @@ def test_the_build_mask_refuses_every_gated_option_until_its_tech_is_known():
         env, city = _env_and_city()
         if _kind(option) == "building":
             _satisfy_non_tech_requirements(env, city, option)
+        _give_water_if_a_ship(env, city, option)
         tech = required_tech(_kind(option), option)
         city.player.techs[:] = _without(tech)
         idx = BUILD_OPTIONS.index(option)
@@ -136,6 +147,7 @@ def test_production_refuses_every_gated_option_until_its_tech_is_known():
         kind = _kind(option)
         if kind == "building":
             _satisfy_non_tech_requirements(env, city, option)
+        _give_water_if_a_ship(env, city, option)
         produce = city.produce_building if kind == "building" else city.produce_unit
         tech = required_tech(kind, option)
         city.player.techs[:] = _without(tech)
