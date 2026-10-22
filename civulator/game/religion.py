@@ -31,11 +31,9 @@ from ..religion_model import (
     BELIEF_LADDER,
     BELIEFS,
     COUNTS_FOREIGN,
-    MAX_FOLLOWER_BELIEFS,
     PANTHEON_COST,
     PANTHEONS,
     RULES,
-    TIER_ENHANCER,
     TIER_FOLLOWER,
     TIER_FOUNDER,
     belief_tier,
@@ -47,7 +45,8 @@ from ..religion_model import (
 class Religion:
     """A founded religion (design §7.1): the founder's player index (its
     identity -- `City.religion` holds it), its beliefs by tier (one founder
-    belief, 1..MAX_FOLLOWER_BELIEFS follower beliefs in purchase order, the
+    belief, 1..`religion_model.MAX_FOLLOWER_BELIEFS` follower beliefs in
+    purchase order, the
     enhancer or None) and `lapsed`, the flag Q9's upkeep writes (a placeholder
     here: always False, read by nothing yet). Plain mutable record: the
     episode fingerprint compares it by fields."""
@@ -317,9 +316,3 @@ def founder_pay_tenths(player, env):
     return pay
 
 
-__all__ = [
-    "Religion", "pantheon_cost_tenths", "found_cost_tenths", "belief_cost_tenths",
-    "can_choose_pantheon", "religions", "taken_beliefs", "free_beliefs", "seat_city",
-    "follower_cities", "founding_refusals", "can_found_religion", "belief_refusals",
-    "can_add_belief", "founder_pay_tenths", "MAX_FOLLOWER_BELIEFS", "TIER_ENHANCER",
-]

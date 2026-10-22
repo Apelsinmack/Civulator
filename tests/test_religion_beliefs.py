@@ -793,14 +793,13 @@ def test_a_faith_purchase_belief_buys_a_categorys_building_with_faith_and_no_oth
     assert covered is not None, "fixture: the covered district has a buildable building"
     # The first uncovered district (sorted, never a set walk) with a
     # buildable building; its district is linked only once chosen.
-    uncovered = uncovered_district = None
+    uncovered = None
     for district in sorted(set(BUILDING_REQUIRES_DISTRICT.values()) - {None}):
         if district in BUILDING_FAITH_CATEGORIES.values():
             continue
         linked = _link(env, city, district, sites[1])
         uncovered = buildable(district)
         if uncovered is not None:
-            uncovered_district = district
             break
         city.districts.remove(linked)
         env.map.get_tile(sites[1]).district = None
