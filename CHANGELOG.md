@@ -724,7 +724,7 @@ L4 (`exclusive` caps religions at the founder beliefs), L9 (which tile, which
 city, for the two combat beliefs); rulings R7, R13 (Erik, 2026-10-22).
 Values: Civ 6 (`docs/civ6_progression_reference.md`, "Religion"); Scholars'
 Patron is ours (#93). Pressure, conversion, upkeep, inquisition, the loyalty
-term and the victory flag are Q9's, on the same branch.
+term and the victory flag are Q9's, on the same branch (below).
 
 - **Seventeen beliefs**, each a `[beliefs.<Name>]` table (`tier`, `effects`,
   `counts` on a founder belief, `requires_building` on a follower belief).
@@ -859,6 +859,139 @@ term and the victory flag are Q9's, on the same branch.
   a Holy Site and a Shrine, and the random policy rarely builds all three in
   one city within 250 rounds. Nothing here says what `found_cost` should be;
   the agent's build choices (#99) decide whether religions appear.
+- **Effect NOT yet measured:** nothing was trained or evaluated.
+
+### Religion III: pressure, conversion, spread, upkeep and lapse, inquisition, the loyalty term, the victory flag (#128, patch Q9)
+
+**Rule changes, effects NOT yet measured.** Source:
+`docs/districts_religion_design.md` §7.4 (pressure, conversion, directed
+spread, upkeep, inquisition), §7.5 (loyalty, victory, capture/flip,
+elimination), §7.6, §9 (spread and inquisition have predicates and **no
+engine default**), §10, §11, §15, "v2 fixes" (religion state in
+`reset_state` and the fingerprint; ties to the lower founder index; the
+religious branch in `decisive_outcome`) and "v3 fixes" L2, L3, L5, L6;
+rulings R7, R8, C5-C7 (Erik, 2026-10-22). Values: §7.6 (Civ 6 where it has
+one: the spread price curve, the Inquisitor's cost).
+
+- **Pressure -- one formula with loyalty.** `loyalty.pressure_terms(sources,
+  target, env, reach, citizen_weight, weight)` is the formula both systems
+  call: Σ over source cities within reach (wrap distance, inclusive) of
+  `population × weight × (citizen_weight − distance)`, the target counting
+  for itself at distance 0. `loyalty.pressures` calls it with weight 1;
+  `religion.pressure(R, city, env)` with the cities following R (any owner,
+  city-id order), `religion.religious_weight` and R's reach and citizen
+  weight, **plus** R's running entries in the city's ledger. A test
+  evaluates both on the same board and asserts equality.
+  `religious_weight(c)` = 1 + the new optional `religious_weight` columns of
+  c's buildings and complete districts (`unit_model.BUILDING_RELIGIOUS_WEIGHT`,
+  `DistrictSpec.religious_weight`): Holy Site 1, Shrine 1, Temple 1, so a seat
+  weighs 4; no name in code. A secular city resists with
+  `secular_pressure` = population × `secular_weight` (2).
+- **L3.** A `religion_param { range }` raises the religion's reach AND its
+  citizen weight by the same amount (`pressure_reach`,
+  `pressure_citizen_weight`), so the term stays positive to the new edge.
+  `religion.religion_params(founder)` is the kind's one reader (range, spread
+  amount percent, cost percent, summed over the founder's entries);
+  `CONSUMERS` names it, `DEFERRED_KINDS` stays empty.
+- **Conversion -- the round-end religion phase.** `GameEnvironment.
+  _religion_phase` runs in `next_turn` after `_loyalty_phase` and before the
+  end-of-game test. Every city's decision (`religion.next_streak`) is computed
+  from the phase-start state, in city-id order, before any city changes. The
+  candidate is the religion other than the city's own with the largest
+  pressure, which must be > 0 (L6); ties go to the lower founder index. The
+  incumbent term is `secular_pressure` iff `City.religion is None`, otherwise
+  the incumbent religion's own pressure (L2). A candidate with `pressure × 100
+  ≥ incumbent × (100 + conversion_margin)` (25) extends the city's
+  `conversion_streak` `(candidate, rounds)` or, if the candidate changed,
+  restarts it at 1; anything else resets it to `(None, 0)`. At
+  `conversion_rounds` (3) the city converts. Its owner never changes.
+  Inquisition immunity (`inquisition_rounds_left > 0`) resets the streak,
+  blocks conversion and counts down one per phase. Ledger entries count in
+  the phase, then lose one round and are removed at 0, so an entry presses in
+  exactly `spread_rounds` phases (L6). `found_religion` now clears the
+  seat's streak.
+- **Directed spread.** `GameEnvironment.spread_religion(player, city)` -- any
+  city on the map, own or foreign -- is refused unless `religion.
+  can_spread_to` holds (`spread_refusals`: the player lives and founded a
+  religion; the city stands; a city following the religion is within its
+  reach; the faith pool covers the cost). The cost is `(spread_cost 100 +
+  spread_cost_step 25 × Player.spread_uses) × (100 + cost_percent) / 100` faith,
+  floored in tenths. Each spread adds one to `spread_uses` and appends
+  `(religion, spread_amount 60 × (100 + spread_amount_percent) / 100,
+  spread_rounds 10)` to `City.spread_ledger`. **No engine default spends
+  faith on spreading** (design §9; `defaults.py` says so). Without an agent,
+  religions spread by passive pressure alone.
+- **Upkeep and lapse (L2).** In the religion step, between the belief default
+  and founder pay, `_religion_upkeep` charges a **living** founder
+  `upkeep_per_follower_city` (1) faith per follower city, whoever owns it. A
+  pool that covers it is debited and `Religion.lapsed = False`. A short pool
+  is debited **nothing** and `lapsed = True` until the next upkeep, and
+  `_founder_pay` is not called while lapsed. A lapsed religion projects **no
+  outward pressure**: on a city that does not follow it, its terms and its
+  ledger entries are 0. On its own follower cities nothing changes (the
+  self term, the neighbouring followers' terms, ledger entries there), and
+  its beliefs, follower and enhancer, stay in force. One rule covers lapse
+  and a **dead founder**: `religion.is_unpaid` = `lapsed` or the founder is
+  dead. A dead founder's religion is therefore permanently unpaid; a dead
+  founder is never charged and was already never paid (Q8).
+- **Inquisition.** `GameEnvironment.inquisition(player, city)` is refused
+  unless `religion.can_inquisition` holds (`inquisition_refusals`: the player
+  lives; the city is its own; the faith covers `inquisition_cost` 75 × (100 +
+  cost_percent) / 100). The city then follows the player's founded religion,
+  or becomes secular if it founded none. Its streak resets, and
+  `inquisition_rounds` (10) phases of immunity begin; the ledger is left as
+  it is. No default calls it.
+- **Loyalty term (L5; Erik's accepted call C6 -- Civ 6 has none).**
+  `religion.loyalty_term(city)` = `[religion] foreign_religion_loyalty` (−1)
+  iff `city.religion is not None` and it is not the owner's founded religion.
+  A non-founder's follower city pays it; a founder's secular city does not.
+  It is one more term of `loyalty.loyalty_delta`, beside the amenity term.
+- **Religious victory (C7), off.** `[game] religious_victory = false` (a
+  required bool, `victory.RELIGIOUS_ENABLED`). When true, `victory.
+  decisive_outcome` -- so `game_over` ends the game -- tests after
+  domination: a religion followed by MORE than half of the cities of EVERY
+  living player (each player's own cities; dead players not counted) wins
+  for its founder if that founder is alive. A living player with no city
+  (kept alive by a Settler) is never "more than half followed" (0 > 0 fails).
+  `"religious"` joins `victory.VICTORIES`, and `scripts/evaluate.py` records it
+  like domination.
+- **Capture, flip, elimination.** `set_owner` keeps `City.religion`, the
+  ledger, the streak and the immunity, through both doors. A religion
+  outlives its founder; its followers keep it.
+- **State.** `City.spread_ledger` (list of `(religion, amount,
+  rounds_left)`), `City.conversion_streak = (None, 0)`,
+  `City.inquisition_rounds_left = 0`, `Player.spread_uses = 0` (in
+  `reset_state`), `Religion.lapsed`. All are reset per episode and are in the
+  episode fingerprint (a test mutates each one). No RNG; every walk is in
+  city-id or founder-index order.
+- **Stats.** `cities_converted_in` / `cities_converted_out` (keyed by the
+  religion's founder, whoever owns the city), `spreads`, `inquisitions`,
+  `religion_lapsed_rounds`. `faith_spent_religion` now also accrues spreads,
+  inquisitions and **upkeep**. The smoke end line prints the four new
+  counters.
+- **Declared test edits.** `tests/test_religion_beliefs.py`'s
+  step-order test now funds the seat's upkeep too: with exactly the founding
+  and belief costs, the new upkeep lapses the religion and founder pay is
+  skipped, which is the L2 rule, not a regression.
+  `tests/test_effects.py`: the religion_param case is now
+  `test_religion_param_moves_exactly_the_pressure_range_spread_and_costs`,
+  and the stage fingerprint gains the pressure range, citizen weight, spread
+  amount, spread cost and inquisition cost. New: `tests/test_religion_spread.py`.
+- **Nothing else moved.** The matchup oracle (`scripts/matchup_matrix.py
+  --seed 652026 --terrain flat,hills,woods --fortified --damaged --units
+  Warrior Slinger Archer Swordsman Spearman Horseman Catapult`) is
+  byte-identical between the Q8 tree (3c228b9) and this one; only the
+  artifact path line differs.
+- **Smoke (not a measurement; `python scripts/smoke_random_selfplay.py`,
+  Duel, random policy, 250 rounds).** Seed 4242 and seeds 1-8 run clean. As in
+  Q8, one religion was founded in nine games: seed 2's player 0. Under Q9 it
+  **converted two cities by passive pressure** (`cities_converted_in=[2,
+  0]`, `follower_cities=[3, 0]`). Its founder pay rose to
+  `founder_pay_tenths=[580, 0]` (Q8: 250, one follower city). It never lapsed
+  (`religion_lapsed_rounds=[0, 0]`), and `spreads=[0, 0]` everywhere because
+  no default spreads. The other eight games founded nothing (no seat), so they
+  saw no conversion and no upkeep. Seed 4242 is identical to the Q8 tree's game
+  in every line but the new end-line counters.
 - **Effect NOT yet measured:** nothing was trained or evaluated.
 
 ---
