@@ -1224,7 +1224,10 @@ bands = [[76, 100, 100], [51, 75, 75], [26, 50, 25], [1, 0, 0]]
 need_divisor = 2          # Civ 6 GS: one amenity per two citizens, rounded up
 free_first = 0            # Civ 6 Vanilla gave two free citizens; GS none
 luxury_cities = 4         # Civ 6: each distinct luxury serves up to 4 cities
-bands = [[5, 20, 100, 1], [3, 10, 100, 0], [0, 0, 100, 0], [-2, -10, 85, -1], [-4, -20, 70, -2], [-6, -30, 50, -3], [-99, -40, 25, -4]]
+# Erik (2026-10-22 night): the Displeased band costs no loyalty -- a newly founded
+# city (size 1, no luxury yet) is poorer, never drifting toward revolt by default.
+# Only Unhappy and below erode loyalty.
+bands = [[5, 20, 100, 1], [3, 10, 100, 0], [0, 0, 100, 0], [-2, -10, 85, 0], [-4, -20, 70, -2], [-6, -30, 50, -3], [-99, -40, 25, -4]]
 
 # --- Research: the tech tree (issue #116 P2, docs/progression_design.md §4) ---
 # Read only by civulator/research_model.py. A tech is one [techs.*] table:

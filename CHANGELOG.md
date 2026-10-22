@@ -7,6 +7,13 @@ Training results (plots, win histories) are in `stats/`.
 
 ## v0.9.0 — Unreleased
 
+**Amenities — Displeased costs no loyalty** (Erik, 2026-10-22 night, after the Q2
+smoke showed every new size-1 city at surplus −1): `[amenities] bands` row
+`[-2, -10, 85, -1]` → `[-2, -10, 85, 0]`. A newly founded city without a luxury
+or an Entertainment Complex still yields 10 % less and grows at 85 %, but no
+longer loses loyalty every round; Unhappy and below still do. Effect NOT yet
+measured.
+
 ### Engine RNG: PCG32 -> philox32 (#128, patch Q0)
 
 **Opens the 0.9 rules epoch. Not a bug fix, effect NOT yet measured.**
